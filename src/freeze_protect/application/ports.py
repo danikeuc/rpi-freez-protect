@@ -1,28 +1,36 @@
+from datetime import datetime
 from typing import Protocol
 
 from freeze_protect.domain.models import (
+    ActuatorCommand,
+    ActuatorReceipt,
     AuditEvent,
     ForecastSnapshot,
-    RelayCommand,
     SafetySettings,
     TemperatureReading,
 )
 
 
 class AdapterError(RuntimeError):
-    """A recoverable failure from a sensor, forecast, or relay adapter."""
+    """A recoverable failure from a hardware or external-service adapter."""
 
 
 class TemperatureSource(Protocol):
     def read(self) -> TemperatureReading: ...
 
 
-class ForecastSource(Protocol):
-    def read(self) -> ForecastSnapshot | None: ...
+class ForecastStore(Protocol):
+    def load(self) -> ForecastSnapshot | None: ...
+
+    def save(self, snapshot: ForecastSnapshot) -> None: ...
 
 
-class RelayDriver(Protocol):
-    def command(self, command: RelayCommand) -> None: ...
+class ForecastClient(Protocol):
+    def fetch(self, settings: SafetySettings, now: datetime) -> ForecastSnapshot: ...
+
+
+class ActuatorDriver(Protocol):
+    def command(self, command: ActuatorCommand) -> ActuatorReceipt: ...
 
 
 class EventStore(Protocol):

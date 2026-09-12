@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 
-from freeze_protect.domain.models import AuditEvent, SafetySettings
+from freeze_protect.domain.models import AuditEvent, ForecastSnapshot, SafetySettings
 
 
 class SettingsVersionConflict(ValueError):
@@ -53,6 +53,49 @@ class SQLiteSettingsStore:
                 ),
             )
         return settings
+
+
+class SQLiteForecastStore:
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+        _initialize(database_path)
+
+    def load(self) -> ForecastSnapshot | None:
+        with _connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT payload_json FROM forecast_cache WHERE singleton = 1"
+            ).fetchone()
+        if row is None:
+            return None
+        return _load_forecast(row["payload_json"])
+
+    def save(self, snapshot: ForecastSnapshot) -> None:
+        payload = {
+            "dates": [value.isoformat() for value in snapshot.dates],
+            "daily_minima_c": list(snapshot.daily_minima_c),
+            "source_generated_at": (
+                snapshot.source_generated_at.isoformat()
+                if snapshot.source_generated_at is not None
+                else None
+            ),
+            "fetched_at": snapshot.fetched_at.isoformat(),
+            "latitude": snapshot.latitude,
+            "longitude": snapshot.longitude,
+        }
+        with _connect(self._database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO forecast_cache (singleton, payload_json, updated_at)
+                VALUES (1, ?, ?)
+                ON CONFLICT(singleton) DO UPDATE SET
+                  payload_json = excluded.payload_json,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    json.dumps(payload, sort_keys=True),
+                    datetime.now().astimezone().isoformat(),
+                ),
+            )
 
 
 class SQLiteEventStore:
@@ -103,19 +146,24 @@ class SQLiteEventStore:
 
 
 def _connect(database_path: Path) -> sqlite3.Connection:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(database_path)
     connection.row_factory = sqlite3.Row
     return connection
 
 
 def _initialize(database_path: Path) -> None:
-    database_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(database_path) as connection:
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS settings (
               singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
               version INTEGER NOT NULL,
+              payload_json TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS forecast_cache (
+              singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
               payload_json TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
@@ -140,16 +188,39 @@ def _load_object(payload_json: str) -> dict[str, object]:
 
 def _load_settings(payload_json: str) -> SafetySettings:
     payload = _load_object(payload_json)
+    version = _int_field(payload, "settings_version")
+    if "forecast_threshold_c" not in payload:
+        return SafetySettings(settings_version=version)
     return SafetySettings(
         protection_threshold_c=_float_field(payload, "protection_threshold_c"),
         release_threshold_c=_float_field(payload, "release_threshold_c"),
-        release_days=_int_field(payload, "release_days"),
+        forecast_threshold_c=_float_field(payload, "forecast_threshold_c"),
+        forecast_days=_int_field(payload, "forecast_days"),
         sensor_stale_after_s=_int_field(payload, "sensor_stale_after_s"),
-        minimum_protection_dwell_s=_int_field(
-            payload,
-            "minimum_protection_dwell_s",
-        ),
-        settings_version=_int_field(payload, "settings_version"),
+        forecast_stale_after_s=_int_field(payload, "forecast_stale_after_s"),
+        timed_shower_default_s=_int_field(payload, "timed_shower_default_s"),
+        timed_shower_max_s=_int_field(payload, "timed_shower_max_s"),
+        latitude=_optional_float_field(payload, "latitude"),
+        longitude=_optional_float_field(payload, "longitude"),
+        timezone=_str_field(payload, "timezone"),
+        sensor_device_id=_optional_str_field(payload, "sensor_device_id"),
+        sensor_commissioned=_bool_field(payload, "sensor_commissioned"),
+        settings_version=version,
+    )
+
+
+def _load_forecast(payload_json: str) -> ForecastSnapshot:
+    payload = _load_object(payload_json)
+    dates = _date_tuple(payload, "dates")
+    minima = _float_tuple(payload, "daily_minima_c")
+    source = _optional_datetime_field(payload, "source_generated_at")
+    return ForecastSnapshot(
+        dates=dates,
+        daily_minima_c=minima,
+        source_generated_at=source,
+        fetched_at=_datetime_field(payload, "fetched_at"),
+        latitude=_float_field(payload, "latitude"),
+        longitude=_float_field(payload, "longitude"),
     )
 
 
@@ -160,8 +231,62 @@ def _float_field(payload: dict[str, object], name: str) -> float:
     return float(value)
 
 
+def _optional_float_field(payload: dict[str, object], name: str) -> float | None:
+    if payload.get(name) is None:
+        return None
+    return _float_field(payload, name)
+
+
 def _int_field(payload: dict[str, object], name: str) -> int:
     value = payload.get(name)
     if isinstance(value, bool) or not isinstance(value, int):
         raise TypeError(f"{name} must be an integer")
     return value
+
+
+def _bool_field(payload: dict[str, object], name: str) -> bool:
+    value = payload.get(name)
+    if not isinstance(value, bool):
+        raise TypeError(f"{name} must be a boolean")
+    return value
+
+
+def _str_field(payload: dict[str, object], name: str) -> str:
+    value = payload.get(name)
+    if not isinstance(value, str) or not value:
+        raise TypeError(f"{name} must be a non-empty string")
+    return value
+
+
+def _optional_str_field(payload: dict[str, object], name: str) -> str | None:
+    if payload.get(name) is None:
+        return None
+    return _str_field(payload, name)
+
+
+def _date_tuple(payload: dict[str, object], name: str) -> tuple[date, ...]:
+    value = payload.get(name)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise TypeError(f"{name} must be a string list")
+    return tuple(date.fromisoformat(item) for item in value)
+
+
+def _float_tuple(payload: dict[str, object], name: str) -> tuple[float, ...]:
+    value = payload.get(name)
+    if not isinstance(value, list):
+        raise TypeError(f"{name} must be a numeric list")
+    return tuple(
+        _float_field({"item": item}, "item")
+        for item in value
+    )
+
+
+def _datetime_field(payload: dict[str, object], name: str) -> datetime:
+    value = _str_field(payload, name)
+    return datetime.fromisoformat(value)
+
+
+def _optional_datetime_field(payload: dict[str, object], name: str) -> datetime | None:
+    if payload.get(name) is None:
+        return None
+    return _datetime_field(payload, name)
