@@ -7,6 +7,12 @@ import pytest
 ROOT = Path(__file__).parents[2]
 
 
+def test_bootstrap_remains_executable_for_trusted_console_use() -> None:
+    """Catch an asset replacement that makes the documented bootstrap unrunnable."""
+    bootstrap = ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    assert bootstrap.stat().st_mode & 0o111
+
+
 def test_workstation_commissioning_has_no_runner_or_root_ssh_path() -> None:
     guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
         encoding="utf-8"
@@ -47,13 +53,11 @@ def test_acceptance_uses_copy_safe_fixed_commands_and_batch_mode() -> None:
 
     for subcommand in ("inventory", "usb", "status"):
         assert (
-            "ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> "
+            "ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> "
             f"sudo -n /usr/local/sbin/freeze-protect-commission {subcommand}"
         ) in guide
-    assert (
-        "cd /opt/rpi-freez-protect/firmware/crowpanel && pio run --target upload"
-        in guide
-    )
+    assert "cd /opt/rpi-freez-protect/firmware/crowpanel" in guide
+    assert "/opt/freezeprotect-local-flash-tools/bin/pio run --target upload" in guide
 
 
 def test_privileged_helper_has_only_fixed_subcommands() -> None:
@@ -97,12 +101,15 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     sudoers = (root / "freeze-protect-commission.sudoers").read_text(encoding="utf-8")
 
     assert "usage: $0 /path/to/public-key" in bootstrap
-    assert "--home-dir /home/freezeprotect --shell /bin/bash" in bootstrap
+    assert "commission_home=/home/freezeprotect-commission" in bootstrap
     assert (
-        'install -d -o root -g "$primary_group" -m 0710 /home/freezeprotect/.ssh'
+        'install -d -o root -g "$commission_primary_group" -m 0710 "$commission_home/.ssh"'
         in bootstrap
     )
-    assert 'install -o root -g "$primary_group" -m 0640 "$public_key_file"' in bootstrap
+    assert (
+        'install -o root -g "$commission_primary_group" -m 0640 "$public_key_file"'
+        in bootstrap
+    )
     assert "NOPASSWD:" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission inventory" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission usb" in sudoers
@@ -111,30 +118,30 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     assert "ALL" not in sudoers.replace("ALL=(root)", "")
 
 
-def test_bootstrap_checks_required_groups_before_account_or_key_changes() -> None:
+def test_bootstrap_never_grants_device_groups_to_the_commissioning_login() -> None:
     bootstrap = (
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
 
-    group_check = bootstrap.index("for required_group in dialout gpio; do")
-    mutations = (
-        bootstrap.index("useradd --system --create-home"),
-        bootstrap.index("/home/freezeprotect/.ssh/authorized_keys"),
-    )
-
-    assert all(group_check < mutation for mutation in mutations)
+    assert "for required_group" not in bootstrap
+    assert '--groups dialout "$commission_account"' not in bootstrap
+    assert "--groups" not in bootstrap
+    assert "for prohibited_group in gpio dialout; do" in bootstrap
+    assert 'grep -Fx "$prohibited_group"' in bootstrap
 
 
 def test_bootstrap_stops_for_incompatible_account_before_any_install() -> None:
     bootstrap = (
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text()
-    assert "account_home=$(getent passwd freezeprotect | cut -d: -f6)" in bootstrap
-    assert "account_shell=$(getent passwd freezeprotect | cut -d: -f7)" in bootstrap
-    assert '[ "$account_home" = /home/freezeprotect ]' in bootstrap
-    assert '[ "$account_shell" = /bin/bash ]' in bootstrap
-    assert '[ "$actual_groups" = "$expected_groups" ]' in bootstrap
-    assert bootstrap.index("validate_account_profile\n") < bootstrap.index("install -")
+    assert "validate_service_account()" in bootstrap
+    assert "validate_commission_account()" in bootstrap
+    assert '[ "$service_home" = /var/lib/rpi-freeze-protect ]' in bootstrap
+    assert '[ "$commission_home_actual" = "$commission_home" ]' in bootstrap
+    assert (
+        '[ "$commission_actual_groups" = "$commission_expected_groups" ]' in bootstrap
+    )
+    assert bootstrap.index("validate_service_account") < bootstrap.index("install -")
     assert "usermod" not in bootstrap
     assert "trusted local console" in bootstrap
 
@@ -143,19 +150,19 @@ def test_bootstrap_protects_key_path_and_validates_access_before_success() -> No
     bootstrap = (
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text()
-    assert "primary_group=$(id -gn freezeprotect)" in bootstrap
-    assert 'chown root:"$primary_group" /home/freezeprotect' in bootstrap
-    assert "chmod 0750 /home/freezeprotect" in bootstrap
+    assert 'commission_primary_group=$(id -gn "$commission_account")' in bootstrap
+    assert 'chown root:"$commission_primary_group" "$commission_home"' in bootstrap
+    assert 'chmod 0750 "$commission_home"' in bootstrap
     assert "require_root_protected /home" in bootstrap
     assert '[ -L "$path" ]' in bootstrap
-    assert "stat -c %u:%g:%a /home/freezeprotect/.ssh)" in bootstrap
-    assert "stat -c %u:%g:%a /home/freezeprotect/.ssh/authorized_keys)" in bootstrap
+    assert 'stat -c %u:%g:%a "$commission_home/.ssh")' in bootstrap
+    assert 'stat -c %u:%g:%a "$commission_home/.ssh/authorized_keys")' in bootstrap
     assert (
-        "runuser -u freezeprotect -- test -r /home/freezeprotect/.ssh/authorized_keys"
+        'runuser -u "$commission_account" -- test -r "$commission_home/.ssh/authorized_keys"'
         in bootstrap
     )
-    assert bootstrap.index("runuser -u freezeprotect") < bootstrap.index(
-        'echo "freezeprotect access installed"'
+    assert bootstrap.index('runuser -u "$commission_account"') < bootstrap.index(
+        'echo "freezeprotect commissioning access installed"'
     )
 
 
@@ -179,6 +186,124 @@ def test_root_client_copy_and_interpreter_do_not_trust_the_checkout() -> None:
     assert (
         "require_root_protected /usr/local/lib/freeze-protect-commission" in bootstrap
     )
+
+
+def test_commissioning_login_is_separate_from_the_non_login_service_identity() -> None:
+    """Catch a change that gives the SSH user access to service tokens or GPIO."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    sudoers = (
+        ROOT / "deployment/workstation-codex/freeze-protect-commission.sudoers"
+    ).read_text(encoding="utf-8")
+    service = (ROOT / "deployment/systemd/freeze-protect.service").read_text(
+        encoding="utf-8"
+    )
+
+    assert "User=freezeprotect" in service
+    assert "commission_account=freezeprotect-commission" in bootstrap
+    assert "service_account=freezeprotect" in bootstrap
+    assert "--groups" not in bootstrap
+    assert "for required_group" not in bootstrap
+    assert "for prohibited_group in gpio dialout; do" in bootstrap
+    assert 'grep -Fx "$prohibited_group"' in bootstrap
+    assert "freezeprotect-commission ALL=(root) NOPASSWD:" in sudoers
+    assert "freezeprotect ALL=(root) NOPASSWD:" not in sudoers
+
+
+def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
+    """Catch password or forwarding paths that bypass the workstation-key boundary."""
+    ssh_policy = (
+        ROOT / "deployment/workstation-codex/60-freezeprotect-commission.conf"
+    ).read_text(encoding="utf-8")
+
+    assert ssh_policy.splitlines()[0] == "DenyUsers freezeprotect"
+    assert (
+        ssh_policy.splitlines()[1]
+        == "AllowUsers freezeprotect-commission@192.168.114.0/24"
+    )
+    assert (
+        ssh_policy.splitlines()[2]
+        == "Match User freezeprotect-commission Address 192.168.114.0/24"
+    )
+    assert ssh_policy.splitlines()[-1] == "Match all"
+    for setting in (
+        "PasswordAuthentication no",
+        "KbdInteractiveAuthentication no",
+        "AuthenticationMethods publickey",
+        "AllowTcpForwarding no",
+        "AllowAgentForwarding no",
+        "X11Forwarding no",
+        "PermitTunnel no",
+        "GatewayPorts no",
+        "PermitUserEnvironment no",
+    ):
+        assert setting in ssh_policy
+
+
+def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None:
+    """Catch a bootstrap that creates a key but leaves password SSH enabled."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "sshd_policy_source=$script_dir/60-freezeprotect-commission.conf" in bootstrap
+    )
+    assert 'install -o root -g root -m 0644 "$sshd_policy_source"' in bootstrap
+    assert "/etc/ssh/sshd_config.d/60-freezeprotect-commission.conf" in bootstrap
+    assert "sshd -t -f /etc/ssh/sshd_config" in bootstrap
+    assert (
+        "sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission" in bootstrap
+    )
+    for setting in (
+        "passwordauthentication no",
+        "kbdinteractiveauthentication no",
+        "authenticationmethods publickey",
+        "allowtcpforwarding no",
+        "allowagentforwarding no",
+        "x11forwarding no",
+        "permittunnel no",
+        "gatewayports no",
+        "permituserenvironment no",
+    ):
+        assert f"'{setting}'" in bootstrap
+    assert "-C user=freezeprotect,host=localhost,addr=192.168.114.1" in bootstrap
+    assert "'denyusers freezeprotect'" in bootstrap
+    assert "'allowusers freezeprotect-commission@192.168.114.0/24'" in bootstrap
+
+
+def test_helper_execution_path_excludes_unvalidated_usr_local_bin() -> None:
+    """Catch a writable /usr/local/bin shadowing a root helper dependency."""
+    helper = (
+        ROOT / "deployment/workstation-codex/freeze-protect-commission"
+    ).read_text(encoding="utf-8")
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "PATH=/usr/sbin:/usr/bin" in helper
+    assert "PATH=/usr/sbin:/usr/bin" in bootstrap
+    assert "require_root_protected /usr/local/bin" in bootstrap
+    assert "require_root_protected /usr/bin" in bootstrap
+    assert "require_root_protected /usr/sbin" in bootstrap
+
+
+def test_guide_provisions_secrets_and_captures_exactly_one_serial_device() -> None:
+    """Catch an upload path that uses an empty port or tries to build without secrets."""
+    guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "freezeprotect-commission@<Pi-LAN-IP>" in guide
+    assert "cp include/secrets.example.h include/secrets.h" in guide
+    assert "serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)" in guide
+    pi_usb = guide.split("### USB cable on the Pi", 1)[1]
+    assert "trusted-console-only" in pi_usb
+    assert "freezeprotect-commission@<Pi-LAN-IP>" not in pi_usb
+    assert "install -o root -g root -m 0600" in pi_usb
+    assert "umask 077" in pi_usb
+    assert "rm -rf .pio" in pi_usb
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'

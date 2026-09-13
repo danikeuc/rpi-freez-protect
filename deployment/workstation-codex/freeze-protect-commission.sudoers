@@ -3,4 +3,4 @@ Cmnd_Alias FREEZE_PROTECT_COMMISSION = \
   /usr/local/sbin/freeze-protect-commission usb, \
   /usr/local/sbin/freeze-protect-commission status, \
   /usr/local/sbin/freeze-protect-commission drain
-freezeprotect ALL=(root) NOPASSWD: FREEZE_PROTECT_COMMISSION
+freezeprotect-commission ALL=(root) NOPASSWD: FREEZE_PROTECT_COMMISSION

@@ -11,13 +11,13 @@ This procedure replaces the old Node-RED relay control with a constrained actuat
 
 ## 1. Make the Pi service files
 
-For the workstation-led route, first follow the dedicated-login bootstrap and
-account-compatibility gate in
+For the workstation-led route, create the non-login `freezeprotect` service
+account below, then follow the separate commissioning-login bootstrap in
 [`WORKSTATION_CODEX_COMMISSIONING.md`](WORKSTATION_CODEX_COMMISSIONING.md#2-pi-bootstrap).
-Omit the `useradd` line below when that account is already provisioned. The
-legacy non-login account created below is not SSH-compatible; bootstrap will
-stop rather than silently migrate it. Existing installations need an explicit
-trusted-console review/remediation, preserving service data and ownership.
+The service account is deliberately not SSH-compatible; bootstrap creates and
+validates `freezeprotect-commission` separately, without migrating service
+data or ownership. Existing installations need an explicit trusted-console
+review/remediation before either identity changes.
 All privileged deployment steps here are trusted-console work, not additions
 to the remote commissioning sudo allowlist. For workstation commissioning,
 the physical test in step 5 also requires Danijel's explicit current-session

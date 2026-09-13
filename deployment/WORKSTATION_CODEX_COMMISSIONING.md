@@ -1,10 +1,14 @@
 # Workstation Codex commissioning
 
 This guide defines the workstation-led commissioning route. Use only the
-dedicated `freezeprotect` account for remote access. Do not configure an
+dedicated `freezeprotect-commission` account for remote access.
+`freezeprotect` remains the non-login service identity; it owns the Hub's
+state and environment and must never be used for SSH. Do not configure an
 automation runner or use a privileged remote login. The 24 V valve supply
 remains disconnected until Danijel explicitly approves the physical test in
 the current session. Keep Pi SSH private-LAN-only; do not expose it publicly.
+The bootstrap allows the commissioning account only from `192.168.114.0/24`;
+do not add a router port-forward for TCP 22.
 
 ## 1. Workstation prerequisites
 
@@ -12,18 +16,20 @@ Install Codex CLI, Git, OpenSSH client and PlatformIO Core on the workstation.
 
 ## 2. Pi bootstrap
 
-At the trusted local Pi console, inspect the existing account before provisioning.
-The dedicated login profile is home `/home/freezeprotect`, shell `/bin/bash`,
-a non-root UID/primary group, and group membership consisting of that primary
-group plus `dialout` and `gpio` only. A pre-existing service account from
-[`COMMISSIONING.md` step 1](COMMISSIONING.md#1-make-the-pi-service-files)
-uses `/var/lib/rpi-freeze-protect` and `/usr/sbin/nologin` and is incompatible.
-Bootstrap stops before changing its keys or groups; it does not migrate that
-account or silently retain extra groups. Stop and have the trusted-console
-operator review service ownership/dependencies and explicitly remediate the
-account profile before rerunning. Do not delete the account or its service data.
-For a new installation, bootstrap creates the dedicated login account; omit the
-older guide's service-account `useradd` command.
+At the trusted local Pi console, first create and preserve the non-login
+`freezeprotect` service account from
+[`COMMISSIONING.md` step 1](COMMISSIONING.md#1-make-the-pi-service-files).
+It has home `/var/lib/rpi-freeze-protect` and an `nologin` shell. Bootstrap
+refuses to convert or migrate it: that account owns service state and receives
+the Hub's environment tokens.
+
+Bootstrap creates a separate `freezeprotect-commission` login with home
+`/home/freezeprotect-commission`, shell `/bin/bash`, and only its primary group
+and no device-access groups. It never receives `gpio`, `dialout`, service-data
+ownership, service environment files, or a service unit. If either existing
+account does not match that profile, bootstrap stops before changing accounts,
+keys, or groups. Remediate only at the trusted local console; do not delete
+service data.
 
 Copy a reviewed, trusted repository revision to `/opt/rpi-freez-protect`.
 Keep deployment assets and service execution paths root-owned and not writable
@@ -34,31 +40,35 @@ copies the standard-library-only GPIO client to the root-owned
 and their ancestors must remain root-controlled and non-user-writable.
 Updates to either installed artifact are trusted-console deployment work only.
 
-Bootstrap makes the home root-owned `0750`, `.ssh` root-owned `0710`, and
-`authorized_keys` root-owned `0640`, using the account's primary group. This
-allows SSH to read the key but prevents the account from changing it or
-replacing `.ssh`. It validates ownership/modes and account read/non-write access
-before reporting success. Keep firmware/build work separate: the workstation
-clone is writable; if using Pi-side PlatformIO, the trusted-console operator
-must provision only the `firmware/crowpanel` build subtree and dedicated
-`/home/freezeprotect/.platformio` and `/home/freezeprotect/.cache` directories
-as account-writable. Do not make the home itself, deployment scripts, service
-virtual environment, or privileged execution paths writable to enable builds.
+Bootstrap makes the commissioning home root-owned `0750`, `.ssh` root-owned
+`0710`, and `authorized_keys` root-owned `0640`, using the commissioning
+account's primary group. It installs a key-only `sshd` policy for this user,
+disables password/interactive authentication and forwarding, validates the
+effective policy, then reloads the active SSH service. This prevents the account
+from changing its key or replacing `.ssh`.
+
+Keep firmware/build work separate: the workstation clone is writable. The
+commissioning account must never read `include/secrets.h` or run a Pi-side
+firmware build because the display token is able to request a timed shower.
+If the USB cable is physically attached to the Pi, the upload is a
+trusted-local-console-only task described below. Do not make the home,
+deployment scripts, service virtual environment, or privileged execution paths
+writable to enable builds.
 
 Place the workstation public
-key in `/tmp/freezeprotect-workstation.pub`, then run this one command from a
+key in `/tmp/freezeprotect-commission-workstation.pub`, then run this one command from a
 trusted local Pi console:
 
 ```bash
 sudo /opt/rpi-freez-protect/deployment/workstation-codex/bootstrap-freezeprotect-access.sh \
-  /tmp/freezeprotect-workstation.pub
+  /tmp/freezeprotect-commission-workstation.pub
 ```
 
 From the workstation, verify the restricted account and helper over the Pi's
 private LAN:
 
 ```bash
-ssh freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
 ```
 
 After that succeeds, remove the temporary `root` key from
@@ -110,10 +120,10 @@ investigate before continuing; do not retry `SUPPLY` or enable legacy routes.
 Run these fixed Pi-helper checks in this exact order:
 
 ```bash
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
-ssh freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission drain
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission drain
 ```
 
 The `usb` output is an inventory, not permission to select a device. Before
@@ -123,12 +133,20 @@ do not guess a serial path.
 
 ### USB cable on the workstation
 
-From `firmware/crowpanel`, discover the serial-by-id device and proceed only
-after confirming that the command returns exactly one entry. Record that
-discovered entry as `serial_device`; it is the only path permitted below.
+Before upload, create `include/secrets.h` locally from
+[`CROWPANEL_COMMISSIONING.md` step 1](CROWPANEL_COMMISSIONING.md#1-prepare-the-build-workstation).
+Enter Wi-Fi and display-token values only in that ignored local file; never put
+them in this guide, a Codex prompt, terminal capture, or Git.
+
+From `firmware/crowpanel`, discover and capture exactly one serial-by-id device.
+`serial_device` below is the only permitted upload/monitor path.
 
 ```bash
-find /dev/serial/by-id -maxdepth 1 -type l -print
+cp include/secrets.example.h include/secrets.h
+serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)
+serial_count=$(printf '%s\n' "$serial_device" | sed '/^$/d' | wc -l)
+[ "$serial_count" -eq 1 ] || { echo "expected exactly one serial device" >&2; exit 1; }
+printf '%s\n' "$serial_device"
 pio run --target upload --upload-port "$serial_device"
 pio device monitor --baud 115200 --port "$serial_device"
 ```
@@ -136,18 +154,41 @@ pio device monitor --baud 115200 --port "$serial_device"
 Collect the boot output from the monitor. Stop rather than use either `pio`
 command if discovery returned zero or more than one device.
 
-### USB cable on the Pi
+### USB cable on the Pi — trusted-console-only
 
-Use the same discovery and `pio` commands on the Pi, prefixed with the
-dedicated account over the private LAN. The Pi-side discovery must return
-exactly one entry before setting `serial_device`; stop for zero or more than
-one device and never guess a serial path.
+The `freezeprotect-commission` SSH account must never read the display token
+or run a Pi-side firmware build. If the CrowPanel USB cable is attached to the
+Pi, a trusted local-console operator performs this step with the 24 V valve
+supply still disconnected. The root-owned secret stays local to that console:
 
 ```bash
-ssh freezeprotect@<Pi-LAN-IP> find /dev/serial/by-id -maxdepth 1 -type l -print
-ssh freezeprotect@<Pi-LAN-IP> "cd /opt/rpi-freez-protect/firmware/crowpanel && pio run --target upload --upload-port \"$serial_device\""
-ssh freezeprotect@<Pi-LAN-IP> "cd /opt/rpi-freez-protect/firmware/crowpanel && pio device monitor --baud 115200 --port \"$serial_device\""
+sudo apt install -y python3-venv
+sudo python3 -m venv /opt/freezeprotect-local-flash-tools
+sudo /opt/freezeprotect-local-flash-tools/bin/pip install --upgrade pip platformio
+sudo install -o root -g root -m 0600 \
+  /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.example.h \
+  /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
+sudoedit /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
+sudo /bin/sh -c '
+set -eu
+cd /opt/rpi-freez-protect/firmware/crowpanel
+umask 077
+rm -rf .pio
+serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)
+serial_count=$(printf "%s\\n" "$serial_device" | sed "/^$/d" | wc -l)
+[ "$serial_count" -eq 1 ] || { echo "expected exactly one serial device" >&2; exit 1; }
+/opt/freezeprotect-local-flash-tools/bin/pio run --target upload --upload-port "$serial_device"
+chown -R root:root .pio
+chmod -R go-rwx .pio
+unsafe_artifact=$(find .pio \( ! -user root -o -perm /077 \) -print -quit)
+[ -z "$unsafe_artifact" ] || { echo "unsafe firmware artifact: $unsafe_artifact" >&2; exit 1; }
+exec /opt/freezeprotect-local-flash-tools/bin/pio device monitor --baud 115200 --port "$serial_device"
+'
 ```
+
+Edit `secrets.h` only with the Wi-Fi credentials, `http://<Pi-LAN-IP>:8081`,
+and display token. Do not place these values in SSH commands, terminal logs,
+or Git. The local-console operator collects the boot output directly.
 
 Collect the boot output from the monitor.
 

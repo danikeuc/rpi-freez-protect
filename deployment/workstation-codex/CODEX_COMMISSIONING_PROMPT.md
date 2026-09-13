@@ -5,14 +5,15 @@ workstation clone of this repository.
 
 ```text
 Commission this Freeze Protect installation from this workstation. Use only
-the dedicated non-root freezeprotect account over the Pi private LAN; do not
-use root SSH, public SSH exposure, credentials, or tokens.
+the dedicated non-root freezeprotect-commission account over the Pi private
+LAN; freezeprotect is a non-login service identity. Do not use root SSH,
+public SSH exposure, credentials, or tokens.
 
 For read-only Pi checks, use the non-interactive form:
 
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
-ssh -o BatchMode=yes freezeprotect@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
+ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
 
 The only allowed privileged helper subcommands are `inventory`, `usb`,
 `status`, and `drain`. Their only runnable forms are:
@@ -41,5 +42,6 @@ and collect boot output with
 pio device monitor --baud 115200 --port "$serial_device"
 Use that sole discovered path for both commands; do not allow automatic port
 selection. Use the workstation or Pi USB-location
-branch documented in WORKSTATION_CODEX_COMMISSIONING.md.
+branch documented in WORKSTATION_CODEX_COMMISSIONING.md. The Pi USB branch is
+trusted-local-console-only; do not read or provision `secrets.h` over SSH.
 ```
