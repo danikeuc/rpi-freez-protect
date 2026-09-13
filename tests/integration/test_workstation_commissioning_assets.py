@@ -1,3 +1,4 @@
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -126,7 +127,7 @@ def test_bootstrap_never_grants_device_groups_to_the_commissioning_login() -> No
     assert "for required_group" not in bootstrap
     assert '--groups dialout "$commission_account"' not in bootstrap
     assert "--groups" not in bootstrap
-    assert "for prohibited_group in gpio dialout; do" in bootstrap
+    assert "for prohibited_group in gpio dialout nodered; do" in bootstrap
     assert 'grep -Fx "$prohibited_group"' in bootstrap
 
 
@@ -205,7 +206,7 @@ def test_commissioning_login_is_separate_from_the_non_login_service_identity() -
     assert "service_account=freezeprotect" in bootstrap
     assert "--groups" not in bootstrap
     assert "for required_group" not in bootstrap
-    assert "for prohibited_group in gpio dialout; do" in bootstrap
+    assert "for prohibited_group in gpio dialout nodered; do" in bootstrap
     assert 'grep -Fx "$prohibited_group"' in bootstrap
     assert "freezeprotect-commission ALL=(root) NOPASSWD:" in sudoers
     assert "freezeprotect ALL=(root) NOPASSWD:" not in sudoers
@@ -231,14 +232,194 @@ def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
         "PasswordAuthentication no",
         "KbdInteractiveAuthentication no",
         "AuthenticationMethods publickey",
+        "ForceCommand /usr/local/lib/freeze-protect-commission/ssh-dispatch",
         "AllowTcpForwarding no",
+        "AllowStreamLocalForwarding no",
         "AllowAgentForwarding no",
         "X11Forwarding no",
         "PermitTunnel no",
+        "PermitTTY no",
         "GatewayPorts no",
+        "PermitUserRC no",
         "PermitUserEnvironment no",
     ):
         assert setting in ssh_policy
+
+
+@pytest.mark.parametrize(
+    "original_command",
+    [
+        "",
+        "curl http://127.0.0.1:1880/admin",
+        "sudo -n /usr/local/sbin/freeze-protect-commission supply",
+        "sudo -n /usr/local/sbin/freeze-protect-commission SUPPLY",
+        "sudo -n /usr/local/sbin/freeze-protect-commission drain --force",
+        "sudo -n /usr/local/sbin/freeze-protect-commission drain; curl http://127.0.0.1:1880/admin",
+        "sudo -n /usr/local/sbin/freeze-protect-commission drain\ncurl http://127.0.0.1:1880/admin",
+    ],
+)
+def test_commissioning_ssh_dispatcher_rejects_unapproved_remote_commands(
+    original_command: str, tmp_path: Path
+) -> None:
+    """Catch a dispatcher that lets an SSH session call localhost services."""
+    result = run_ssh_dispatcher(original_command, tmp_path)
+
+    assert result.returncode == 64
+    assert "not an allowed commissioning command" in result.stderr
+
+
+def run_ssh_dispatcher(
+    original_command: str, tmp_path: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run the production dispatcher with a local stand-in for absolute sudo."""
+    dispatcher_source = (
+        ROOT / "deployment/workstation-codex/freeze-protect-commission-ssh-dispatch"
+    )
+    fake_sudo = tmp_path / "sudo"
+    fake_sudo.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    fake_sudo.chmod(0o755)
+    dispatcher = tmp_path / "ssh-dispatch"
+    dispatcher.write_text(
+        dispatcher_source.read_text(encoding="utf-8").replace(
+            "/usr/bin/sudo", str(fake_sudo)
+        ),
+        encoding="utf-8",
+    )
+    dispatcher.chmod(0o755)
+    result = subprocess.run(
+        [str(dispatcher)],
+        env={**os.environ, "SSH_ORIGINAL_COMMAND": original_command},
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    return result
+
+
+@pytest.mark.parametrize(
+    ("original_command", "expected_argv"),
+    [
+        (
+            "sudo -n /usr/local/sbin/freeze-protect-commission inventory",
+            ["-n", "/usr/local/sbin/freeze-protect-commission", "inventory"],
+        ),
+        (
+            "sudo -n /usr/local/sbin/freeze-protect-commission usb",
+            ["-n", "/usr/local/sbin/freeze-protect-commission", "usb"],
+        ),
+        (
+            "sudo -n /usr/local/sbin/freeze-protect-commission status",
+            ["-n", "/usr/local/sbin/freeze-protect-commission", "status"],
+        ),
+        (
+            "sudo -n /usr/local/sbin/freeze-protect-commission drain",
+            ["-n", "/usr/local/sbin/freeze-protect-commission", "drain"],
+        ),
+    ],
+)
+def test_commissioning_ssh_dispatcher_passes_only_exact_helper_argv(
+    original_command: str, expected_argv: list[str], tmp_path: Path
+) -> None:
+    """Catch a dispatcher that mutates or broadens a documented helper call."""
+    result = run_ssh_dispatcher(original_command, tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == expected_argv
+
+
+def run_commission_account_validation(
+    *,
+    service_uid: int,
+    service_gid: int,
+    nodered_uid: int,
+    nodered_gid: int,
+    commission_uid: int,
+    commission_gid: int,
+    commission_primary_group: str,
+) -> subprocess.CompletedProcess[str]:
+    """Run the bootstrap's real account validation with controlled Unix IDs."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    function_body = bootstrap.split("validate_commission_account() {\n", 1)[1].split(
+        "\n}\n\nrequire_root_protected", 1
+    )[0]
+    function = "validate_commission_account() {\n" + function_body + "\n}"
+    script = f"""set -eu
+service_account=freezeprotect
+commission_account=freezeprotect-commission
+nodered_account=nodered
+commission_home=/home/freezeprotect-commission
+id() {{
+  case "$*" in
+    "-u freezeprotect") printf '%s\\n' {service_uid} ;;
+    "-g freezeprotect") printf '%s\\n' {service_gid} ;;
+    "-u nodered") printf '%s\\n' {nodered_uid} ;;
+    "-g nodered") printf '%s\\n' {nodered_gid} ;;
+    "-u freezeprotect-commission") printf '%s\\n' {commission_uid} ;;
+    "-g freezeprotect-commission") printf '%s\\n' {commission_gid} ;;
+    "-gn freezeprotect-commission") printf '%s\\n' {shlex.quote(commission_primary_group)} ;;
+    "-nG freezeprotect-commission") printf '%s\\n' {shlex.quote(commission_primary_group)} ;;
+    *) return 99 ;;
+  esac
+}}
+getent() {{
+  case "$*" in
+    "passwd freezeprotect-commission")
+      printf '%s\\n' 'freezeprotect-commission:x:{commission_uid}:{commission_gid}::/home/freezeprotect-commission:/bin/bash'
+      ;;
+    *) return 99 ;;
+  esac
+}}
+service_uid=$(id -u "$service_account")
+service_gid=$(id -g "$service_account")
+nodered_uid=$(id -u "$nodered_account")
+nodered_gid=$(id -g "$nodered_account")
+{function}
+validate_commission_account
+"""
+    return subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+
+def test_bootstrap_rejects_commissioning_uid_shared_with_service() -> None:
+    """Catch a login identity that can read the service account's data."""
+    result = run_commission_account_validation(
+        service_uid=900,
+        service_gid=900,
+        nodered_uid=901,
+        nodered_gid=901,
+        commission_uid=900,
+        commission_gid=902,
+        commission_primary_group="freezeprotect-commission",
+    )
+
+    assert result.returncode != 0
+    assert "must have a dedicated UID" in result.stderr
+
+
+def test_bootstrap_rejects_commissioning_group_shared_with_nodered() -> None:
+    """Catch a login identity that can write to the paired-GPIO socket."""
+    result = run_commission_account_validation(
+        service_uid=900,
+        service_gid=900,
+        nodered_uid=901,
+        nodered_gid=901,
+        commission_uid=902,
+        commission_gid=901,
+        commission_primary_group="nodered",
+    )
+
+    assert result.returncode != 0
+    assert "must have a dedicated primary group" in result.stderr
 
 
 def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None:
@@ -250,7 +431,12 @@ def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None
     assert (
         "sshd_policy_source=$script_dir/60-freezeprotect-commission.conf" in bootstrap
     )
+    assert (
+        "ssh_dispatch_source=$script_dir/freeze-protect-commission-ssh-dispatch"
+        in bootstrap
+    )
     assert 'install -o root -g root -m 0644 "$sshd_policy_source"' in bootstrap
+    assert 'install -o root -g root -m 0755 "$ssh_dispatch_source"' in bootstrap
     assert "/etc/ssh/sshd_config.d/60-freezeprotect-commission.conf" in bootstrap
     assert "sshd -t -f /etc/ssh/sshd_config" in bootstrap
     assert (
@@ -260,17 +446,49 @@ def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None
         "passwordauthentication no",
         "kbdinteractiveauthentication no",
         "authenticationmethods publickey",
+        "forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch",
         "allowtcpforwarding no",
+        "allowstreamlocalforwarding no",
         "allowagentforwarding no",
         "x11forwarding no",
         "permittunnel no",
+        "permittty no",
         "gatewayports no",
+        "permituserrc no",
         "permituserenvironment no",
     ):
         assert f"'{setting}'" in bootstrap
     assert "-C user=freezeprotect,host=localhost,addr=192.168.114.1" in bootstrap
     assert "'denyusers freezeprotect'" in bootstrap
     assert "'allowusers freezeprotect-commission@192.168.114.0/24'" in bootstrap
+
+
+def test_bootstrap_activates_ssh_policy_before_granting_remote_access() -> None:
+    """Catch a bootstrap failure that leaves a newly installed key unrestricted."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    policy_install = bootstrap.index(
+        'install -o root -g root -m 0644 "$sshd_policy_source"'
+    )
+    ssh_reload = bootstrap.index("systemctl reload ssh.service")
+    sudoers_install = bootstrap.index(
+        'install -o root -g root -m 0440 "$sudoers_source"'
+    )
+    key_install = bootstrap.index(
+        'install -o root -g "$commission_primary_group" -m 0640 "$public_key_file"'
+    )
+
+    assert policy_install < ssh_reload < sudoers_install < key_install
+
+
+def test_node_red_editor_requires_trusted_local_console() -> None:
+    """Catch documentation that asks the command-only account to open a tunnel."""
+    guide = (ROOT / "deployment/COMMISSIONING.md").read_text(encoding="utf-8")
+
+    assert "through that SSH tunnel" not in guide
+    assert "trusted local Pi console" in guide
 
 
 def test_helper_execution_path_excludes_unvalidated_usr_local_bin() -> None:

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+# This is the forced SSH command for freezeprotect-commission. Do not parse
+# SSH_ORIGINAL_COMMAND: the documented forms are intentionally exact so a
+# remote login never receives a shell that can reach local-only Node-RED.
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  "sudo -n /usr/local/sbin/freeze-protect-commission inventory")
+    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission inventory
+    ;;
+  "sudo -n /usr/local/sbin/freeze-protect-commission usb")
+    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission usb
+    ;;
+  "sudo -n /usr/local/sbin/freeze-protect-commission status")
+    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission status
+    ;;
+  "sudo -n /usr/local/sbin/freeze-protect-commission drain")
+    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission drain
+    ;;
+  *)
+    echo "not an allowed commissioning command" >&2
+    exit 64
+    ;;
+esac

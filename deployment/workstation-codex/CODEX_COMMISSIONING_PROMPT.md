@@ -23,7 +23,8 @@ sudo -n /usr/local/sbin/freeze-protect-commission usb
 sudo -n /usr/local/sbin/freeze-protect-commission status
 sudo -n /usr/local/sbin/freeze-protect-commission drain
 
-Do not run arbitrary sudo commands.
+The SSH account is command-only: an interactive shell, a local Node-RED call,
+port forwarding, extra arguments, and arbitrary sudo commands are rejected.
 Deployment, service restarts, legacy-flow export/disable, and deployed-flow
 preflight are trusted-local-console tasks outside this allowlist. Require the
 mandatory cutover and startup output/high gates in WORKSTATION_CODEX_COMMISSIONING.md

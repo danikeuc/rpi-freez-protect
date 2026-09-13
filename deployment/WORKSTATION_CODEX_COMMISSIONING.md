@@ -23,9 +23,15 @@ It has home `/var/lib/rpi-freeze-protect` and an `nologin` shell. Bootstrap
 refuses to convert or migrate it: that account owns service state and receives
 the Hub's environment tokens.
 
+Before bootstrap, ensure the DietPi `nodered` account and paired-GPIO service
+prerequisites from [`COMMISSIONING.md` step 2](COMMISSIONING.md#2-bind-node-red-to-loopback-then-add-the-bridge)
+exist. Bootstrap fails closed if it cannot validate `nodered`, because the
+commissioning identity must be proven distinct from the actuator identity.
+
 Bootstrap creates a separate `freezeprotect-commission` login with home
-`/home/freezeprotect-commission`, shell `/bin/bash`, and only its primary group
-and no device-access groups. It never receives `gpio`, `dialout`, service-data
+`/home/freezeprotect-commission`, shell `/bin/bash`, and only its own dedicated
+primary group. Its numeric UID and GID must differ from both `freezeprotect`
+and `nodered`; it never receives `gpio`, `dialout`, `nodered`, service-data
 ownership, service environment files, or a service unit. If either existing
 account does not match that profile, bootstrap stops before changing accounts,
 keys, or groups. Remediate only at the trusted local console; do not delete
@@ -43,9 +49,12 @@ Updates to either installed artifact are trusted-console deployment work only.
 Bootstrap makes the commissioning home root-owned `0750`, `.ssh` root-owned
 `0710`, and `authorized_keys` root-owned `0640`, using the commissioning
 account's primary group. It installs a key-only `sshd` policy for this user,
-disables password/interactive authentication and forwarding, validates the
-effective policy, then reloads the active SSH service. This prevents the account
-from changing its key or replacing `.ssh`.
+disables password/interactive authentication, forwarding and TTYs, and forces
+every SSH request through a root-owned dispatcher. The dispatcher allows only
+the four documented helper commands; it never opens a remote shell or permits
+access to local-only Node-RED. Bootstrap validates the effective policy, then
+reloads the active SSH service. This prevents the account from changing its key
+or replacing `.ssh`.
 
 Keep firmware/build work separate: the workstation clone is writable. The
 commissioning account must never read `include/secrets.h` or run a Pi-side

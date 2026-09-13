@@ -79,7 +79,10 @@ sudoedit /mnt/dietpi_userdata/node-red/settings.js
 uiHost: "127.0.0.1",
 ```
 
-This binds every Node-RED HTTP route, including its editor, to localhost. If remote editor access is needed during commissioning, use an SSH local port forward rather than reopening port 1880 on the LAN.
+This binds every Node-RED HTTP route, including its editor, to localhost. The
+restricted commissioning SSH identity has no shell or port-forwarding path; use
+the trusted local Pi console for any required Node-RED editor access rather
+than reopening port 1880 on the LAN.
 
 Start the atomic pair daemon before restarting Node-RED. It is the only process that accesses `/dev/gpiomem`: every state change is one masked GPSET0/GPCLR0 register write for BCM 26+20, followed by a paired level readback. The Node-RED process is only its bounded Unix-socket client.
 
@@ -103,7 +106,7 @@ sudo pinctrl get 20
 
 The socket line must begin with `127.0.0.1:1880` or `[::1]:1880`, never `0.0.0.0:1880` or `[::]:1880`. From another LAN device, `nc -vz <Pi-LAN-IP> 1880` must fail. The client command must return JSON with `"ok": true`, and the two pins must be outputs high after restart. If the daemon or client cannot run as `nodered`, do not import the bridge; fix the Pi GPIO permissions first.
 
-In the Node-RED editor (locally or through that SSH tunnel), first export the existing relay flow to a file outside the active flow set. Then disable the legacy relay flow tab that contains the `rpi-gpio out` GPIO 26/20 nodes and the old `/trigger/...` routes. Import `deployment/node-red/freeze-protect-paired-relay.json`; inspect that it has one POST route and the single fixed-path `paired_gpio_client.py` executor, but no individual GPIO output node. Deploy the disabled legacy tab and the new tab together. The bridge returns `503` until its startup DRAIN write and both GPIO readbacks are verified; do not test it during that brief state.
+In the Node-RED editor at the trusted local Pi console, first export the existing relay flow to a file outside the active flow set. Then disable the legacy relay flow tab that contains the `rpi-gpio out` GPIO 26/20 nodes and the old `/trigger/...` routes. Import `deployment/node-red/freeze-protect-paired-relay.json`; inspect that it has one POST route and the single fixed-path `paired_gpio_client.py` executor, but no individual GPIO output node. Deploy the disabled legacy tab and the new tab together. The bridge returns `503` until its startup DRAIN write and both GPIO readbacks are verified; do not test it during that brief state.
 
 With the 24 V valve supply still disconnected, run this mandatory cutover preflight against the deployed active flow file:
 
