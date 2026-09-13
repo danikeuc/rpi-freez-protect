@@ -335,6 +335,8 @@ def run_commission_account_validation(
     service_gid: int,
     nodered_uid: int,
     nodered_gid: int,
+    gpio_gid: int,
+    dialout_gid: int,
     commission_uid: int,
     commission_gid: int,
     commission_primary_group: str,
@@ -358,6 +360,8 @@ id() {{
     "-g freezeprotect") printf '%s\\n' {service_gid} ;;
     "-u nodered") printf '%s\\n' {nodered_uid} ;;
     "-g nodered") printf '%s\\n' {nodered_gid} ;;
+    "-g gpio") printf '%s\\n' {gpio_gid} ;;
+    "-g dialout") printf '%s\\n' {dialout_gid} ;;
     "-u freezeprotect-commission") printf '%s\\n' {commission_uid} ;;
     "-g freezeprotect-commission") printf '%s\\n' {commission_gid} ;;
     "-gn freezeprotect-commission") printf '%s\\n' {shlex.quote(commission_primary_group)} ;;
@@ -367,6 +371,9 @@ id() {{
 }}
 getent() {{
   case "$*" in
+    "group gpio") printf '%s\\n' 'gpio:x:{gpio_gid}:' ;;
+    "group dialout") printf '%s\\n' 'dialout:x:{dialout_gid}:' ;;
+    "group nodered") printf '%s\\n' 'nodered:x:{nodered_gid}:' ;;
     "passwd freezeprotect-commission")
       printf '%s\\n' 'freezeprotect-commission:x:{commission_uid}:{commission_gid}::/home/freezeprotect-commission:/bin/bash'
       ;;
@@ -397,6 +404,8 @@ def test_bootstrap_rejects_commissioning_uid_shared_with_service() -> None:
         service_gid=900,
         nodered_uid=901,
         nodered_gid=901,
+        gpio_gid=902,
+        dialout_gid=903,
         commission_uid=900,
         commission_gid=902,
         commission_primary_group="freezeprotect-commission",
@@ -413,6 +422,8 @@ def test_bootstrap_rejects_commissioning_group_shared_with_nodered() -> None:
         service_gid=900,
         nodered_uid=901,
         nodered_gid=901,
+        gpio_gid=902,
+        dialout_gid=903,
         commission_uid=902,
         commission_gid=901,
         commission_primary_group="nodered",
@@ -420,6 +431,30 @@ def test_bootstrap_rejects_commissioning_group_shared_with_nodered() -> None:
 
     assert result.returncode != 0
     assert "must have a dedicated primary group" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("device_group", "device_gid"),
+    [("gpio", 902), ("dialout", 903)],
+)
+def test_bootstrap_rejects_commissioning_gid_shared_with_device_group(
+    device_group: str, device_gid: int
+) -> None:
+    """Catch a group-name alias that restores direct device access."""
+    result = run_commission_account_validation(
+        service_uid=900,
+        service_gid=900,
+        nodered_uid=901,
+        nodered_gid=901,
+        gpio_gid=902,
+        dialout_gid=903,
+        commission_uid=904,
+        commission_gid=device_gid,
+        commission_primary_group="freezeprotect-commission",
+    )
+
+    assert result.returncode != 0, device_group
+    assert f"must not share its numeric GID with {device_group}" in result.stderr
 
 
 def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None:

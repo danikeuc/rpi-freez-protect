@@ -103,6 +103,21 @@ validate_commission_account() {
     exit 1
   fi
   for prohibited_group in gpio dialout nodered; do
+    if ! prohibited_group_entry=$(getent group "$prohibited_group"); then
+      echo "missing required $prohibited_group group; remediate at the trusted local console" >&2
+      exit 1
+    fi
+    prohibited_group_gid=$(printf '%s\n' "$prohibited_group_entry" | cut -d: -f3)
+    case "$prohibited_group_gid" in
+      ''|*[!0-9]*)
+        echo "invalid $prohibited_group GID; remediate at the trusted local console" >&2
+        exit 1
+        ;;
+    esac
+    if [ "$commission_primary_gid" -eq "$prohibited_group_gid" ]; then
+      echo "freezeprotect-commission must not share its numeric GID with $prohibited_group; remediate at the trusted local console" >&2
+      exit 1
+    fi
     if printf '%s\n' "$commission_actual_groups" | grep -Fx "$prohibited_group" >/dev/null; then
       echo "freezeprotect-commission must not have direct $prohibited_group access; remediate at the trusted local console" >&2
       exit 1
