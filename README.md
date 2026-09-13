@@ -58,6 +58,10 @@ Follow [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) in order. It c
 
 For the CrowPanel, use [firmware/crowpanel/README.md](firmware/crowpanel/README.md) and [deployment/CROWPANEL_COMMISSIONING.md](deployment/CROWPANEL_COMMISSIONING.md). The first display test must be run with the 24 V valve supply disconnected.
 
+## Workstation Codex commissioning
+
+Follow [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) for the workstation-led procedure. It supersedes the proposed runner approach.
+
 ## Security boundary
 
 - The Hub and Node-RED bridge are bound to loopback; do not reverse-proxy their control routes to the internet.

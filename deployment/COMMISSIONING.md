@@ -11,6 +11,18 @@ This procedure replaces the old Node-RED relay control with a constrained actuat
 
 ## 1. Make the Pi service files
 
+For the workstation-led route, first follow the dedicated-login bootstrap and
+account-compatibility gate in
+[`WORKSTATION_CODEX_COMMISSIONING.md`](WORKSTATION_CODEX_COMMISSIONING.md#2-pi-bootstrap).
+Omit the `useradd` line below when that account is already provisioned. The
+legacy non-login account created below is not SSH-compatible; bootstrap will
+stop rather than silently migrate it. Existing installations need an explicit
+trusted-console review/remediation, preserving service data and ownership.
+All privileged deployment steps here are trusted-console work, not additions
+to the remote commissioning sudo allowlist. For workstation commissioning,
+the physical test in step 5 also requires Danijel's explicit current-session
+approval; the instructions below are not that approval.
+
 On DietPi, clone the repository into `/opt/rpi-freez-protect`, create the dedicated service account and virtual environment, then install the supplied unit:
 
 ```bash

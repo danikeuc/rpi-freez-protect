@@ -1,0 +1,76 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: freeze-protect-commission {inventory|usb|status|drain}" >&2
+  exit 64
+fi
+
+exec /usr/bin/env -i PATH="$PATH" /bin/sh -s -- "$1" <<'CLEAN_ENV'
+set -eu
+
+case "${1:-}" in
+  inventory)
+    uname -a
+    id freezeprotect
+    git -C /opt/rpi-freez-protect rev-parse HEAD
+    ;;
+  usb)
+    find /dev/serial/by-id -maxdepth 1 -type l -printf '%f -> %l\n'
+    ;;
+  status)
+    systemctl is-active node-red.service
+    systemctl is-active freeze-protect-pair-gpio.service
+    systemctl is-active freeze-protect.service
+    pinctrl get 26
+    pinctrl get 20
+    ;;
+  drain)
+    receipt=$(/usr/bin/python3 -I /usr/local/lib/freeze-protect-commission/paired_gpio_client.py DRAIN)
+    # The Node-RED client deliberately exits zero for structured failures.
+    # Require one complete, successful DRAIN receipt, not process success alone.
+    if ! printf '%s\n' "$receipt" | /usr/bin/python3 -I -c '
+import json
+import sys
+try:
+    receipt = json.load(sys.stdin)
+    valid = (
+        isinstance(receipt, dict)
+        and receipt.get("ok") is True
+        and receipt.get("command") == "DRAIN"
+        and receipt.get("gpio") == {"26": 1, "20": 1}
+    )
+except (ValueError, TypeError):
+    valid = False
+sys.exit(0 if valid else 1)
+'; then
+      echo "daemon did not confirm a successful DRAIN receipt; stop commissioning" >&2
+      exit 1
+    fi
+    printf '%s\n' "$receipt"
+
+    gpio_26=$(pinctrl get 26)
+    gpio_20=$(pinctrl get 20)
+    printf '%s\n' "$gpio_26"
+    printf '%s\n' "$gpio_20"
+
+    if ! printf '%s\n' "$gpio_26" | grep -Eq '(^|[[:space:]])op([[:space:]]|$)' ||
+       ! printf '%s\n' "$gpio_26" | grep -Eq '(^|[[:space:]])hi([[:space:]]|$)'; then
+      echo "GPIO 26 is not output/high after DRAIN; stop commissioning" >&2
+      exit 1
+    fi
+    if ! printf '%s\n' "$gpio_20" | grep -Eq '(^|[[:space:]])op([[:space:]]|$)' ||
+       ! printf '%s\n' "$gpio_20" | grep -Eq '(^|[[:space:]])hi([[:space:]]|$)'; then
+      echo "GPIO 20 is not output/high after DRAIN; stop commissioning" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "usage: freeze-protect-commission {inventory|usb|status|drain}" >&2
+    exit 64
+    ;;
+esac
+CLEAN_ENV
