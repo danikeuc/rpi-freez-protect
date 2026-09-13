@@ -1,72 +1,56 @@
+from datetime import datetime
+
 from freeze_protect.domain.models import (
+    ActuatorCommand,
     ControllerState,
     Decision,
     ForecastSnapshot,
-    RelayCommand,
     SafetySettings,
     SensorHealth,
     TemperatureReading,
 )
 
 
-def evaluate(
+def evaluate_automatic(
     *,
-    previous_state: ControllerState,
     reading: TemperatureReading,
     forecast: ForecastSnapshot | None,
     settings: SafetySettings,
+    now: datetime,
 ) -> Decision:
-    """Apply the deterministic safety policy without side effects."""
-    if previous_state is ControllerState.MANUAL_LOCK:
+    """Evaluate the automatic path; manual timed showers are handled separately."""
+    if not settings.sensor_commissioned:
         return Decision(
-            state=ControllerState.MANUAL_LOCK,
-            command=RelayCommand.STOP,
-            reason="manual_lock",
+            state=ControllerState.FROST_PROTECTION,
+            command=ActuatorCommand.DRAIN,
+            reason="sensor_pending",
         )
-
-    if previous_state in {ControllerState.STARTING, ControllerState.FAULT}:
-        return Decision(
-            state=ControllerState.FAULT,
-            command=RelayCommand.STOP,
-            reason="fault_latched",
-        )
-
     if reading.health is not SensorHealth.HEALTHY or reading.value_c is None:
         return Decision(
-            state=ControllerState.FAULT,
-            command=RelayCommand.STOP,
+            state=ControllerState.FROST_PROTECTION,
+            command=ActuatorCommand.DRAIN,
             reason="sensor_unhealthy",
         )
-
     if reading.value_c <= settings.protection_threshold_c:
         return Decision(
-            state=ControllerState.PROTECTING,
-            command=RelayCommand.CLOSE_OR_PROTECT,
-            reason="below_protection_threshold",
+            state=ControllerState.FROST_PROTECTION,
+            command=ActuatorCommand.DRAIN,
+            reason="pipe_below_protection_threshold",
         )
-
-    if previous_state in {
-        ControllerState.PROTECTING,
-        ControllerState.RELEASE_PENDING,
-    }:
-        is_release_eligible = forecast is not None and forecast.has_minima_above(
-            settings.release_threshold_c,
-            settings.release_days,
-        )
-        if not is_release_eligible:
-            return Decision(
-                state=ControllerState.RELEASE_PENDING,
-                command=RelayCommand.STOP,
-                reason="forecast_not_eligible",
-            )
+    if reading.value_c <= settings.release_threshold_c:
         return Decision(
-            state=ControllerState.MONITORING,
-            command=RelayCommand.OPEN,
-            reason="release_eligible",
+            state=ControllerState.FROST_PROTECTION,
+            command=ActuatorCommand.DRAIN,
+            reason="pipe_not_above_release_threshold",
         )
-
+    if forecast is None or not forecast.is_eligible(settings, now):
+        return Decision(
+            state=ControllerState.FROST_PROTECTION,
+            command=ActuatorCommand.DRAIN,
+            reason="forecast_not_eligible",
+        )
     return Decision(
-        state=ControllerState.MONITORING,
-        command=RelayCommand.STOP,
-        reason="monitoring",
+        state=ControllerState.NORMAL,
+        command=ActuatorCommand.SUPPLY,
+        reason="automatic_normal",
     )

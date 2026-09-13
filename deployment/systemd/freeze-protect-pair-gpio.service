@@ -1,0 +1,23 @@
+[Unit]
+Description=Freeze Protect atomic paired GPIO daemon
+After=local-fs.target
+Before=node-red.service freeze-protect.service
+
+[Service]
+Type=simple
+User=nodered
+Group=nodered
+SupplementaryGroups=gpio
+RuntimeDirectory=freeze-protect
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/python3 /opt/rpi-freez-protect/deployment/node-red/paired_gpio_daemon.py
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/freeze-protect
+
+[Install]
+WantedBy=multi-user.target
