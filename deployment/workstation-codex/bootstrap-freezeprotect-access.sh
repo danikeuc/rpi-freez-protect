@@ -40,6 +40,50 @@ require_root_owned_file() {
   fi
 }
 
+terminate_commission_processes() {
+  commission_uid=$1
+  if [ ! -x /usr/bin/pgrep ] || [ ! -x /usr/bin/pkill ] || \
+     [ ! -x /usr/bin/sleep ]; then
+    echo "missing required process-control utility; remediate at the trusted local console" >&2
+    exit 1
+  fi
+
+  commission_processes_present() {
+    if /usr/bin/pgrep -u "$commission_uid" >/dev/null; then
+      return 0
+    fi
+    status=$?
+    if [ "$status" -eq 1 ]; then
+      return 1
+    fi
+    echo "could not inspect commissioning processes; remediate at the trusted local console" >&2
+    exit 1
+  }
+
+  if ! commission_processes_present; then
+    return
+  fi
+  if ! /usr/bin/pkill -TERM -u "$commission_uid"; then
+    echo "could not terminate existing commissioning processes" >&2
+    exit 1
+  fi
+  for _ in 1 2 3 4 5; do
+    if ! commission_processes_present; then
+      return
+    fi
+    /usr/bin/sleep 1
+  done
+  if ! /usr/bin/pkill -KILL -u "$commission_uid"; then
+    echo "could not force-terminate existing commissioning processes" >&2
+    exit 1
+  fi
+  /usr/bin/sleep 1
+  if commission_processes_present; then
+    echo "commissioning processes remain after termination; refusing remote grants" >&2
+    exit 1
+  fi
+}
+
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 /path/to/public-key" >&2
   exit 64
@@ -275,6 +319,7 @@ else
   echo "SSH service is not active; validate and reload it at the trusted local console" >&2
   exit 1
 fi
+terminate_commission_processes "$(id -u "$commission_account")"
 
 # The SSH policy is active before any new key or sudo grant is provisioned.
 install -o root -g root -m 0440 "$sudoers_source" \

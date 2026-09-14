@@ -565,6 +565,30 @@ def test_bootstrap_activates_ssh_policy_before_granting_remote_access() -> None:
     assert policy_install < ssh_reload < sudoers_install < key_install
 
 
+def test_bootstrap_drains_preexisting_commissioning_processes_before_grants() -> None:
+    """Catch SSH children that retain the pre-policy shell after an sshd reload."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "terminate_commission_processes()" in bootstrap
+    assert '/usr/bin/pgrep -u "$commission_uid"' in bootstrap
+    assert '/usr/bin/pkill -TERM -u "$commission_uid"' in bootstrap
+    assert '/usr/bin/pkill -KILL -u "$commission_uid"' in bootstrap
+
+    ssh_reload = bootstrap.index("systemctl reload ssh.service")
+    session_drain = bootstrap.index(
+        'terminate_commission_processes "$(id -u "$commission_account")"'
+    )
+    sudoers_install = bootstrap.index(
+        'install -o root -g root -m 0440 "$sudoers_source"'
+    )
+    key_install = bootstrap.index(
+        'install -o root -g "$commission_primary_group" -m 0640 "$key_snapshot"'
+    )
+    assert ssh_reload < session_drain < sudoers_install < key_install
+
+
 def test_node_red_editor_requires_trusted_local_console() -> None:
     """Catch documentation that asks the command-only account to open a tunnel."""
     guide = (ROOT / "deployment/COMMISSIONING.md").read_text(encoding="utf-8")
@@ -596,11 +620,16 @@ def test_guide_provisions_secrets_and_captures_exactly_one_serial_device() -> No
     )
 
     assert "freezeprotect-commission@<Pi-LAN-IP>" in guide
+    assert "if [ ! -e include/secrets.h ]; then" in guide
     assert "cp include/secrets.example.h include/secrets.h" in guide
     assert "serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)" in guide
     pi_usb = guide.split("### USB cable on the Pi", 1)[1]
     assert "trusted-console-only" in pi_usb
     assert "freezeprotect-commission@<Pi-LAN-IP>" not in pi_usb
+    assert (
+        "if [ ! -e /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h ]; then"
+        in pi_usb
+    )
     assert "install -o root -g root -m 0600" in pi_usb
     assert "umask 077" in pi_usb
     assert "rm -rf .pio" in pi_usb

@@ -152,7 +152,9 @@ From `firmware/crowpanel`, discover and capture exactly one serial-by-id device.
 `serial_device` below is the only permitted upload/monitor path.
 
 ```bash
-cp include/secrets.example.h include/secrets.h
+if [ ! -e include/secrets.h ]; then
+  cp include/secrets.example.h include/secrets.h
+fi
 serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)
 serial_count=$(printf '%s\n' "$serial_device" | sed '/^$/d' | wc -l)
 [ "$serial_count" -eq 1 ] || { echo "expected exactly one serial device" >&2; exit 1; }
@@ -175,9 +177,11 @@ supply still disconnected. The root-owned secret stays local to that console:
 sudo apt install -y python3-venv
 sudo python3 -m venv /opt/freezeprotect-local-flash-tools
 sudo /opt/freezeprotect-local-flash-tools/bin/pip install --upgrade pip platformio
-sudo install -o root -g root -m 0600 \
-  /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.example.h \
-  /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
+if [ ! -e /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h ]; then
+  sudo install -o root -g root -m 0600 \
+    /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.example.h \
+    /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
+fi
 sudoedit /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
 sudo /bin/sh -c '
 set -eu
