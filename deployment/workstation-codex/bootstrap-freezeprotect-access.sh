@@ -8,6 +8,14 @@ service_account=freezeprotect
 commission_account=freezeprotect-commission
 nodered_account=nodered
 commission_home=/home/freezeprotect-commission
+commission_linger_dir=/var/lib/systemd/linger
+commission_runtime_dir=/run/user
+commission_crontab=/usr/bin/crontab
+commission_atq=/usr/bin/atq
+commission_atrm=/usr/bin/atrm
+commission_awk=/usr/bin/awk
+key_snapshot=
+commission_grant_pending=false
 
 require_root_protected() {
   path=$1
@@ -39,6 +47,29 @@ require_root_owned_file() {
     exit 1
   fi
 }
+
+cleanup_key_snapshot() {
+  status=$1
+  trap - 0 HUP INT TERM
+  if [ "$commission_grant_pending" = true ]; then
+    /usr/bin/rm -f /etc/sudoers.d/freeze-protect-commission || :
+    /usr/bin/rm -f "$commission_home/.ssh/authorized_keys" || :
+  fi
+  if [ -n "$key_snapshot" ] && [ -x /usr/bin/rm ]; then
+    /usr/bin/rm -f "$key_snapshot" || :
+  fi
+  exit "$status"
+}
+
+revoke_legacy_commission_grants() {
+  /usr/bin/rm -f /etc/sudoers.d/freeze-protect-commission
+  /usr/bin/rm -f "$commission_home/.ssh/authorized_keys"
+}
+
+trap 'cleanup_key_snapshot $?' 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 terminate_commission_processes() {
   commission_uid=$1
@@ -85,18 +116,52 @@ terminate_commission_processes() {
   fi
 }
 
-clear_commission_deferred_jobs() {
+reload_active_ssh_service() {
+  policy_name=$1
+  if systemctl is-active --quiet ssh.service; then
+    systemctl reload ssh.service
+  elif systemctl is-active --quiet sshd.service; then
+    systemctl reload sshd.service
+  else
+    echo "SSH service is not active; validate and reload the $policy_name policy at the trusted local console" >&2
+    exit 1
+  fi
+}
+
+verify_commission_user_service_state_absent() {
   commission_account=$1
-  if [ ! -x /usr/bin/loginctl ] || [ ! -x /usr/bin/find ]; then
-    echo "missing required user-session utility; remediate at the trusted local console" >&2
+  commission_uid=$2
+  if [ ! -x /usr/bin/find ]; then
+    echo "missing required user-service inspection utility; remediate at the trusted local console" >&2
     exit 1
   fi
-  if ! /usr/bin/loginctl disable-linger "$commission_account"; then
-    echo "could not disable commissioning-user lingering" >&2
+  if [ -e "$commission_linger_dir" ]; then
+    require_root_protected "$commission_linger_dir"
+  fi
+  if [ -L "$commission_linger_dir/$commission_account" ] || \
+     [ -e "$commission_linger_dir/$commission_account" ]; then
+    echo "commissioning-user lingering remains enabled; refusing remote grants" >&2
     exit 1
   fi
-  for deferred_state_dir in "$commission_home/.config/systemd/user" \
-    "$commission_home/.local/share/systemd/user"; do
+  for deferred_state_dir in \
+    "$commission_home/.config/systemd/user.control" \
+    "$commission_home/.config/systemd/user" \
+    "$commission_home/.config/systemd/user-generators" \
+    "$commission_home/.config/systemd/user-environment-generators" \
+    "$commission_home/.config/environment.d" \
+    "$commission_home/.local/share/systemd/user" \
+    "$commission_home/.local/share/systemd/user-generators" \
+    "$commission_home/.local/share/systemd/user-environment-generators" \
+    "$commission_home/.local/share/systemd/environment.d" \
+    "$commission_runtime_dir/$commission_uid/systemd/user.control" \
+    "$commission_runtime_dir/$commission_uid/systemd/user" \
+    "$commission_runtime_dir/$commission_uid/systemd/transient" \
+    "$commission_runtime_dir/$commission_uid/systemd/generator" \
+    "$commission_runtime_dir/$commission_uid/systemd/generator.early" \
+    "$commission_runtime_dir/$commission_uid/systemd/generator.late" \
+    "$commission_runtime_dir/$commission_uid/systemd/user-generators" \
+    "$commission_runtime_dir/$commission_uid/systemd/user-environment-generators" \
+    "$commission_runtime_dir/$commission_uid/systemd/environment.d"; do
     if [ -L "$deferred_state_dir" ]; then
       echo "refusing symlinked commissioning user-service state: $deferred_state_dir" >&2
       exit 1
@@ -116,82 +181,93 @@ clear_commission_deferred_jobs() {
       fi
     fi
   done
+}
 
-  if [ -x /usr/bin/crontab ]; then
-    if /usr/bin/crontab -u "$commission_account" -l >/dev/null 2>&1; then
-      if ! /usr/bin/crontab -u "$commission_account" -r; then
-        echo "could not remove the commissioning crontab" >&2
-        exit 1
-      fi
-    else
-      status=$?
-      if [ "$status" -ne 1 ]; then
-        echo "could not inspect the commissioning crontab" >&2
-        exit 1
-      fi
+require_deferred_job_tools() {
+  for deferred_job_tool in "$commission_crontab" "$commission_atq" \
+    "$commission_atrm" "$commission_awk"; do
+    if [ ! -x "$deferred_job_tool" ]; then
+      echo "missing required deferred-job utility: $deferred_job_tool" >&2
+      exit 1
+    fi
+  done
+}
+
+commission_crontab_present() {
+  commission_account=$1
+  if crontab_output=$(LC_ALL=C "$commission_crontab" -u "$commission_account" -l 2>&1); then
+    return 0
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 1 ] && \
+     [ "$crontab_output" = "no crontab for $commission_account" ]; then
+    return 1
+  fi
+  echo "could not inspect the commissioning crontab" >&2
+  exit 1
+}
+
+clear_commission_deferred_jobs() {
+  commission_account=$1
+  commission_uid=$2
+  if [ ! -x /usr/bin/loginctl ]; then
+    echo "missing required user-session utility; remediate at the trusted local console" >&2
+    exit 1
+  fi
+  if ! /usr/bin/loginctl disable-linger "$commission_account"; then
+    echo "could not disable commissioning-user lingering" >&2
+    exit 1
+  fi
+  verify_commission_user_service_state_absent "$commission_account" "$commission_uid"
+  require_deferred_job_tools
+
+  if commission_crontab_present "$commission_account"; then
+    if ! "$commission_crontab" -u "$commission_account" -r; then
+      echo "could not remove the commissioning crontab" >&2
+      exit 1
     fi
   fi
 
-  if [ -x /usr/bin/atq ] || [ -x /usr/bin/atrm ]; then
-    if [ ! -x /usr/bin/atq ] || [ ! -x /usr/bin/atrm ] || \
-       [ ! -x /usr/bin/awk ]; then
-      echo "incomplete at-job tooling; remediate at the trusted local console" >&2
+  if ! at_queue=$("$commission_atq"); then
+    echo "could not inspect queued at jobs" >&2
+    exit 1
+  fi
+  at_jobs=$(printf '%s\n' "$at_queue" | "$commission_awk" \
+    -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { print $1 }')
+  for job_id in $at_jobs; do
+    if ! "$commission_atrm" "$job_id"; then
+      echo "could not remove queued commissioning at job: $job_id" >&2
       exit 1
     fi
-    if ! at_queue=$(/usr/bin/atq); then
-      echo "could not inspect queued at jobs" >&2
-      exit 1
-    fi
-    at_jobs=$(printf '%s\n' "$at_queue" | /usr/bin/awk \
-      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { print $1 }')
-    for job_id in $at_jobs; do
-      if ! /usr/bin/atrm "$job_id"; then
-        echo "could not remove queued commissioning at job: $job_id" >&2
-        exit 1
-      fi
-    done
-    if ! at_queue=$(/usr/bin/atq); then
-      echo "could not verify queued at jobs" >&2
-      exit 1
-    fi
-    if printf '%s\n' "$at_queue" | /usr/bin/awk \
-      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
-      echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
-      exit 1
-    fi
+  done
+  if ! at_queue=$("$commission_atq"); then
+    echo "could not verify queued at jobs" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$at_queue" | "$commission_awk" \
+    -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
+    echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
+    exit 1
   fi
 }
 
 verify_commission_deferred_jobs_absent() {
   commission_account=$1
-  if [ -x /usr/bin/crontab ]; then
-    if /usr/bin/crontab -u "$commission_account" -l >/dev/null 2>&1; then
-      echo "commissioning crontab remains after cleanup; refusing remote grants" >&2
-      exit 1
-    else
-      status=$?
-      if [ "$status" -ne 1 ]; then
-        echo "could not verify the commissioning crontab" >&2
-        exit 1
-      fi
-    fi
+  require_deferred_job_tools
+  if commission_crontab_present "$commission_account"; then
+    echo "commissioning crontab remains after cleanup; refusing remote grants" >&2
+    exit 1
   fi
 
-  if [ -x /usr/bin/atq ] || [ -x /usr/bin/atrm ]; then
-    if [ ! -x /usr/bin/atq ] || [ ! -x /usr/bin/atrm ] || \
-       [ ! -x /usr/bin/awk ]; then
-      echo "incomplete at-job tooling; remediate at the trusted local console" >&2
-      exit 1
-    fi
-    if ! at_queue=$(/usr/bin/atq); then
-      echo "could not verify queued at jobs" >&2
-      exit 1
-    fi
-    if printf '%s\n' "$at_queue" | /usr/bin/awk \
-      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
-      echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
-      exit 1
-    fi
+  if ! at_queue=$("$commission_atq"); then
+    echo "could not verify queued at jobs" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$at_queue" | "$commission_awk" \
+    -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
+    echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
+    exit 1
   fi
 }
 
@@ -206,38 +282,16 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 public_key_file=$1
-case "$public_key_file" in
-  /*) ;;
-  *)
-    echo "public-key file must use an absolute, root-controlled path" >&2
-    exit 66
-    ;;
-esac
-
-require_root_protected_ancestors "$(dirname -- "$public_key_file")"
-require_root_owned_file "$public_key_file"
-key_snapshot=$(mktemp /root/freezeprotect-commission-key.XXXXXX)
-trap 'rm -f "$key_snapshot"' EXIT HUP INT TERM
-install -o root -g root -m 0600 "$public_key_file" "$key_snapshot"
-
-nonempty_lines=$(awk 'NF { count++ } END { print count + 0 }' "$key_snapshot")
-if [ "$nonempty_lines" -ne 1 ]; then
-  echo "public-key file must contain exactly one nonempty line" >&2
-  exit 65
-fi
-
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 helper_source=$script_dir/freeze-protect-commission
 sudoers_source=$script_dir/freeze-protect-commission.sudoers
 sshd_policy_source=$script_dir/60-freezeprotect-commission.conf
+quarantine_ssh_policy_source=$script_dir/60-freezeprotect-commission-quarantine.conf
+legacy_ssh_policy_target=/etc/ssh/sshd_config.d/60-freezeprotect-commission.conf
+quarantine_ssh_policy_target=/etc/ssh/sshd_config.d/60-freezeprotect-commission-quarantine.conf
+final_ssh_policy_target=/etc/ssh/sshd_config.d/70-freezeprotect-commission.conf
 ssh_dispatch_source=$script_dir/freeze-protect-commission-ssh-dispatch
 client_source=$script_dir/../node-red/paired_gpio_client.py
-
-for source_asset in "$helper_source" "$sudoers_source" "$sshd_policy_source" \
-  "$ssh_dispatch_source" "$client_source"; do
-  require_root_protected_ancestors "$(dirname -- "$source_asset")"
-  require_root_owned_file "$source_asset"
-done
 
 validate_service_account() {
   if ! id "$service_account" >/dev/null 2>&1; then
@@ -319,20 +373,98 @@ validate_commission_account() {
   if ! { [ "$commission_uid" -ne 0 ] &&
          [ "$commission_primary_gid" -ne 0 ] &&
          [ "$commission_home_actual" = "$commission_home" ] &&
-         [ "$commission_shell" = /bin/bash ] &&
+         [ "$commission_shell" = /bin/sh ] &&
          [ "$commission_actual_groups" = "$commission_expected_groups" ]; }; then
     echo "incompatible freezeprotect-commission account; remediate at the trusted local console; no automatic migration" >&2
     exit 1
   fi
 }
 
-# Never migrate either identity: service data and its environment stay isolated.
+# Validate the fixed legacy grant paths before any account identity.  This is
+# deliberately limited to root-controlled paths, so a malformed account entry
+# cannot redirect cleanup; after this point a failed identity check cannot
+# leave the previous key or sudo grant usable.
+require_root_protected /home
+if [ -e "$commission_home" ]; then
+  require_root_protected "$commission_home"
+fi
+if [ -e "$commission_home/.ssh" ]; then
+  require_root_protected "$commission_home/.ssh"
+fi
+for path in "$commission_home/.ssh" \
+  "$commission_home/.ssh/authorized_keys"; do
+  if [ -L "$path" ]; then
+    echo "refusing symlink legacy commissioning grant path: $path" >&2
+    exit 1
+  fi
+done
+require_root_protected /etc
+require_root_protected /etc/sudoers.d
+if [ -L /etc/sudoers.d/freeze-protect-commission ]; then
+  echo "refusing symlink legacy commissioning sudoers grant" >&2
+  exit 1
+fi
+revoke_legacy_commission_grants
+
+# Validate any existing commissioning identity before using its UID in a
+# signal.  This rejects UID 0 and service-account collisions before they can
+# affect the administrator recovery session or the actuator service.
 validate_service_account
 validate_nodered_account
+existing_commission_account=false
 if id "$commission_account" >/dev/null 2>&1; then
   validate_commission_account
+  require_root_protected /home
+  require_root_protected "$commission_home"
+  if [ -e "$commission_home/.ssh" ]; then
+    require_root_protected "$commission_home/.ssh"
+  fi
+  for path in "$commission_home/.ssh" \
+    "$commission_home/.ssh/authorized_keys"; do
+    if [ -L "$path" ]; then
+      echo "refusing symlink installation target: $path" >&2
+      exit 1
+    fi
+  done
+  existing_commission_account=true
+  terminate_commission_processes "$(id -u "$commission_account")"
 fi
 
+# Validate the root-controlled quarantine asset before blocking previous
+# commissioning access.  A failure before the quarantine is active leaves the
+# existing SSH service untouched; a failure afterwards leaves the quarantine
+# file active and the administrator's root session available for recovery.
+require_root_protected_ancestors "$(dirname -- "$quarantine_ssh_policy_source")"
+require_root_owned_file "$quarantine_ssh_policy_source"
+require_root_protected /etc
+require_root_protected /etc/ssh
+if [ -e /etc/ssh/sshd_config.d ]; then
+  require_root_protected /etc/ssh/sshd_config.d
+fi
+for ssh_policy_target in "$legacy_ssh_policy_target" \
+  "$quarantine_ssh_policy_target" "$final_ssh_policy_target"; do
+  if [ -L "$ssh_policy_target" ]; then
+    echo "refusing symlink installation target: $ssh_policy_target" >&2
+    exit 1
+  fi
+done
+
+# Deny new SSH logins for both service-related identities while deployment
+# cleanup and final-policy validation run.
+install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
+require_root_protected /etc/ssh/sshd_config.d
+install -o root -g root -m 0644 "$quarantine_ssh_policy_source" \
+  "$quarantine_ssh_policy_target"
+sshd -t -f /etc/ssh/sshd_config
+quarantine_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
+if ! printf '%s\n' "$quarantine_ssh_policy" | grep -Fx \
+  'denyusers freezeprotect freezeprotect-commission' >/dev/null; then
+  echo "commissioning SSH quarantine is ineffective" >&2
+  exit 1
+fi
+reload_active_ssh_service "quarantine"
+
+# Never migrate either identity: service data and its environment stay isolated.
 require_root_protected /
 require_root_protected /home
 require_root_protected /usr
@@ -342,19 +474,11 @@ require_root_protected /usr/local
 require_root_protected /usr/local/bin
 require_root_protected /usr/local/lib
 require_root_protected /usr/local/sbin
-require_root_protected /etc
-require_root_protected /etc/ssh
 require_root_protected /etc/sudoers.d
-if [ -e /etc/ssh/sshd_config.d ]; then
-  require_root_protected /etc/ssh/sshd_config.d
-fi
 if [ -e /usr/local/lib/freeze-protect-commission ]; then
   require_root_protected /usr/local/lib/freeze-protect-commission
 fi
-for path in "$commission_home" "$commission_home/.ssh" \
-  "$commission_home/.ssh/authorized_keys" \
-  /etc/ssh/sshd_config.d/60-freezeprotect-commission.conf \
-  /usr/local/lib/freeze-protect-commission \
+for path in /usr/local/lib/freeze-protect-commission \
   /usr/local/lib/freeze-protect-commission/paired_gpio_client.py \
   /usr/local/lib/freeze-protect-commission/ssh-dispatch \
   /usr/local/sbin/freeze-protect-commission \
@@ -365,8 +489,38 @@ for path in "$commission_home" "$commission_home/.ssh" \
   fi
 done
 
+for source_asset in "$helper_source" "$sudoers_source" "$sshd_policy_source" \
+  "$ssh_dispatch_source" "$client_source"; do
+  require_root_protected_ancestors "$(dirname -- "$source_asset")"
+  require_root_owned_file "$source_asset"
+done
+
+case "$public_key_file" in
+  /*) ;;
+  *)
+    echo "public-key file must use an absolute, root-controlled path" >&2
+    exit 66
+    ;;
+esac
+require_root_protected_ancestors "$(dirname -- "$public_key_file")"
+require_root_owned_file "$public_key_file"
+key_snapshot=$(mktemp /root/freezeprotect-commission-key.XXXXXX)
+install -o root -g root -m 0600 "$public_key_file" "$key_snapshot"
+nonempty_lines=$(awk 'NF { count++ } END { print count + 0 }' "$key_snapshot")
+if [ "$nonempty_lines" -ne 1 ]; then
+  echo "public-key file must contain exactly one nonempty line" >&2
+  exit 65
+fi
+
+for path in "$commission_home" "$commission_home/.ssh" \
+  "$commission_home/.ssh/authorized_keys"; do
+  if [ -L "$path" ]; then
+    echo "refusing symlink installation target: $path" >&2
+    exit 1
+  fi
+done
 if ! id "$commission_account" >/dev/null 2>&1; then
-  useradd --system --create-home --user-group --home-dir "$commission_home" --shell /bin/bash "$commission_account"
+  useradd --system --create-home --user-group --home-dir "$commission_home" --shell /bin/sh "$commission_account"
 fi
 validate_commission_account
 commission_primary_gid=$(id -g "$commission_account")
@@ -376,6 +530,15 @@ chown root:"$commission_primary_group" "$commission_home"
 chmod 0750 "$commission_home"
 require_root_protected "$commission_home"
 install -d -o root -g "$commission_primary_group" -m 0710 "$commission_home/.ssh"
+# The quarantine was reloaded before this point; now that the path is
+# root-controlled, remove any key from an earlier revision before cleanup.
+/usr/bin/rm -f "$commission_home/.ssh/authorized_keys"
+
+clear_commission_deferred_jobs "$commission_account" "$(id -u "$commission_account")"
+terminate_commission_processes "$(id -u "$commission_account")"
+verify_commission_deferred_jobs_absent "$commission_account"
+verify_commission_user_service_state_absent "$commission_account" \
+  "$(id -u "$commission_account")"
 
 # This client has standard-library imports only. Do not execute a writable
 # checkout as root; Python isolated mode also excludes that checkout.
@@ -388,10 +551,12 @@ install -o root -g root -m 0755 "$ssh_dispatch_source" \
 install -o root -g root -m 0755 "$helper_source" \
   /usr/local/sbin/freeze-protect-commission
 
-install -d -o root -g root -m 0755 /etc/ssh/sshd_config.d
-require_root_protected /etc/ssh/sshd_config.d
+# Retire the legacy single-file policy while quarantine remains active, then
+# prepare the final policy in a distinct file.  The old daemon keeps the
+# quarantine configuration until the final reload succeeds.
+/usr/bin/rm -f "$legacy_ssh_policy_target"
 install -o root -g root -m 0644 "$sshd_policy_source" \
-  /etc/ssh/sshd_config.d/60-freezeprotect-commission.conf
+  "$final_ssh_policy_target"
 sshd -t -f /etc/ssh/sshd_config
 effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
 for expected_setting in \
@@ -413,8 +578,42 @@ for expected_setting in \
     exit 1
   fi
 done
-if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx 'allowusers freezeprotect-commission@192.168.114.0/24' >/dev/null; then
-  echo "SSH policy does not restrict logins to the commissioning account on the private LAN" >&2
+service_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect,host=localhost,addr=192.168.114.1)
+if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/dev/null; then
+  echo "freezeprotect service account is not denied SSH access" >&2
+  exit 1
+fi
+
+# Validate the exact post-handover configuration before replacing quarantine.
+# The commissioning key and sudoers file are still absent, so even a reload
+# failure cannot create new remote access for that account.
+mv -f "$quarantine_ssh_policy_target" \
+  "$quarantine_ssh_policy_target.disabled"
+sshd -t -f /etc/ssh/sshd_config
+effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
+for expected_setting in \
+  'passwordauthentication no' \
+  'kbdinteractiveauthentication no' \
+  'authenticationmethods publickey' \
+  'forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch' \
+  'allowtcpforwarding no' \
+  'allowstreamlocalforwarding no' \
+  'allowagentforwarding no' \
+  'x11forwarding no' \
+  'permittunnel no' \
+  'permittty no' \
+  'gatewayports no' \
+  'permituserrc no' \
+  'permituserenvironment no'; do
+  if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx "$expected_setting" >/dev/null; then
+    echo "post-handover commissioning SSH policy is ineffective: expected $expected_setting" >&2
+    exit 1
+  fi
+done
+off_lan_commission_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.115.1)
+if ! printf '%s\n' "$off_lan_commission_ssh_policy" | grep -E \
+  '^denyusers .*freezeprotect-commission([ ,]|$)' >/dev/null; then
+  echo "off-LAN commissioning SSH policy is ineffective" >&2
   exit 1
 fi
 service_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect,host=localhost,addr=192.168.114.1)
@@ -422,20 +621,11 @@ if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/
   echo "freezeprotect service account is not denied SSH access" >&2
   exit 1
 fi
-if systemctl is-active --quiet ssh.service; then
-  systemctl reload ssh.service
-elif systemctl is-active --quiet sshd.service; then
-  systemctl reload sshd.service
-else
-  echo "SSH service is not active; validate and reload it at the trusted local console" >&2
-  exit 1
-fi
-terminate_commission_processes "$(id -u "$commission_account")"
-clear_commission_deferred_jobs "$commission_account"
-terminate_commission_processes "$(id -u "$commission_account")"
-verify_commission_deferred_jobs_absent "$commission_account"
+reload_active_ssh_service "commissioning"
 
-# The SSH policy is active before any new key or sudo grant is provisioned.
+# The restrictive SSH policy is active and all old grants/deferred state have
+# been removed before either new remote grant is installed.
+commission_grant_pending=true
 install -o root -g root -m 0440 "$sudoers_source" \
   /etc/sudoers.d/freeze-protect-commission
 visudo -cf /etc/sudoers.d/freeze-protect-commission
@@ -454,4 +644,5 @@ for path in "$commission_home" "$commission_home/.ssh" \
   fi
 done
 
+commission_grant_pending=false
 echo "freezeprotect commissioning access installed"
