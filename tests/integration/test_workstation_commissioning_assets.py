@@ -589,6 +589,59 @@ def test_bootstrap_drains_preexisting_commissioning_processes_before_grants() ->
     assert ssh_reload < session_drain < sudoers_install < key_install
 
 
+def test_bootstrap_clears_deferred_commissioning_jobs_before_grants() -> None:
+    """Catch cron or at work that can outlive a terminated SSH child."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "clear_commission_deferred_jobs()" in bootstrap
+    assert "verify_commission_deferred_jobs_absent()" in bootstrap
+    assert '/usr/bin/crontab -u "$commission_account" -r' in bootstrap
+    assert "/usr/bin/atq" in bootstrap
+    assert '/usr/bin/atrm "$job_id"' in bootstrap
+    assert '/usr/bin/loginctl disable-linger "$commission_account"' in bootstrap
+    assert '"$commission_home/.config/systemd/user"' in bootstrap
+    assert '"$commission_home/.local/share/systemd/user"' in bootstrap
+
+    ssh_reload = bootstrap.index("systemctl reload ssh.service")
+    first_drain = bootstrap.index(
+        'terminate_commission_processes "$(id -u "$commission_account")"'
+    )
+    deferred_clear = bootstrap.index(
+        'clear_commission_deferred_jobs "$commission_account"'
+    )
+    second_drain = bootstrap.index(
+        'terminate_commission_processes "$(id -u "$commission_account")"',
+        first_drain + 1,
+    )
+    deferred_verify = bootstrap.index(
+        'verify_commission_deferred_jobs_absent "$commission_account"'
+    )
+    sudoers_install = bootstrap.index(
+        'install -o root -g root -m 0440 "$sudoers_source"'
+    )
+    assert (
+        ssh_reload
+        < first_drain
+        < deferred_clear
+        < second_drain
+        < deferred_verify
+        < sudoers_install
+    )
+
+
+def test_bootstrap_preserves_a_no_process_pgrep_result() -> None:
+    """Catch a pgrep status lost when the surrounding if statement completes."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert 'if /usr/bin/pgrep -u "$commission_uid" >/dev/null; then' in bootstrap
+    assert "else\n      status=$?\n    fi" in bootstrap
+    assert 'if [ "$status" -eq 1 ]; then' in bootstrap
+
+
 def test_node_red_editor_requires_trusted_local_console() -> None:
     """Catch documentation that asks the command-only account to open a tunnel."""
     guide = (ROOT / "deployment/COMMISSIONING.md").read_text(encoding="utf-8")

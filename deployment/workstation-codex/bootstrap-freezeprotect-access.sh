@@ -51,8 +51,9 @@ terminate_commission_processes() {
   commission_processes_present() {
     if /usr/bin/pgrep -u "$commission_uid" >/dev/null; then
       return 0
+    else
+      status=$?
     fi
-    status=$?
     if [ "$status" -eq 1 ]; then
       return 1
     fi
@@ -81,6 +82,116 @@ terminate_commission_processes() {
   if commission_processes_present; then
     echo "commissioning processes remain after termination; refusing remote grants" >&2
     exit 1
+  fi
+}
+
+clear_commission_deferred_jobs() {
+  commission_account=$1
+  if [ ! -x /usr/bin/loginctl ] || [ ! -x /usr/bin/find ]; then
+    echo "missing required user-session utility; remediate at the trusted local console" >&2
+    exit 1
+  fi
+  if ! /usr/bin/loginctl disable-linger "$commission_account"; then
+    echo "could not disable commissioning-user lingering" >&2
+    exit 1
+  fi
+  for deferred_state_dir in "$commission_home/.config/systemd/user" \
+    "$commission_home/.local/share/systemd/user"; do
+    if [ -L "$deferred_state_dir" ]; then
+      echo "refusing symlinked commissioning user-service state: $deferred_state_dir" >&2
+      exit 1
+    fi
+    if [ -e "$deferred_state_dir" ] && [ ! -d "$deferred_state_dir" ]; then
+      echo "invalid commissioning user-service state: $deferred_state_dir" >&2
+      exit 1
+    fi
+    if [ -d "$deferred_state_dir" ]; then
+      if ! deferred_state_entry=$(/usr/bin/find "$deferred_state_dir" -mindepth 1 -print -quit); then
+        echo "could not inspect commissioning user-service state" >&2
+        exit 1
+      fi
+      if [ -n "$deferred_state_entry" ]; then
+        echo "commissioning user-service state must be cleared at the trusted local console" >&2
+        exit 1
+      fi
+    fi
+  done
+
+  if [ -x /usr/bin/crontab ]; then
+    if /usr/bin/crontab -u "$commission_account" -l >/dev/null 2>&1; then
+      if ! /usr/bin/crontab -u "$commission_account" -r; then
+        echo "could not remove the commissioning crontab" >&2
+        exit 1
+      fi
+    else
+      status=$?
+      if [ "$status" -ne 1 ]; then
+        echo "could not inspect the commissioning crontab" >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  if [ -x /usr/bin/atq ] || [ -x /usr/bin/atrm ]; then
+    if [ ! -x /usr/bin/atq ] || [ ! -x /usr/bin/atrm ] || \
+       [ ! -x /usr/bin/awk ]; then
+      echo "incomplete at-job tooling; remediate at the trusted local console" >&2
+      exit 1
+    fi
+    if ! at_queue=$(/usr/bin/atq); then
+      echo "could not inspect queued at jobs" >&2
+      exit 1
+    fi
+    at_jobs=$(printf '%s\n' "$at_queue" | /usr/bin/awk \
+      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { print $1 }')
+    for job_id in $at_jobs; do
+      if ! /usr/bin/atrm "$job_id"; then
+        echo "could not remove queued commissioning at job: $job_id" >&2
+        exit 1
+      fi
+    done
+    if ! at_queue=$(/usr/bin/atq); then
+      echo "could not verify queued at jobs" >&2
+      exit 1
+    fi
+    if printf '%s\n' "$at_queue" | /usr/bin/awk \
+      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
+      echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
+      exit 1
+    fi
+  fi
+}
+
+verify_commission_deferred_jobs_absent() {
+  commission_account=$1
+  if [ -x /usr/bin/crontab ]; then
+    if /usr/bin/crontab -u "$commission_account" -l >/dev/null 2>&1; then
+      echo "commissioning crontab remains after cleanup; refusing remote grants" >&2
+      exit 1
+    else
+      status=$?
+      if [ "$status" -ne 1 ]; then
+        echo "could not verify the commissioning crontab" >&2
+        exit 1
+      fi
+    fi
+  fi
+
+  if [ -x /usr/bin/atq ] || [ -x /usr/bin/atrm ]; then
+    if [ ! -x /usr/bin/atq ] || [ ! -x /usr/bin/atrm ] || \
+       [ ! -x /usr/bin/awk ]; then
+      echo "incomplete at-job tooling; remediate at the trusted local console" >&2
+      exit 1
+    fi
+    if ! at_queue=$(/usr/bin/atq); then
+      echo "could not verify queued at jobs" >&2
+      exit 1
+    fi
+    if printf '%s\n' "$at_queue" | /usr/bin/awk \
+      -v user="$commission_account" '$1 ~ /^[0-9]+$/ && $NF == user { found = 1 } END { exit !found }'; then
+      echo "commissioning at jobs remain after cleanup; refusing remote grants" >&2
+      exit 1
+    fi
   fi
 }
 
@@ -320,6 +431,9 @@ else
   exit 1
 fi
 terminate_commission_processes "$(id -u "$commission_account")"
+clear_commission_deferred_jobs "$commission_account"
+terminate_commission_processes "$(id -u "$commission_account")"
+verify_commission_deferred_jobs_absent "$commission_account"
 
 # The SSH policy is active before any new key or sudo grant is provisioned.
 install -o root -g root -m 0440 "$sudoers_source" \
