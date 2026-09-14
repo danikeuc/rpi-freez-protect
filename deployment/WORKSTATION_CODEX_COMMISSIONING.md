@@ -10,13 +10,37 @@ the current session. Keep Pi SSH private-LAN-only; do not expose it publicly.
 The bootstrap allows the commissioning account only from `192.168.114.0/24`;
 do not add a router port-forward for TCP 22.
 
-## 1. Workstation prerequisites
+## 1. Windows workstation prerequisites
 
-Install Codex CLI, Git, OpenSSH client and PlatformIO Core on the workstation.
+Install Codex CLI, Git, OpenSSH client and PlatformIO Core on the Windows
+workstation. This deployment's DietPi host is `192.168.114.192` on the private
+LAN. Do not expose port 22 through the router.
 
-## 2. Pi bootstrap
+The following procedure requires the OpenSSH service already verified on port
+22. First try the normal connection without changing `known_hosts`:
 
-At the trusted local Pi console, first create and preserve the non-login
+```powershell
+ssh root@192.168.114.192
+```
+
+Only after a changed-host-key error, compare the replacement fingerprint
+through a trusted existing session or local console. Do not accept the
+replacement key merely because SSH prompted for it. After the fingerprint
+matches, run this in PowerShell and reconnect:
+
+```powershell
+ssh-keygen -R 192.168.114.192
+ssh root@192.168.114.192
+```
+
+Keep this root SSH session open throughout the bootstrap. It is the recovery
+session; do not stop, restart, mask, or close it while a new commissioning key
+is being tested.
+
+## 2. Pi bootstrap over OpenSSH
+
+From the root SSH session on the Windows workstation (or a local console if
+available), first create and preserve the non-login
 `freezeprotect` service account from
 [`COMMISSIONING.md` step 1](COMMISSIONING.md#1-make-the-pi-service-files).
 It has home `/var/lib/rpi-freeze-protect` and an `nologin` shell. Bootstrap
@@ -29,13 +53,14 @@ exist. Bootstrap fails closed if it cannot validate `nodered`, because the
 commissioning identity must be proven distinct from the actuator identity.
 
 Bootstrap creates a separate `freezeprotect-commission` login with home
-`/home/freezeprotect-commission`, shell `/bin/bash`, and only its own dedicated
-primary group. Its numeric UID and GID must differ from both `freezeprotect`
+`/home/freezeprotect-commission`, non-interactive POSIX shell `/bin/sh`, and
+only its own dedicated primary group. Its numeric UID and GID must differ from both `freezeprotect`
 and `nodered`; it never receives `gpio`, `dialout`, `nodered`, service-data
 ownership, service environment files, or a service unit. If either existing
-account does not match that profile, bootstrap stops before changing accounts,
-keys, or groups. Remediate only at the trusted local console; do not delete
-service data.
+account does not match that profile, bootstrap removes the standard legacy
+commissioning grants and does not restore commissioning access. The
+administrator's root OpenSSH session remains available. Remediate the reported
+account state as root; do not delete service data.
 
 Copy a reviewed, trusted repository revision to `/opt/rpi-freez-protect`.
 Keep deployment assets and service execution paths root-owned and not writable
@@ -44,7 +69,7 @@ copies the standard-library-only GPIO client to the root-owned
 `/usr/local/lib/freeze-protect-commission/paired_gpio_client.py`, invoked by
 `/usr/bin/python3 -I`, not from the checkout. Its directory, the outer helper,
 and their ancestors must remain root-controlled and non-user-writable.
-Updates to either installed artifact are trusted-console deployment work only.
+Updates to either installed artifact are root-controlled deployment work only.
 
 Bootstrap makes the commissioning home root-owned `0750`, `.ssh` root-owned
 `0710`, and `authorized_keys` root-owned `0640`, using the commissioning
@@ -52,9 +77,19 @@ account's primary group. It installs a key-only `sshd` policy for this user,
 disables password/interactive authentication, forwarding and TTYs, and forces
 every SSH request through a root-owned dispatcher. The dispatcher allows only
 the four documented helper commands; it never opens a remote shell or permits
-access to local-only Node-RED. Bootstrap validates the effective policy, then
-reloads the active SSH service. This prevents the account from changing its key
-or replacing `.ssh`.
+access to local-only Node-RED. On an upgrade bootstrap first verifies the
+root-controlled legacy grant paths and removes their old key and sudo grant.
+It then validates the commissioning identity before signalling its UID and
+terminates its processes. A temporary `DenyUsers` quarantine follows, then
+cleanup and recheck of user-service/cron/at state, then activation of the
+final restricted policy. This prevents a failed cleanup or policy validation
+from leaving an old key or deferred user service usable.
+
+DietPi must provide `crontab`, `atq`, `atrm`, and `awk` for this cleanup and
+recheck; bootstrap treats any missing or unreadable deferred-job tooling as
+unsafe and does not restore commissioning access. If a later validation fails,
+the commissioning key and sudo grant remain absent; once quarantine is
+active, it remains in force. The root SSH recovery session stays available.
 
 Keep firmware/build work separate: the workstation clone is writable. The
 commissioning account must never read `include/secrets.h` or run a Pi-side
@@ -64,26 +99,35 @@ trusted-local-console-only task described below. Do not make the home,
 deployment scripts, service virtual environment, or privileged execution paths
 writable to enable builds.
 
-Copy the workstation public key to
-`/root/.ssh/freezeprotect-commission-workstation.pub`. It must be a root-owned
-regular file in this root-controlled directory; do not use `/tmp` or a symlink.
-Then run this one command from a trusted local Pi console:
+In a second PowerShell window, create a dedicated commissioning key once and
+copy only its public half to the root-controlled Pi path:
+
+```powershell
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\freezeprotect_commission" -C "freezeprotect-commission"
+scp "$env:USERPROFILE\.ssh\freezeprotect_commission.pub" root@192.168.114.192:/root/.ssh/freezeprotect-commission-workstation.pub
+ssh root@192.168.114.192 'chown root:root /root/.ssh/freezeprotect-commission-workstation.pub && chmod 0600 /root/.ssh/freezeprotect-commission-workstation.pub'
+```
+
+Return to the still-open root SSH session and run this one command. The public
+key must be a root-owned regular file in `/root/.ssh`; do not use `/tmp` or a
+symlink.
 
 ```bash
-sudo /opt/rpi-freez-protect/deployment/workstation-codex/bootstrap-freezeprotect-access.sh \
+/opt/rpi-freez-protect/deployment/workstation-codex/bootstrap-freezeprotect-access.sh \
   /root/.ssh/freezeprotect-commission-workstation.pub
 ```
 
-From the workstation, verify the restricted account and helper over the Pi's
-private LAN:
+Without closing the root SSH session, use the second PowerShell window to
+verify the restricted account and helper over the private LAN:
 
-```bash
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@192.168.114.192 sudo -n /usr/local/sbin/freeze-protect-commission inventory
 ```
 
-After that succeeds, remove the temporary `root` key from
-`/root/.ssh/authorized_keys` at the trusted local Pi console. Also remove the
-temporary public-key file from `/root/.ssh`.
+Only after that succeeds should later hardening of root SSH access be planned
+as a separate change. Keep the root session available for the remaining
+software-only preflight, and remove the temporary public-key file from
+`/root/.ssh` only after the restricted account has been rechecked.
 
 ## 3. Local Codex session
 
