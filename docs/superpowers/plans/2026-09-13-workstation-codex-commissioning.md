@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-13-workstation-codex-commissioning-design.md`
 
+**Final-review amendment (2026-09-13):** The secure functional key contract is
+root:<account-primary-group> `0710` for `.ssh` and `0640` for `authorized_keys`,
+inside a root-controlled `0750` home. The earlier root-only `0700`/`0600`
+contract prevented target-user OpenSSH access and is superseded. Bootstrap
+must verify read/non-write access and stop before key/group mutations for an
+existing incompatible home, shell, or group profile; no automatic migration.
+The privileged client is a root-owned copy under
+`/usr/local/lib/freeze-protect-commission/`, invoked with `/usr/bin/python3 -I`;
+its ancestors and outer helper are protected independently of writable builds.
+The helper code below is only a command-shape sketch: the implemented DRAIN
+path must validate its single structured receipt and both output/high records.
+
 ## Global Constraints
 
 - The Pi remains reachable only on its private LAN; do not open public SSH or install a GitHub self-hosted runner.
@@ -166,7 +178,7 @@ case "${1:-}" in
     pinctrl get 20
     ;;
   drain)
-    /opt/rpi-freez-protect/deployment/node-red/paired_gpio_client.py DRAIN
+    /usr/bin/python3 -I /usr/local/lib/freeze-protect-commission/paired_gpio_client.py DRAIN
     pinctrl get 26
     pinctrl get 20
     ;;
@@ -177,7 +189,7 @@ case "${1:-}" in
 esac
 ```
 
-`drain` must verify high output levels for both GPIO 26 and 20 and return nonzero when either level is not `hi`. It must not invoke `SUPPLY`, edit Node-RED flows, read any environment file, or accept extra arguments.
+`drain` must require one well-formed JSON DRAIN receipt with boolean `ok` true and both reported GPIO levels high, then require standalone `op` and `hi` tokens for both GPIO 26 and 20. Any unsuccessful/malformed receipt, process failure, or failed output/high readback returns nonzero. It must not invoke `SUPPLY`, edit Node-RED flows, read any environment file, or accept extra arguments.
 
 - [ ] **Step 4: Run the static test and shell syntax check**
 
@@ -213,9 +225,9 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     sudoers = (root / "freeze-protect-commission.sudoers").read_text(encoding="utf-8")
 
     assert 'usage: $0 /path/to/public-key' in bootstrap
-    assert "useradd --system --create-home --shell /bin/bash freezeprotect" in bootstrap
-    assert "chmod 0700 /home/freezeprotect/.ssh" in bootstrap
-    assert "chmod 0600 /home/freezeprotect/.ssh/authorized_keys" in bootstrap
+    assert "--home-dir /home/freezeprotect --shell /bin/bash" in bootstrap
+    assert 'install -d -o root -g "$primary_group" -m 0710 /home/freezeprotect/.ssh' in bootstrap
+    assert 'install -o root -g "$primary_group" -m 0640 "$public_key_file"' in bootstrap
     assert "NOPASSWD:" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission inventory" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission usb" in sudoers
@@ -232,7 +244,7 @@ Expected: FAIL with `FileNotFoundError` for `bootstrap-freezeprotect-access.sh`.
 
 - [ ] **Step 3: Implement bootstrap and sudoers assets**
 
-The bootstrap script must require exactly one readable public-key file, reject any file with more than one nonempty line, install only its contents as `authorized_keys`, and set root ownership. It must use `install -o root -g root -m 0755` for the helper and `install -o root -g root -m 0440` for sudoers, then run `visudo -cf /etc/sudoers.d/freeze-protect-commission` before completing. Add `freezeprotect` to `dialout` and `gpio` only if those groups exist; otherwise stop with a clear nonzero error.
+The bootstrap script must require exactly one readable public-key file, reject any file with more than one nonempty line, install only its contents as `authorized_keys`, and use the amended key modes above. It must use `install -o root -g root -m 0755` for the helper, `0644` for the isolated standard-library client copy, and `install -o root -g root -m 0440` for sudoers, then run `visudo -cf /etc/sudoers.d/freeze-protect-commission` before completing. Require `dialout` and `gpio` to exist before account/key mutations. A new account receives only those supplementary groups; an existing account must already have the exact dedicated-login profile or bootstrap stops for trusted-console remediation without changing keys/groups.
 
 The sudoers file contains exactly:
 
