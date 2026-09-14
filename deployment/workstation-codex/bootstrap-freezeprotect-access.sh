@@ -9,24 +9,63 @@ commission_account=freezeprotect-commission
 nodered_account=nodered
 commission_home=/home/freezeprotect-commission
 
+require_root_protected() {
+  path=$1
+  if [ -L "$path" ] || [ ! -d "$path" ] ||
+     [ "$(stat -c %u "$path")" -ne 0 ] ||
+     [ "$((0$(stat -c %a "$path") & 022))" -ne 0 ]; then
+    echo "unsafe root execution/key ancestor: $path; remediate at the trusted local console" >&2
+    exit 1
+  fi
+}
+
+require_root_protected_ancestors() {
+  path=$1
+  while :; do
+    require_root_protected "$path"
+    if [ "$path" = / ]; then
+      return
+    fi
+    path=$(dirname -- "$path")
+  done
+}
+
+require_root_owned_file() {
+  path=$1
+  if [ -L "$path" ] || [ ! -f "$path" ] ||
+     [ "$(stat -c %u "$path")" -ne 0 ] ||
+     [ "$((0$(stat -c %a "$path") & 022))" -ne 0 ]; then
+    echo "unsafe root-controlled source file: $path; remediate at the trusted local console" >&2
+    exit 1
+  fi
+}
+
 if [ "$#" -ne 1 ]; then
   echo "usage: $0 /path/to/public-key" >&2
   exit 64
 fi
-
-public_key_file=$1
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "bootstrap must be run as root" >&2
   exit 1
 fi
 
-if [ ! -f "$public_key_file" ] || [ ! -r "$public_key_file" ]; then
-  echo "public-key file must be a readable regular file: $public_key_file" >&2
-  exit 66
-fi
+public_key_file=$1
+case "$public_key_file" in
+  /*) ;;
+  *)
+    echo "public-key file must use an absolute, root-controlled path" >&2
+    exit 66
+    ;;
+esac
 
-nonempty_lines=$(awk 'NF { count++ } END { print count + 0 }' "$public_key_file")
+require_root_protected_ancestors "$(dirname -- "$public_key_file")"
+require_root_owned_file "$public_key_file"
+key_snapshot=$(mktemp /root/freezeprotect-commission-key.XXXXXX)
+trap 'rm -f "$key_snapshot"' EXIT HUP INT TERM
+install -o root -g root -m 0600 "$public_key_file" "$key_snapshot"
+
+nonempty_lines=$(awk 'NF { count++ } END { print count + 0 }' "$key_snapshot")
 if [ "$nonempty_lines" -ne 1 ]; then
   echo "public-key file must contain exactly one nonempty line" >&2
   exit 65
@@ -39,12 +78,11 @@ sshd_policy_source=$script_dir/60-freezeprotect-commission.conf
 ssh_dispatch_source=$script_dir/freeze-protect-commission-ssh-dispatch
 client_source=$script_dir/../node-red/paired_gpio_client.py
 
-if [ ! -f "$helper_source" ] || [ ! -f "$sudoers_source" ] || \
-   [ ! -f "$sshd_policy_source" ] || [ ! -f "$ssh_dispatch_source" ] || \
-   [ ! -f "$client_source" ]; then
-  echo "bootstrap assets are missing from $script_dir" >&2
-  exit 66
-fi
+for source_asset in "$helper_source" "$sudoers_source" "$sshd_policy_source" \
+  "$ssh_dispatch_source" "$client_source"; do
+  require_root_protected_ancestors "$(dirname -- "$source_asset")"
+  require_root_owned_file "$source_asset"
+done
 
 validate_service_account() {
   if ! id "$service_account" >/dev/null 2>&1; then
@@ -129,16 +167,6 @@ validate_commission_account() {
          [ "$commission_shell" = /bin/bash ] &&
          [ "$commission_actual_groups" = "$commission_expected_groups" ]; }; then
     echo "incompatible freezeprotect-commission account; remediate at the trusted local console; no automatic migration" >&2
-    exit 1
-  fi
-}
-
-require_root_protected() {
-  path=$1
-  if [ -L "$path" ] || [ ! -d "$path" ] ||
-     [ "$(stat -c %u "$path")" -ne 0 ] ||
-     [ "$((0$(stat -c %a "$path") & 022))" -ne 0 ]; then
-    echo "unsafe root execution/key ancestor: $path; remediate at the trusted local console" >&2
     exit 1
   fi
 }
@@ -252,7 +280,7 @@ fi
 install -o root -g root -m 0440 "$sudoers_source" \
   /etc/sudoers.d/freeze-protect-commission
 visudo -cf /etc/sudoers.d/freeze-protect-commission
-install -o root -g "$commission_primary_group" -m 0640 "$public_key_file" \
+install -o root -g "$commission_primary_group" -m 0640 "$key_snapshot" \
   "$commission_home/.ssh/authorized_keys"
 
 [ "$(stat -c %u:%g:%a "$commission_home")" = "0:$commission_primary_gid:750" ]

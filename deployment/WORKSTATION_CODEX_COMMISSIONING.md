@@ -64,13 +64,14 @@ trusted-local-console-only task described below. Do not make the home,
 deployment scripts, service virtual environment, or privileged execution paths
 writable to enable builds.
 
-Place the workstation public
-key in `/tmp/freezeprotect-commission-workstation.pub`, then run this one command from a
-trusted local Pi console:
+Copy the workstation public key to
+`/root/.ssh/freezeprotect-commission-workstation.pub`. It must be a root-owned
+regular file in this root-controlled directory; do not use `/tmp` or a symlink.
+Then run this one command from a trusted local Pi console:
 
 ```bash
 sudo /opt/rpi-freez-protect/deployment/workstation-codex/bootstrap-freezeprotect-access.sh \
-  /tmp/freezeprotect-commission-workstation.pub
+  /root/.ssh/freezeprotect-commission-workstation.pub
 ```
 
 From the workstation, verify the restricted account and helper over the Pi's
@@ -82,7 +83,7 @@ ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbi
 
 After that succeeds, remove the temporary `root` key from
 `/root/.ssh/authorized_keys` at the trusted local Pi console. Also remove the
-temporary public-key file from `/tmp`.
+temporary public-key file from `/root/.ssh`.
 
 ## 3. Local Codex session
 

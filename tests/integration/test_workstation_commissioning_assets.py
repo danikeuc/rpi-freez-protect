@@ -108,7 +108,7 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
         in bootstrap
     )
     assert (
-        'install -o root -g "$commission_primary_group" -m 0640 "$public_key_file"'
+        'install -o root -g "$commission_primary_group" -m 0640 "$key_snapshot"'
         in bootstrap
     )
     assert "NOPASSWD:" in sudoers
@@ -117,6 +117,49 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     assert "/usr/local/sbin/freeze-protect-commission status" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission drain" in sudoers
     assert "ALL" not in sudoers.replace("ALL=(root)", "")
+
+
+def test_bootstrap_snapshots_only_a_root_controlled_public_key() -> None:
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'case "$public_key_file" in' in bootstrap
+    assert (
+        'require_root_protected_ancestors "$(dirname -- "$public_key_file")"'
+        in bootstrap
+    )
+    assert 'require_root_owned_file "$public_key_file"' in bootstrap
+    assert (
+        "key_snapshot=$(mktemp /root/freezeprotect-commission-key.XXXXXX)" in bootstrap
+    )
+    assert (
+        'install -o root -g root -m 0600 "$public_key_file" "$key_snapshot"'
+        in bootstrap
+    )
+    assert "awk 'NF { count++ } END { print count + 0 }' \"$key_snapshot\"" in bootstrap
+    assert "trap 'rm -f \"$key_snapshot\"' EXIT HUP INT TERM" in bootstrap
+    assert "/root/.ssh/freezeprotect-commission-workstation.pub" in guide
+    assert "/tmp/freezeprotect-commission-workstation.pub" not in guide
+
+
+def test_bootstrap_requires_root_controlled_privileged_source_assets() -> None:
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "require_root_owned_file()" in bootstrap
+    assert "for source_asset in" in bootstrap
+    assert (
+        'require_root_protected_ancestors "$(dirname -- "$source_asset")"' in bootstrap
+    )
+    assert 'require_root_owned_file "$source_asset"' in bootstrap
+    assert bootstrap.index("for source_asset in") < bootstrap.index(
+        'install -o root -g root -m 0644 "$client_source"'
+    )
 
 
 def test_bootstrap_never_grants_device_groups_to_the_commissioning_login() -> None:
@@ -142,7 +185,11 @@ def test_bootstrap_stops_for_incompatible_account_before_any_install() -> None:
     assert (
         '[ "$commission_actual_groups" = "$commission_expected_groups" ]' in bootstrap
     )
-    assert bootstrap.index("validate_service_account") < bootstrap.index("install -")
+    account_validation = bootstrap.index("# Never migrate either identity")
+    account_creation = bootstrap.index(
+        'if ! id "$commission_account" >/dev/null 2>&1; then'
+    )
+    assert account_validation < account_creation
     assert "usermod" not in bootstrap
     assert "trusted local console" in bootstrap
 
@@ -346,7 +393,7 @@ def run_commission_account_validation(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     function_body = bootstrap.split("validate_commission_account() {\n", 1)[1].split(
-        "\n}\n\nrequire_root_protected", 1
+        "\n}\n\n# Never migrate either identity", 1
     )[0]
     function = "validate_commission_account() {\n" + function_body + "\n}"
     script = f"""set -eu
@@ -512,7 +559,7 @@ def test_bootstrap_activates_ssh_policy_before_granting_remote_access() -> None:
         'install -o root -g root -m 0440 "$sudoers_source"'
     )
     key_install = bootstrap.index(
-        'install -o root -g "$commission_primary_group" -m 0640 "$public_key_file"'
+        'install -o root -g "$commission_primary_group" -m 0640 "$key_snapshot"'
     )
 
     assert policy_install < ssh_reload < sudoers_install < key_install
