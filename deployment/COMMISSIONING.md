@@ -27,7 +27,7 @@ On DietPi, clone the repository into `/opt/rpi-freez-protect`, create the dedica
 
 ```bash
 sudo apt update
-sudo apt install -y git python3-venv
+sudo apt install -y git python3-venv cron at
 sudo useradd --system --home /var/lib/rpi-freeze-protect --shell /usr/sbin/nologin freezeprotect
 sudo git clone https://github.com/danikeuc/rpi-freez-protect.git /opt/rpi-freez-protect
 sudo python3 -m venv /opt/rpi-freez-protect/.venv
