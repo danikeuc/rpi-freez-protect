@@ -1,0 +1,24 @@
+[Unit]
+Description=RPi Freeze Protect Hub
+After=network-online.target freeze-protect-pair-gpio.service node-red.service
+Wants=network-online.target
+Requires=freeze-protect-pair-gpio.service
+
+[Service]
+Type=simple
+User=freezeprotect
+Group=freezeprotect
+SupplementaryGroups=spi
+WorkingDirectory=/opt/rpi-freez-protect
+EnvironmentFile=/etc/rpi-freeze-protect/environment
+ExecStart=/opt/rpi-freeze-protect/.venv/bin/uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rpi-freeze-protect
+
+[Install]
+WantedBy=multi-user.target
