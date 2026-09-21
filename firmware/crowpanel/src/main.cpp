@@ -28,7 +28,8 @@ void render() {
   DisplayModel model = reduce_status(last_status, wifi_connected, hub_connected);
   if (!model.connected) {
     model.connection_text = connection_diagnostic(
-        wifi_connected, hub_connected, last_hub_http_status);
+        wifi_connected, hub_connected, last_hub_http_status,
+        static_cast<int>(WiFi.status()));
   }
   model.page = page;
   hardware_ui.render(model);
