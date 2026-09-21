@@ -69,6 +69,14 @@ void test_active_shower_primary_press_drains_immediately() {
   assert(primary_press(DisplayPage::Home, model) == DisplayInteraction::Drain);
 }
 
+void test_hub_result_constructs_with_connection_and_status() {
+  HubStatus status{};
+  status.state = "TIMED_SHOWER";
+  HubResult result(true, status);
+  assert(result.connected);
+  assert(result.status.state == "TIMED_SHOWER");
+}
+
 void test_action_paths_are_display_api_only() {
   assert(std::string(HubClient::kTimedShowerPath) ==
          "/api/v1/display/actions/timed-shower");
@@ -91,6 +99,7 @@ void test_sensor_visibility() { test_sensor_details_are_not_exposed_on_the_home_
 void test_forecast_press() { test_forecast_primary_press_returns_to_the_home_screen(); }
 void test_start_shower() { test_home_primary_press_starts_the_timed_shower(); }
 void test_stop_shower() { test_active_shower_primary_press_drains_immediately(); }
+void test_hub_result() { test_hub_result_constructs_with_connection_and_status(); }
 void test_action_paths() { test_action_paths_are_display_api_only(); }
 void test_navigation() { test_encoder_navigation_has_exactly_two_pages(); }
 
@@ -102,6 +111,7 @@ void setup() {
   RUN_TEST(test_forecast_press);
   RUN_TEST(test_start_shower);
   RUN_TEST(test_stop_shower);
+  RUN_TEST(test_hub_result);
   RUN_TEST(test_action_paths);
   RUN_TEST(test_navigation);
   UNITY_END();
@@ -116,6 +126,7 @@ int main() {
   test_forecast_primary_press_returns_to_the_home_screen();
   test_home_primary_press_starts_the_timed_shower();
   test_active_shower_primary_press_drains_immediately();
+  test_hub_result_constructs_with_connection_and_status();
   test_action_paths_are_display_api_only();
   test_encoder_navigation_has_exactly_two_pages();
 }
