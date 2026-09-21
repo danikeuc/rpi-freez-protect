@@ -17,3 +17,16 @@ pio run -e crowpanel
 `HUB_BASE_URL` must be the Pi's LAN address reachable by the CrowPanel, for example `http://192.168.1.50:8081`. The Hub process remains bound to loopback; the supplied Nginx configuration exposes only the three display API routes on port 8081.
 
 See `deployment/CROWPANEL_COMMISSIONING.md` for the flash and physical acceptance sequence. Keep the 24 V valve supply disconnected for the first display tests.
+
+## Dial controls
+
+The dial is deliberately limited to four actions:
+
+- turn right from the home screen to open the 7-day forecast; turn left to return;
+- short press at home starts the Hub-configured timed shower (10 minutes by default);
+- short press while the shower is active sends `DRAIN` immediately;
+- short press on the forecast returns home without sending a Hub command;
+- hold the dial for two seconds on either page to send `DRAIN` once.
+
+The DS18B20 stays part of the Hub safety policy. Its health and measurement are
+not shown on the CrowPanel.

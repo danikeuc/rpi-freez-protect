@@ -5,6 +5,7 @@
 
 enum class DisplayAction { None, TimedShower, CloseNow };
 enum class DisplayPage { Home, Forecast };
+enum class DisplayInteraction { None, ShowHome, TimedShower, Drain };
 
 struct ForecastData {
   bool available = false;
@@ -35,7 +36,10 @@ struct DisplayModel {
   ForecastData forecast;
   std::string forecast_text;
   std::string connection_text;
+  bool connected = false;
   std::string primary_action_text;
+  std::string primary_action_detail;
+  std::string forecast_summary_text;
   std::string timed_shower_deadline;
   DisplayAction action = DisplayAction::None;
   bool action_enabled = false;

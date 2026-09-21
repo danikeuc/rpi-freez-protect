@@ -67,10 +67,57 @@ lv_obj_t* state_label = nullptr;
 lv_obj_t* temperature_label = nullptr;
 lv_obj_t* detail_label = nullptr;
 lv_obj_t* action_label = nullptr;
+lv_obj_t* action_detail_label = nullptr;
+lv_obj_t* action_icon = nullptr;
 int last_encoder_a = HIGH;
-int last_button = HIGH;
 bool touch_was_down = false;
 unsigned long last_input_ms = 0;
+DialButton dial_button;
+
+// Embedded 32x32 1-bit alpha icons. Keeping them in firmware avoids any
+// dependency on Unicode/emoji glyphs installed on the display.
+constexpr std::uint8_t kShowerIconPixels[] = {
+    0x00, 0x00, 0x00, 0x00, 0x03, 0xE0, 0x00, 0x00,
+    0x0C, 0x18, 0x00, 0x00, 0x10, 0x04, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00, 0x20, 0x02, 0x00, 0x00,
+    0x20, 0x02, 0x00, 0x00, 0x10, 0x04, 0x00, 0x00,
+    0x0C, 0x18, 0x00, 0x00, 0x03, 0xE0, 0x00, 0x00,
+    0x00, 0x7F, 0x00, 0x00, 0x00, 0x3F, 0x80, 0x00,
+    0x00, 0x1F, 0xC0, 0x00, 0x00, 0x0F, 0xE0, 0x00,
+    0x00, 0x07, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00,
+    0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40, 0x00,
+    0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x20, 0x00,
+    0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+
+constexpr std::uint8_t kStopIconPixels[] = {
+    0x80, 0x00, 0x00, 0x01, 0x40, 0x00, 0x00, 0x02,
+    0x20, 0x00, 0x00, 0x04, 0x10, 0x00, 0x00, 0x08,
+    0x08, 0x00, 0x00, 0x10, 0x04, 0x00, 0x00, 0x20,
+    0x02, 0x00, 0x00, 0x40, 0x01, 0x00, 0x00, 0x80,
+    0x00, 0x80, 0x01, 0x00, 0x00, 0x40, 0x02, 0x00,
+    0x00, 0x20, 0x04, 0x00, 0x00, 0x10, 0x08, 0x00,
+    0x00, 0x08, 0x10, 0x00, 0x00, 0x04, 0x20, 0x00,
+    0x00, 0x02, 0x40, 0x00, 0x00, 0x01, 0x80, 0x00,
+    0x00, 0x00, 0xC0, 0x00, 0x00, 0x01, 0x80, 0x00,
+    0x00, 0x02, 0x40, 0x00, 0x00, 0x04, 0x20, 0x00,
+    0x00, 0x08, 0x10, 0x00, 0x00, 0x10, 0x08, 0x00,
+    0x00, 0x20, 0x04, 0x00, 0x00, 0x40, 0x02, 0x00,
+    0x00, 0x80, 0x01, 0x00, 0x01, 0x00, 0x00, 0x80,
+    0x02, 0x00, 0x00, 0x40, 0x04, 0x00, 0x00, 0x20,
+    0x08, 0x00, 0x00, 0x10, 0x10, 0x00, 0x00, 0x08,
+};
+
+constexpr lv_img_dsc_t kShowerIcon = {
+    {LV_IMG_CF_ALPHA_1BIT, 0, 0, 32, 32}, sizeof(kShowerIconPixels),
+    kShowerIconPixels};
+constexpr lv_img_dsc_t kStopIcon = {
+    {LV_IMG_CF_ALPHA_1BIT, 0, 0, 32, 32}, sizeof(kStopIconPixels),
+    kStopIconPixels};
 
 void flush_display(lv_disp_drv_t* driver, const lv_area_t* area,
                    lv_color_t* colors) {
@@ -85,25 +132,23 @@ void flush_display(lv_disp_drv_t* driver, const lv_area_t* area,
 }
 
 std::string forecast_lines(const DisplayModel& model) {
-  if (model.page == DisplayPage::Home) {
-    return model.forecast_text + "\n" + model.connection_text + "\n" +
-           model.reason;
-  }
   if (!model.forecast.available) {
-    return "NAPOVED NI NA VOLJO\n" + model.reason;
+    return "NAPOVED NI NA VOLJO";
   }
   std::string lines = "MINIMALNE TEMPERATURE\n";
   for (std::size_t index = 0; index < model.forecast.dates.size(); ++index) {
     char row[40]{};
-    std::snprintf(row, sizeof(row), "%s  %.1f C\n",
-                  model.forecast.dates[index].c_str(),
+    std::snprintf(row, sizeof(row), "%s  %.1f °C\n",
+                  model.forecast.dates[index].substr(5).c_str(),
                   static_cast<double>(model.forecast.minima_c[index]));
+    for (char* character = row; *character != '\0'; ++character) {
+      if (*character == '.') {
+        *character = ',';
+      }
+    }
     lines += row;
   }
-  if (!model.forecast.fetched_at.empty()) {
-    lines += "POSODOBLJENO " + model.forecast.fetched_at.substr(0, 16) + "\n";
-  }
-  return lines + "\n" + model.reason;
+  return lines;
 }
 
 bool touch_in_primary_area() {
@@ -134,7 +179,6 @@ void HardwareUi::begin() {
   pinMode(BoardPins::kEncoderB, INPUT_PULLUP);
   pinMode(BoardPins::kEncoderButton, INPUT_PULLUP);
   last_encoder_a = digitalRead(BoardPins::kEncoderA);
-  last_button = digitalRead(BoardPins::kEncoderButton);
 
   Wire.begin(BoardPins::kTouchSda, BoardPins::kTouchScl);
   pinMode(BoardPins::kTouchReset, OUTPUT);
@@ -167,31 +211,64 @@ void HardwareUi::begin() {
   lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_CENTER, 0);
   temperature_label = lv_label_create(screen);
   lv_obj_set_width(temperature_label, 220);
-  lv_obj_align(temperature_label, LV_ALIGN_TOP_MID, 0, 52);
+  lv_obj_align(temperature_label, LV_ALIGN_TOP_MID, 0, 48);
   lv_obj_set_style_text_align(temperature_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_font(temperature_label, &lv_font_montserrat_20, 0);
   detail_label = lv_label_create(screen);
   lv_obj_set_width(detail_label, 210);
-  lv_obj_align(detail_label, LV_ALIGN_TOP_MID, 0, 92);
+  lv_obj_align(detail_label, LV_ALIGN_TOP_MID, 0, 76);
   lv_obj_set_style_text_align(detail_label, LV_TEXT_ALIGN_CENTER, 0);
   action_label = lv_label_create(screen);
   lv_obj_set_width(action_label, 210);
-  lv_obj_align(action_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+  lv_obj_align(action_label, LV_ALIGN_BOTTOM_MID, 0, -26);
   lv_obj_set_style_text_align(action_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_set_style_text_font(action_label, &lv_font_montserrat_16, 0);
+  action_detail_label = lv_label_create(screen);
+  lv_obj_set_width(action_detail_label, 210);
+  lv_obj_align(action_detail_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+  lv_obj_set_style_text_align(action_detail_label, LV_TEXT_ALIGN_CENTER, 0);
+  action_icon = lv_img_create(screen);
+  lv_obj_align(action_icon, LV_ALIGN_BOTTOM_MID, 0, -62);
 }
 
 void HardwareUi::render(const DisplayModel& model) {
-  lv_label_set_text(state_label, model.state.c_str());
-  lv_label_set_text(temperature_label, model.pipe_temperature_text.c_str());
-  const std::string detail = forecast_lines(model);
-  lv_label_set_text(detail_label, detail.c_str());
+  if (model.page == DisplayPage::Forecast) {
+    lv_label_set_text(state_label, "7-DNEVNA NAPOVED");
+    lv_label_set_text(temperature_label, "VRTI ZA PREKLOP");
+    const std::string detail = forecast_lines(model);
+    lv_label_set_text(detail_label, detail.c_str());
+    lv_label_set_text(action_label, "PRITISNI ZA NAZAJ");
+    lv_label_set_text(action_detail_label, "");
+    lv_obj_add_flag(action_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_color(action_label, lv_palette_main(LV_PALETTE_GREY), 0);
+    return;
+  }
+
+  const bool shower_active = model.action == DisplayAction::CloseNow;
+  const bool unavailable = !model.connected;
+  const std::string title = shower_active
+                                ? "TUŠ AKTIVEN"
+                                : (unavailable ? "NI POVEZAVE" : "VODA ZAPRTA");
+  const std::string summary = shower_active
+                                  ? "SAMODEJNI IZKLOP VKLJUČEN"
+                                  : (unavailable ? "PREVERI HUB" : model.forecast_summary_text);
+  lv_label_set_text(state_label, title.c_str());
+  lv_label_set_text(temperature_label, summary.c_str());
+  lv_label_set_text(detail_label, "");
   lv_label_set_text(action_label, model.primary_action_text.c_str());
-  lv_obj_set_style_text_color(
-      action_label,
-      model.action_enabled ? lv_palette_main(LV_PALETTE_GREEN)
-                           : lv_palette_main(LV_PALETTE_GREY),
-      0);
+  lv_label_set_text(action_detail_label, model.primary_action_detail.c_str());
+  if (!model.action_enabled) {
+    lv_obj_add_flag(action_icon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_color(action_label, lv_palette_main(LV_PALETTE_GREY), 0);
+    return;
+  }
+  lv_obj_clear_flag(action_icon, LV_OBJ_FLAG_HIDDEN);
+  const lv_color_t action_color = shower_active ? lv_color_hex(0xE5484D)
+                                                 : lv_color_hex(0x20C9C3);
+  lv_img_set_src(action_icon, shower_active ? &kStopIcon : &kShowerIcon);
+  lv_obj_set_style_img_recolor(action_icon, action_color, 0);
+  lv_obj_set_style_img_recolor_opa(action_icon, LV_OPA_COVER, 0);
+  lv_obj_set_style_text_color(action_label, action_color, 0);
 }
 
 InputEvent HardwareUi::poll_input() {
@@ -207,13 +284,12 @@ InputEvent HardwareUi::poll_input() {
   }
   last_encoder_a = encoder_a;
 
-  const int button = digitalRead(BoardPins::kEncoderButton);
-  if (button == LOW && last_button == HIGH && now - last_input_ms > 200) {
-    last_button = button;
+  const InputEvent dial_event =
+      dial_button.update(digitalRead(BoardPins::kEncoderButton) == LOW, now);
+  if (dial_event != InputEvent::None) {
     last_input_ms = now;
-    return InputEvent::PrimaryAction;
+    return dial_event;
   }
-  last_button = button;
 
   const bool touch_down = touch_in_primary_area();
   if (touch_down && !touch_was_down && now - last_input_ms > 200) {

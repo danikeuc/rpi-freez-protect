@@ -1,8 +1,7 @@
 #pragma once
 
+#include "dial_button.h"
 #include "display_types.h"
-
-enum class InputEvent { None, NextPage, PreviousPage, PrimaryAction };
 
 class HardwareUi {
  public:

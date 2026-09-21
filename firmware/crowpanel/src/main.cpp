@@ -37,6 +37,11 @@ void connect_wifi() {
 
 void handle_input() {
   const InputEvent input = hardware_ui.poll_input();
+  if (input == InputEvent::SafetyDrain) {
+    hub_client.drain();
+    last_poll_ms = 0;
+    return;
+  }
   if (input == InputEvent::NextPage) {
     page = move_page(page, true);
     render();
@@ -53,9 +58,15 @@ void handle_input() {
   const DisplayModel model = reduce_status(last_status,
                                            WiFi.status() == WL_CONNECTED,
                                            hub_connected);
-  if (next_action(model) == DisplayAction::TimedShower) {
+  const DisplayInteraction interaction = primary_press(page, model);
+  if (interaction == DisplayInteraction::ShowHome) {
+    page = DisplayPage::Home;
+    render();
+    return;
+  }
+  if (interaction == DisplayInteraction::TimedShower) {
     hub_client.start_timed_shower();
-  } else if (next_action(model) == DisplayAction::CloseNow) {
+  } else if (interaction == DisplayInteraction::Drain) {
     hub_client.drain();
   } else {
     return;
