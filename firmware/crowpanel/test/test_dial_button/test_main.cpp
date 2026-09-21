@@ -24,14 +24,12 @@ void test_two_second_hold_emits_one_safety_drain_before_release() {
 #ifdef PIO_UNIT_TESTING
 #include <unity.h>
 
-void setup() {
+int main() {
   UNITY_BEGIN();
   RUN_TEST(test_short_press_emits_primary_action_on_release);
   RUN_TEST(test_two_second_hold_emits_one_safety_drain_before_release);
-  UNITY_END();
+  return UNITY_END();
 }
-
-void loop() {}
 #else
 int main() {
   test_short_press_emits_primary_action_on_release();

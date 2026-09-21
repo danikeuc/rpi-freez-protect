@@ -175,8 +175,8 @@ void HardwareUi::begin() {
   pinMode(BoardPins::kPowerEnableTwo, OUTPUT);
   digitalWrite(BoardPins::kPowerEnableOne, HIGH);
   digitalWrite(BoardPins::kPowerEnableTwo, HIGH);
-  pinMode(BoardPins::kEncoderA, INPUT_PULLUP);
-  pinMode(BoardPins::kEncoderB, INPUT_PULLUP);
+  pinMode(BoardPins::kEncoderA, INPUT);
+  pinMode(BoardPins::kEncoderB, INPUT);
   pinMode(BoardPins::kEncoderButton, INPUT_PULLUP);
   last_encoder_a = digitalRead(BoardPins::kEncoderA);
 

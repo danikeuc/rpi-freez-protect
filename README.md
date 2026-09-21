@@ -14,7 +14,9 @@ RPi Freeze Protect is a local safety controller for the outdoor shower. It runs 
 ## M1 capabilities
 
 - Strict seven-day Open-Meteo minimum-temperature cache; all minima must be strictly above the configured threshold.
-- Prepared Linux DS18B20 reader, disabled for automatic operation until an administrator commissions the installed probe.
+- Production three-wire PT100/MAX31865 reader on SPI0 CE0, disabled for
+  automatic operation until an administrator commissions the installed probe.
+  The DS18B20 adapter remains only as rollback code.
 - Server-controlled `TIMED_SHOWER`: 10 minutes by default, with a hard 30-minute maximum. The display cannot submit a duration.
 - Authenticated local APIs: administrator settings/status and a separate minimal display API.
 - Loopback-only, token-protected Node-RED paired-valve bridge at `POST /internal/freeze-protect/actuator`, backed by a serialized `/dev/gpiomem` daemon that atomically writes and reads back GPIO 26+20.
@@ -50,11 +52,15 @@ In a separate terminal, the safe startup status is available only with the admin
 curl -H 'X-Admin-Token: local-admin-token' http://127.0.0.1:8000/api/v1/status
 ```
 
-The status is `FROST_PROTECTION` with reason `sensor_pending` until the DS18B20 is installed and commissioned. A development-only simulation route exists only when `FREEZE_PROTECT_DEVELOPMENT_MODE=true`.
+The status is `FROST_PROTECTION` with reason `sensor_pending` until the
+PT100/MAX31865 is installed and commissioned. A development-only simulation
+route exists only when `FREEZE_PROTECT_DEVELOPMENT_MODE=true`.
 
 ## DietPi and hardware commissioning
 
-Follow [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) in order. It contains the Node-RED import, systemd environment boundary, GPIO-only test, isolated-water valve test, and delayed DS18B20 commissioning procedure.
+Follow [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) in order. It
+contains the Node-RED import, systemd environment boundary, GPIO-only test, SPI
+enablement, PT100/MAX31865 commissioning, and isolated-water valve test.
 
 For the CrowPanel, use [firmware/crowpanel/README.md](firmware/crowpanel/README.md) and [deployment/CROWPANEL_COMMISSIONING.md](deployment/CROWPANEL_COMMISSIONING.md). The first display test must be run with the 24 V valve supply disconnected.
 

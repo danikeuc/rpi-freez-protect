@@ -5,7 +5,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from freeze_protect.adapters.max31865 import Max31865TemperatureSource
+from freeze_protect.adapters.simulation import SimulatedTemperatureSource
 from freeze_protect.api.app import create_app
+from freeze_protect.domain.models import (
+    SafetySettings,
+    SensorHealth,
+    TemperatureReading,
+)
+from freeze_protect.persistence.sqlite import SQLiteSettingsStore
 
 ADMIN = {"X-Admin-Token": "admin-token"}
 DISPLAY = {"X-Display-Token": "display-token"}
@@ -13,7 +21,7 @@ DISPLAY = {"X-Display-Token": "display-token"}
 
 class FailingTemperatureSource:
     def read(self) -> object:
-        raise OSError("DS18B20 settings read failed")
+        raise OSError("temperature source read failed")
 
 
 @pytest.fixture
@@ -89,6 +97,32 @@ def test_missing_or_admin_token_on_display_endpoint_is_rejected(
     assert client.get("/api/v1/display/status", headers=DISPLAY).status_code == 200
 
 
+def test_display_status_does_not_expose_sensor_diagnostics(client: TestClient) -> None:
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert "pipe_temperature_c" not in payload
+    assert "sensor_health" not in payload
+
+
+def test_uncommissioned_healthy_temperature_is_visible_only_to_administrator(
+    client: TestClient,
+) -> None:
+    service = client.app.state.control_service
+    service._temperature_source = SimulatedTemperatureSource(
+        TemperatureReading(8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY)
+    )
+
+    decision = service.run_cycle()
+    admin_status = client.get("/api/v1/status", headers=ADMIN).json()
+    display_status = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert decision.reason == "sensor_pending"
+    assert admin_status["state"] == "FROST_PROTECTION"
+    assert admin_status["last_reading"]["value_c"] == 8.4
+    assert admin_status["last_reading"]["health"] == "HEALTHY"
+    assert "pipe_temperature_c" not in display_status
+
+
 def test_status_and_settings_are_administrator_only(client: TestClient) -> None:
     assert client.get("/api/v1/status").status_code == 401
     assert client.get("/api/v1/status", headers=ADMIN).json()["state"] == "FROST_PROTECTION"
@@ -152,3 +186,60 @@ def test_production_mode_does_not_expose_simulation_route(tmp_path: Path) -> Non
 
     with TestClient(app) as client:
         assert client.post("/api/v1/simulation/temperature", headers=ADMIN).status_code == 404
+
+
+def test_production_app_selects_max31865_without_accessing_spi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail_if_spidev_is_imported(_name: str) -> object:
+        raise AssertionError("SPI must remain lazy during app construction")
+
+    monkeypatch.setattr(
+        "freeze_protect.adapters.max31865.import_module",
+        fail_if_spidev_is_imported,
+    )
+
+    app = create_app(
+        database_path=tmp_path / "production.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=False,
+        node_red_url="http://127.0.0.1:1880/internal/freeze-protect/actuator",
+        node_red_token="node-red-token",
+        run_background=False,
+    )
+
+    assert isinstance(app.state.temperature_source, Max31865TemperatureSource)
+    assert app.state.temperature_source.diagnostics()["device"] == "/dev/spidev0.0"
+
+
+def test_production_upgrade_invalidates_legacy_sensor_commissioning_once(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "production.db"
+    SQLiteSettingsStore(database).save(
+        SafetySettings(
+            sensor_device_id="28-00000legacy",
+            sensor_commissioned=True,
+            settings_version=1,
+        )
+    )
+
+    first = create_app(
+        database_path=database,
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=False,
+        run_background=False,
+    )
+    second = create_app(
+        database_path=database,
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=False,
+        run_background=False,
+    )
+
+    assert first.state.control_service.settings.sensor_commissioned is False
+    assert first.state.control_service.settings.settings_version == 2
+    assert second.state.control_service.settings == first.state.control_service.settings

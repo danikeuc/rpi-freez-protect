@@ -8,6 +8,7 @@ Requires=freeze-protect-pair-gpio.service
 Type=simple
 User=freezeprotect
 Group=freezeprotect
+SupplementaryGroups=spi
 WorkingDirectory=/opt/rpi-freez-protect
 EnvironmentFile=/etc/rpi-freeze-protect/environment
 ExecStart=/opt/rpi-freeze-protect/.venv/bin/uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000

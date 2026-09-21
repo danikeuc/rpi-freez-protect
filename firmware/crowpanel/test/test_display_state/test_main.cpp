@@ -96,7 +96,8 @@ void test_hub_result_constructs_with_connection_and_status() {
 void test_action_paths_are_display_api_only() {
   assert(std::string(HubClient::kTimedShowerPath) ==
          "/api/v1/display/actions/timed-shower");
-  assert(std::string(HubClient::kDrainPath) == "/api/v1/display/actions/drain");
+  assert(std::string(HubClient::kDrainPath) ==
+         "/api/v1/display/actions/drain");
 }
 
 void test_encoder_navigation_has_exactly_two_pages() {
@@ -109,35 +110,20 @@ void test_encoder_navigation_has_exactly_two_pages() {
 #ifdef PIO_UNIT_TESTING
 #include <unity.h>
 
-void test_offline() { test_offline_disables_actions_and_shows_required_copy(); }
-void test_connection_diagnostic() {
-  test_connection_diagnostic_distinguishes_wifi_and_hub_failures();
-}
-void test_active_timer() { test_active_timer_maps_primary_action_to_immediate_drain(); }
-void test_sensor_visibility() { test_sensor_details_are_not_exposed_on_the_home_screen(); }
-void test_forecast_press() { test_forecast_primary_press_returns_to_the_home_screen(); }
-void test_start_shower() { test_home_primary_press_starts_the_timed_shower(); }
-void test_stop_shower() { test_active_shower_primary_press_drains_immediately(); }
-void test_hub_result() { test_hub_result_constructs_with_connection_and_status(); }
-void test_action_paths() { test_action_paths_are_display_api_only(); }
-void test_navigation() { test_encoder_navigation_has_exactly_two_pages(); }
-
-void setup() {
+int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_offline);
-  RUN_TEST(test_connection_diagnostic);
-  RUN_TEST(test_active_timer);
-  RUN_TEST(test_sensor_visibility);
-  RUN_TEST(test_forecast_press);
-  RUN_TEST(test_start_shower);
-  RUN_TEST(test_stop_shower);
-  RUN_TEST(test_hub_result);
-  RUN_TEST(test_action_paths);
-  RUN_TEST(test_navigation);
-  UNITY_END();
+  RUN_TEST(test_offline_disables_actions_and_shows_required_copy);
+  RUN_TEST(test_connection_diagnostic_distinguishes_wifi_and_hub_failures);
+  RUN_TEST(test_active_timer_maps_primary_action_to_immediate_drain);
+  RUN_TEST(test_sensor_details_are_not_exposed_on_the_home_screen);
+  RUN_TEST(test_forecast_primary_press_returns_to_the_home_screen);
+  RUN_TEST(test_home_primary_press_starts_the_timed_shower);
+  RUN_TEST(test_active_shower_primary_press_drains_immediately);
+  RUN_TEST(test_hub_result_constructs_with_connection_and_status);
+  RUN_TEST(test_action_paths_are_display_api_only);
+  RUN_TEST(test_encoder_navigation_has_exactly_two_pages);
+  return UNITY_END();
 }
-
-void loop() {}
 #else
 int main() {
   test_offline_disables_actions_and_shows_required_copy();

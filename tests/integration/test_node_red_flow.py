@@ -73,6 +73,7 @@ def test_atomic_pair_daemon_is_a_service_before_node_red_starts() -> None:
         encoding="utf-8"
     )
     assert "Requires=freeze-protect-pair-gpio.service" in hub_unit
+    assert "SupplementaryGroups=spi" in hub_unit
 
 
 def test_commissioning_preflight_rejects_active_legacy_relay_paths() -> None:
@@ -99,11 +100,18 @@ def test_display_gateway_rejects_methods_outside_its_device_contract() -> None:
     assert nginx.count("if ($request_method != POST) { return 405; }") == 2
 
 
-def test_crowpanel_enables_its_selected_lvgl_fonts_and_shows_forecast_refresh() -> None:
+def test_crowpanel_enables_fonts_and_renders_the_dedicated_forecast_page() -> None:
     firmware = FLOW_PATH.parents[2] / "firmware" / "crowpanel"
     lv_conf = (firmware / "include" / "lv_conf.h").read_text(encoding="utf-8")
     hardware = (firmware / "src" / "hardware.cpp").read_text(encoding="utf-8")
+    display_state = (firmware / "src" / "display_state.cpp").read_text(
+        encoding="utf-8"
+    )
 
     assert "#define LV_FONT_MONTSERRAT_16 1" in lv_conf
     assert "#define LV_FONT_MONTSERRAT_20 1" in lv_conf
-    assert "POSODOBLJENO " in hardware
+    assert '"7-DNEVNA NAPOVED"' in hardware
+    assert '"PRITISNI ZA NAZAJ"' in hardware
+    assert '"VKLOPI TUŠ"' in display_state
+    assert '"ZAPRI VODO"' in display_state
+    assert "POSODOBLJENO " not in hardware
