@@ -33,6 +33,7 @@ void connect_wifi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   last_wifi_attempt_ms = millis();
+  Serial.println("Wi-Fi: connecting");
 }
 
 void handle_input() {
@@ -94,6 +95,9 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED && now - last_poll_ms >= 5000) {
     const HubResult result = hub_client.poll();
     hub_connected = result.connected;
+    Serial.printf("Wi-Fi: connected, IP=%s | Hub: HTTP=%d, payload=%s\n",
+                  WiFi.localIP().toString().c_str(), result.http_status,
+                  result.connected ? "valid" : "invalid");
     if (result.connected) {
       last_status = result.status;
     }
