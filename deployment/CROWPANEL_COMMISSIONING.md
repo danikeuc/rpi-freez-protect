@@ -53,11 +53,11 @@ The screen must first show `NI POVEZAVE — PREVERI HUB` until Wi-Fi and the dis
 
 ## 4. Functional test with valve power disconnected
 
-1. Verify the Home page shows `SENZOR ČAKA`, `FROST_PROTECTION`, and the forecast area after a successful poll.
-2. Turn the encoder to change to the Forecast page. It must show seven date/minimum rows and the current Hub reason.
-3. Press the encoder or touch the bottom action. The label changes from `TUŠ 10 MIN` to `ZAPRI TAKOJ` only after the Hub accepts the request.
+1. Verify the Home page shows `VODA ZAPRTA`, `7 DNI · MIN … °C`, the turquoise shower icon, `VKLOPI TUŠ` and `10 MIN` after a successful poll. It must not show sensor health, pipe temperature, `sensor_pending` or any other technical reason.
+2. Turn the encoder right to open the Forecast page and left to return. The Forecast page must show seven date/minimum rows; its short press returns Home without sending a Hub command.
+3. Press the encoder or touch the bottom action on Home. Only after the Hub accepts the request may the screen change to `TUŠ AKTIVEN`, `SAMODEJNI IZKLOP VKLJUČEN`, the red STOP icon and `ZAPRI VODO`.
 4. On the Pi, confirm GPIO 26 and GPIO 20 both become low together. Do not connect 24 V yet.
-5. Press the action again. Confirm the label returns to `TUŠ 10 MIN` and both Pi pins become high together.
+5. Press the action again. Confirm the display sends `DRAIN`, the Home screen returns to `VODA ZAPRTA`, and both Pi pins become high together. Then hold the dial for two seconds on either page and confirm it emits one `DRAIN`; releasing it must not start a shower.
 6. Disable the display gateway temporarily or turn off the Wi-Fi access point. Within one poll interval the screen must show `NI POVEZAVE — PREVERI HUB` and disable the action. Restore the gateway; no pending action may execute automatically.
 
 ## 5. Combined water-isolated valve test
