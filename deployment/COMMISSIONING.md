@@ -27,7 +27,7 @@ On DietPi, clone the repository into `/opt/rpi-freez-protect`, create the dedica
 
 ```bash
 sudo apt update
-sudo apt install -y git python3-venv cron at
+sudo apt install -y git python3-venv python3-dev build-essential cron at
 sudo useradd --system --home /var/lib/rpi-freeze-protect --shell /usr/sbin/nologin freezeprotect
 sudo git clone https://github.com/danikeuc/rpi-freez-protect.git /opt/rpi-freez-protect
 sudo python3 -m venv /opt/rpi-freez-protect/.venv
@@ -145,16 +145,63 @@ sudo pinctrl get 20
 
 The Hub startup state must be `FROST_PROTECTION` with reason `sensor_pending`; both pins must be high. Use the authenticated display API or later CrowPanel only to request a timed shower. With valve power disconnected, start the request and confirm both pins go low; use immediate drain and confirm both return high. No single-channel action exists.
 
+## 4a. Commission the PT100/MAX31865 with valve power disconnected
+
+The production temperature source is a three-wire PT100 through MAX31865 on
+SPI0 CE0. The Raspberry Pi header-side contract is fixed below. Do not connect
+the MAX31865 power pin until its exact breakout revision has been checked: some
+boards label a regulated input `VIN`, while bare 3.3 V boards label it `VCC`.
+
+| Raspberry Pi signal | BCM | Header pin | MAX31865 signal |
+|---|---:|---:|---|
+| 3.3 V | - | 1 or 17 | verified 3.3 V/VIN input for the exact board |
+| Ground | - | 6 | GND |
+| SPI0 MOSI | 10 | 19 | SDI/MOSI |
+| SPI0 MISO | 9 | 21 | SDO/MISO |
+| SPI0 SCLK | 11 | 23 | CLK/SCK |
+| SPI0 CE0 | 8 | 24 | CS |
+
+Before powering the logic, photograph and record both module sides, verify the
+reference resistor is 430 ohm (commonly marked `4300`), set the board for
+three-wire operation, and confirm the probe terminal mapping from that board's
+documentation. Keep SPI wiring short and keep logic wiring separated from the
+24 V and wet-area cable run.
+
+Verify the device and permissions before restarting the Hub:
+
+```bash
+ls -l /dev/spidev0.0
+getent group spi
+sudo systemctl daemon-reload
+sudo systemctl restart freeze-protect.service
+systemctl show freeze-protect.service -p User -p Group -p SupplementaryGroups
+journalctl -u freeze-protect.service -n 50 --no-pager
+```
+
+The service must show `SupplementaryGroups=spi`. Keep
+`sensor_commissioned=false`; the authenticated administrator status must show a
+finite `last_reading.value_c` with `HEALTHY`, while controller state remains
+`FROST_PROTECTION` with reason `sensor_pending` and both relay pins remain high.
+The CrowPanel intentionally receives no sensor value or MAX31865 diagnostic.
+
+Record three stable readings against an independent room thermometer, then test
+near the safety range using a controlled reference around 0 °C and another
+around 8–10 °C. Room-temperature error must be within 1.0 °C. Disconnect and
+short/fault tests must return non-healthy readings and leave the controller in
+`DRAIN`. Mount the probe with good thermal contact directly on the cold-water
+pipe below the insulation and repeat the stability check. A failed read must
+never display or reuse an earlier value.
+
 ## 5. Connect and test the valves with water isolated
 
 1. Isolate water and make sure the safe physical path is `Tuš` to `Izpust` while the Pi is stopped.
 2. Connect 24 V to both valve contact circuits, start a timed shower, and verify both valves move together to `Dovod` to `Tuš`.
 3. Keep `SUPPLY` active for one minute so both return capacitors charge. Invoke immediate drain; verify both return to `Tuš` to `Izpust`.
 4. Repeat once by stopping `freeze-protect.service`; the Node-RED startup and Hub restart paths must both leave the relays released/high.
-5. Only after the DS18B20 wiring and its separate commissioning checklist are complete may `sensor_commissioned` be changed to `true` in the administrator settings.
+5. Only after the PT100/MAX31865 checks in step 4a are recorded as passed may `sensor_commissioned` be changed to `true` in the administrator settings.
 
 ## Troubleshooting boundary
 
 - If `freeze-protect.service` reports `FAULT`, do not retry `SUPPLY`; inspect the Node-RED receipt and use an administrator fault-clear only after the pins have been confirmed high.
 - If Node-RED fails to start, leave its GPIO outputs high. Do not fall back to the old unauthenticated GET trigger routes.
-- A missing weather location or DS18B20 is expected before commissioning and remains safe `DRAIN`; it is not a reason to bypass the Hub.
+- A missing weather location or an uncommissioned/unhealthy PT100 is expected to remain safe `DRAIN`; it is not a reason to bypass the Hub.

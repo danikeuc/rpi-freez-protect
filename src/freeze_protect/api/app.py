@@ -10,10 +10,9 @@ from typing import Annotated, NoReturn, cast
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 
-from freeze_protect.adapters.ds18b20 import Ds18b20TemperatureSource
+from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.node_red import NodeRedActuatorDriver
 from freeze_protect.adapters.simulation import (
-    InMemoryEventStore,
     SimulatedActuatorDriver,
     SimulatedForecastClient,
     SimulatedForecastStore,
@@ -25,7 +24,13 @@ from freeze_protect.api.auth import (
     build_display_guard,
     require_confirmation,
 )
-from freeze_protect.application.ports import ActuatorDriver, AdapterError
+from freeze_protect.application.ports import (
+    ActuatorDriver,
+    AdapterError,
+    ForecastClient,
+    ForecastStore,
+    TemperatureSource,
+)
 from freeze_protect.application.service import (
     ControlService,
     ControlStatus,
@@ -98,6 +103,9 @@ def create_app(
     settings_store = SQLiteSettingsStore(database_path)
     event_store = SQLiteEventStore(database_path)
     settings = settings_store.load()
+    temperature_source: TemperatureSource
+    forecast_store: ForecastStore
+    forecast_client: ForecastClient
     if development_mode:
         temperature_source = SimulatedTemperatureSource(
             TemperatureReading(None, clock_fn(), SensorHealth.CALIBRATION_REQUIRED)
@@ -106,10 +114,7 @@ def create_app(
         forecast_client = SimulatedForecastClient()
         actuator_driver: ActuatorDriver = SimulatedActuatorDriver()
     else:
-        temperature_source = Ds18b20TemperatureSource(
-            settings_provider=settings_store.load,
-            clock=clock_fn,
-        )
+        temperature_source = Max31865TemperatureSource(clock=clock_fn)
         forecast_store = SQLiteForecastStore(database_path)
         forecast_client = OpenMeteoForecastClient()
         actuator_driver = _production_actuator(node_red_url, node_red_token)
@@ -149,7 +154,9 @@ def create_app(
 
     @app.get("/api/v1/status")
     def get_status(_admin: None = Depends(require_admin)) -> dict[str, object]:
-        return _admin_status_payload(service.status(), service.settings)
+        return _admin_status_payload(
+            service.status(), service.settings, _sensor_diagnostics(temperature_source)
+        )
 
     @app.get("/api/v1/events")
     def get_events(
@@ -255,23 +262,25 @@ def _production_actuator(
 
 
 def _decision_or_conflict(decision: Decision) -> dict[str, object]:
-    typed = cast(Decision, decision)
-    if typed.state is ControllerState.FAULT:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=typed.reason)
+    if decision.state is ControllerState.FAULT:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=decision.reason)
     return {
-        "state": typed.state.value,
-        "command": typed.command.value,
-        "reason": typed.reason,
+        "state": decision.state.value,
+        "command": decision.command.value,
+        "reason": decision.reason,
     }
 
 
 def _admin_status_payload(
-    control: ControlStatus, settings: SafetySettings
+    control: ControlStatus,
+    settings: SafetySettings,
+    sensor_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "state": control.state.value,
         "reason": control.reason,
         "last_reading": _reading_payload(control.last_reading),
+        "sensor_diagnostics": sensor_diagnostics,
         "forecast": _forecast_payload(control.forecast, settings),
         "timed_shower_deadline": _iso(control.timed_shower_deadline),
         "bridge_flow_revision": (
@@ -288,12 +297,6 @@ def _display_status_payload(
     return {
         "state": control.state.value,
         "reason": control.reason,
-        "pipe_temperature_c": (
-            control.last_reading.value_c if control.last_reading is not None else None
-        ),
-        "sensor_health": (
-            control.last_reading.health.value if control.last_reading is not None else None
-        ),
         "forecast": forecast,
         "timed_shower_deadline": _iso(control.timed_shower_deadline),
         "action": (
@@ -303,6 +306,12 @@ def _display_status_payload(
         ),
         "action_enabled": control.state is not ControllerState.FAULT,
     }
+
+
+def _sensor_diagnostics(source: TemperatureSource) -> dict[str, object] | None:
+    if isinstance(source, Max31865TemperatureSource):
+        return source.diagnostics()
+    return None
 
 
 def _reading_payload(reading: TemperatureReading | None) -> dict[str, object] | None:

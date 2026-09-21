@@ -49,3 +49,17 @@ def test_old_m0_settings_row_loads_with_safe_m1_defaults(tmp_path: Path) -> None
 
     assert loaded == SafetySettings(settings_version=1)
     assert loaded.sensor_commissioned is False
+
+
+def test_legacy_ds18b20_device_id_remains_accepted_and_persisted(tmp_path: Path) -> None:
+    database = tmp_path / "state.db"
+    store = SQLiteSettingsStore(database)
+    stored = store.save(
+        SafetySettings(sensor_device_id="28-00000legacy", settings_version=1)
+    )
+
+    loaded = store.load()
+
+    assert stored.sensor_device_id == "28-00000legacy"
+    assert loaded.sensor_device_id == "28-00000legacy"
+    assert loaded.sensor_commissioned is False
