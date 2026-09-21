@@ -251,7 +251,8 @@ void HardwareUi::render(const DisplayModel& model) {
                                 : (unavailable ? "NI POVEZAVE" : "VODA ZAPRTA");
   const std::string summary = shower_active
                                   ? "SAMODEJNI IZKLOP VKLJUČEN"
-                                  : (unavailable ? "PREVERI HUB" : model.forecast_summary_text);
+                                  : (unavailable ? model.connection_text
+                                                 : model.forecast_summary_text);
   lv_label_set_text(state_label, title.c_str());
   lv_label_set_text(temperature_label, summary.c_str());
   lv_label_set_text(detail_label, "");
