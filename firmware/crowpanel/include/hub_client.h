@@ -6,11 +6,12 @@
 
 struct HubResult {
   bool connected = false;
+  int http_status = 0;
   HubStatus status;
 
   HubResult() = default;
-  HubResult(bool is_connected, const HubStatus& hub_status)
-      : connected(is_connected), status(hub_status) {}
+  HubResult(bool is_connected, const HubStatus& hub_status, int status_code)
+      : connected(is_connected), http_status(status_code), status(hub_status) {}
 };
 
 class HubClient {
