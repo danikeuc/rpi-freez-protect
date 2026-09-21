@@ -19,12 +19,17 @@ HubClient hub_client(HUB_BASE_URL, DISPLAY_TOKEN);
 HubStatus last_status{};
 DisplayPage page = DisplayPage::Home;
 bool hub_connected = false;
+int last_hub_http_status = 0;
 unsigned long last_poll_ms = 0;
 unsigned long last_wifi_attempt_ms = 0;
 
 void render() {
-  DisplayModel model = reduce_status(last_status, WiFi.status() == WL_CONNECTED,
-                                     hub_connected);
+  const bool wifi_connected = WiFi.status() == WL_CONNECTED;
+  DisplayModel model = reduce_status(last_status, wifi_connected, hub_connected);
+  if (!model.connected) {
+    model.connection_text = connection_diagnostic(
+        wifi_connected, hub_connected, last_hub_http_status);
+  }
   model.page = page;
   hardware_ui.render(model);
 }
@@ -89,12 +94,14 @@ void loop() {
   const unsigned long now = millis();
   if (WiFi.status() != WL_CONNECTED && now - last_wifi_attempt_ms > 10000) {
     hub_connected = false;
+    last_hub_http_status = 0;
     connect_wifi();
     render();
   }
   if (WiFi.status() == WL_CONNECTED && now - last_poll_ms >= 5000) {
     const HubResult result = hub_client.poll();
     hub_connected = result.connected;
+    last_hub_http_status = result.http_status;
     Serial.printf("Wi-Fi: connected, IP=%s | Hub: HTTP=%d, payload=%s\n",
                   WiFi.localIP().toString().c_str(), result.http_status,
                   result.connected ? "valid" : "invalid");
