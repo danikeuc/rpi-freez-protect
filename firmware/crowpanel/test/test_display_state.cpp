@@ -31,11 +31,18 @@ void test_offline_disables_actions_and_shows_required_copy() {
 }
 
 void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
-  assert(connection_diagnostic(false, false, 0) == "WI-FI NI POVEZAN");
-  assert(connection_diagnostic(true, false, 0) == "HUB NEDOSEGLJIV");
-  assert(connection_diagnostic(true, false, 401) == "HUB HTTP 401");
-  assert(connection_diagnostic(true, false, 200) == "HUB ODGOVOR NAPAKA");
-  assert(connection_diagnostic(true, true, 200) == "HUB POVEZAN");
+  assert(connection_diagnostic(false, false, 0, 1) ==
+         "WI-FI: SSID NI NAJDEN");
+  assert(connection_diagnostic(false, false, 0, 4) ==
+         "WI-FI: PRIJAVA NI USPELA");
+  assert(connection_diagnostic(false, false, 0, 5) ==
+         "WI-FI: POVEZAVA IZGUBLJENA");
+  assert(connection_diagnostic(false, false, 0, 6) ==
+         "WI-FI: NI POVEZAVE");
+  assert(connection_diagnostic(true, false, 0, 3) == "HUB NEDOSEGLJIV");
+  assert(connection_diagnostic(true, false, 401, 3) == "HUB HTTP 401");
+  assert(connection_diagnostic(true, false, 200, 3) == "HUB ODGOVOR NAPAKA");
+  assert(connection_diagnostic(true, true, 200, 3) == "HUB POVEZAN");
 }
 
 void test_active_timer_maps_primary_action_to_immediate_drain() {
