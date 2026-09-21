@@ -72,9 +72,10 @@ void test_active_shower_primary_press_drains_immediately() {
 void test_hub_result_constructs_with_connection_and_status() {
   HubStatus status{};
   status.state = "TIMED_SHOWER";
-  HubResult result(true, status);
+  HubResult result(true, status, 200);
   assert(result.connected);
   assert(result.status.state == "TIMED_SHOWER");
+  assert(result.http_status == 200);
 }
 
 void test_action_paths_are_display_api_only() {
