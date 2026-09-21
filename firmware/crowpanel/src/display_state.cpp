@@ -61,6 +61,23 @@ DisplayModel reduce_status(const HubStatus& status, bool wifi_connected,
   return model;
 }
 
+std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
+                                  int http_status) {
+  if (!wifi_connected) {
+    return "WI-FI NI POVEZAN";
+  }
+  if (hub_connected) {
+    return "HUB POVEZAN";
+  }
+  if (http_status == 200) {
+    return "HUB ODGOVOR NAPAKA";
+  }
+  if (http_status > 0) {
+    return "HUB HTTP " + std::to_string(http_status);
+  }
+  return "HUB NEDOSEGLJIV";
+}
+
 DisplayAction next_action(const DisplayModel& model) {
   return model.action_enabled ? model.action : DisplayAction::None;
 }
