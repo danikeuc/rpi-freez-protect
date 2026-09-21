@@ -9,6 +9,10 @@ from typing import cast
 
 from freeze_protect.domain.models import AuditEvent, ForecastSnapshot, SafetySettings
 
+_ACTIVE_SENSOR_SOURCE_KEY = "sensor_source_id"
+_COMMISSIONED_SENSOR_SOURCE_KEY = "commissioned_sensor_source_id"
+_COMMISSIONED_SETTINGS_VERSION_KEY = "commissioned_settings_version"
+
 
 class SettingsVersionConflict(ValueError):
     """Raised when a settings update skips or repeats a configuration version."""
@@ -38,15 +42,32 @@ class SQLiteSettingsStore:
                     "settings_version must be exactly one greater than the stored version"
                 )
             _write_settings(connection, settings)
+            if settings.sensor_commissioned:
+                source_id = _metadata_value(connection, _ACTIVE_SENSOR_SOURCE_KEY)
+                if source_id is not None:
+                    _write_metadata(
+                        connection, _COMMISSIONED_SENSOR_SOURCE_KEY, source_id
+                    )
+                    _write_metadata(
+                        connection,
+                        _COMMISSIONED_SETTINGS_VERSION_KEY,
+                        str(settings.settings_version),
+                    )
+            else:
+                _clear_commissioning_approval(connection)
         return settings
 
     def bind_sensor_source(self, source_id: str) -> SafetySettings:
         if not source_id:
             raise ValueError("source_id must be non-empty")
         with _connect(self._database_path) as connection:
-            source_row = connection.execute(
-                "SELECT value FROM runtime_metadata WHERE key = 'sensor_source_id'"
-            ).fetchone()
+            active_source_id = _metadata_value(connection, _ACTIVE_SENSOR_SOURCE_KEY)
+            commissioned_source_id = _metadata_value(
+                connection, _COMMISSIONED_SENSOR_SOURCE_KEY
+            )
+            commissioned_version = _metadata_value(
+                connection, _COMMISSIONED_SETTINGS_VERSION_KEY
+            )
             settings_row = connection.execute(
                 "SELECT payload_json FROM settings WHERE singleton = 1"
             ).fetchone()
@@ -55,7 +76,16 @@ class SQLiteSettingsStore:
                 if settings_row is None
                 else _load_settings(settings_row["payload_json"])
             )
-            if source_row is not None and source_row["value"] == source_id:
+            approval_matches = (
+                settings.sensor_commissioned
+                and commissioned_source_id == source_id
+                and commissioned_version == str(settings.settings_version)
+            )
+            if active_source_id == source_id and (
+                not settings.sensor_commissioned or approval_matches
+            ):
+                if not settings.sensor_commissioned:
+                    _clear_commissioning_approval(connection)
                 return settings
             if settings.sensor_commissioned:
                 settings = replace(
@@ -64,14 +94,8 @@ class SQLiteSettingsStore:
                     settings_version=settings.settings_version + 1,
                 )
                 _write_settings(connection, settings)
-            connection.execute(
-                """
-                INSERT INTO runtime_metadata (key, value)
-                VALUES ('sensor_source_id', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                """,
-                (source_id,),
-            )
+            _clear_commissioning_approval(connection)
+            _write_metadata(connection, _ACTIVE_SENSOR_SOURCE_KEY, source_id)
         return settings
 
 
@@ -220,6 +244,31 @@ def _write_settings(
             json.dumps(asdict(settings), sort_keys=True),
             datetime.now().astimezone().isoformat(),
         ),
+    )
+
+
+def _metadata_value(connection: sqlite3.Connection, key: str) -> str | None:
+    row = connection.execute(
+        "SELECT value FROM runtime_metadata WHERE key = ?", (key,)
+    ).fetchone()
+    return None if row is None else cast(str, row["value"])
+
+
+def _write_metadata(connection: sqlite3.Connection, key: str, value: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO runtime_metadata (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+
+
+def _clear_commissioning_approval(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "DELETE FROM runtime_metadata WHERE key IN (?, ?)",
+        (_COMMISSIONED_SENSOR_SOURCE_KEY, _COMMISSIONED_SETTINGS_VERSION_KEY),
     )
 
 

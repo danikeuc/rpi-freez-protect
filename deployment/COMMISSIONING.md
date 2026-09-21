@@ -178,7 +178,18 @@ hardware correction is designed and verified; software plausibility limits are
 not a substitute. Keep SPI wiring short and keep logic wiring separated from
 the 24 V and wet-area cable run.
 
-Verify the device and permissions before restarting the Hub:
+On DietPi, enable SPI0 before checking the device node. Do not use
+`raspi-config`; open the DietPi configuration utility, select **Advanced
+Options → SPI**, enable it, exit, and reboot when requested:
+
+```bash
+sudo dietpi-config
+sudo reboot
+```
+
+After reconnecting, verify the device and permissions before restarting the
+Hub. If `/dev/spidev0.0` is absent, stop here and correct the DietPi SPI
+configuration; do not bypass the sensor gate:
 
 ```bash
 ls -l /dev/spidev0.0
@@ -190,8 +201,10 @@ journalctl -u freeze-protect.service -n 50 --no-pager
 ```
 
 The service must show `SupplementaryGroups=spi`. Production startup binds the
-approval to `MAX31865_PT100_SPI0_CE0` and clears any commissioning inherited
-from the replaced sensor once. Confirm `sensor_commissioned=false`; the
+approval to `MAX31865_PT100_SPI0_CE0` and the exact settings version that
+created it. It clears any commissioning inherited from the replaced sensor and
+also rejects an approval written by rollback software that cannot maintain that
+binding. Confirm `sensor_commissioned=false`; the
 authenticated administrator status must show a finite `last_reading.value_c`
 with `HEALTHY`, while controller state remains `FROST_PROTECTION` with reason
 `sensor_pending` and both relay pins remain high. The CrowPanel intentionally

@@ -21,8 +21,9 @@
   constant of at most 100 microseconds; otherwise commissioning stops until
   manual fault-cycle timing is implemented for the exact module.
 - `sensor_commissioned=false` after deployment and automatic `NORMAL` remains impossible until explicit commissioning.
-- Bind commissioning approval to `MAX31865_PT100_SPI0_CE0` so approval from the
-  replaced sensor cannot transfer silently.
+- Bind commissioning approval to `MAX31865_PT100_SPI0_CE0` and the exact
+  approving settings version so approval from the replaced sensor or rollback
+  software cannot transfer silently.
 - The CrowPanel receives no PT100-specific diagnostics.
 - No live valve actuation is part of repository implementation or automated verification.
 

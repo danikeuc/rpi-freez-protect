@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -101,3 +101,47 @@ def test_binding_replacement_sensor_clears_legacy_commissioning_once(
     assert reapproved.sensor_commissioned is True
     assert reapproved.settings_version == 3
     assert after_restart == reapproved
+
+
+def test_legacy_rollback_reapproval_cannot_transfer_back_to_max31865(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "state.db"
+    store = SQLiteSettingsStore(database)
+    store.save(
+        SafetySettings(
+            sensor_device_id="28-00000legacy",
+            sensor_commissioned=True,
+            settings_version=1,
+        )
+    )
+    migrated = store.bind_sensor_source("MAX31865_PT100_SPI0_CE0")
+    approved_max31865 = store.save(
+        replace(
+            migrated,
+            sensor_commissioned=True,
+            settings_version=migrated.settings_version + 1,
+        )
+    )
+
+    legacy_reapproved = replace(approved_max31865, settings_version=5)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            UPDATE settings
+            SET version = ?, payload_json = ?, updated_at = ?
+            WHERE singleton = 1
+            """,
+            (
+                legacy_reapproved.settings_version,
+                json.dumps(asdict(legacy_reapproved), sort_keys=True),
+                NOW.isoformat(),
+            ),
+        )
+
+    rebound = SQLiteSettingsStore(database).bind_sensor_source(
+        "MAX31865_PT100_SPI0_CE0"
+    )
+
+    assert rebound.sensor_commissioned is False
+    assert rebound.settings_version == 6
