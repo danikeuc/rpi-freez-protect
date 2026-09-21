@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.simulation import SimulatedTemperatureSource
 from freeze_protect.api.app import create_app
-from freeze_protect.domain.models import SensorHealth, TemperatureReading
+from freeze_protect.domain.models import (
+    SafetySettings,
+    SensorHealth,
+    TemperatureReading,
+)
+from freeze_protect.persistence.sqlite import SQLiteSettingsStore
 
 ADMIN = {"X-Admin-Token": "admin-token"}
 DISPLAY = {"X-Display-Token": "display-token"}
@@ -206,3 +211,35 @@ def test_production_app_selects_max31865_without_accessing_spi(
 
     assert isinstance(app.state.temperature_source, Max31865TemperatureSource)
     assert app.state.temperature_source.diagnostics()["device"] == "/dev/spidev0.0"
+
+
+def test_production_upgrade_invalidates_legacy_sensor_commissioning_once(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "production.db"
+    SQLiteSettingsStore(database).save(
+        SafetySettings(
+            sensor_device_id="28-00000legacy",
+            sensor_commissioned=True,
+            settings_version=1,
+        )
+    )
+
+    first = create_app(
+        database_path=database,
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=False,
+        run_background=False,
+    )
+    second = create_app(
+        database_path=database,
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=False,
+        run_background=False,
+    )
+
+    assert first.state.control_service.settings.sensor_commissioned is False
+    assert first.state.control_service.settings.settings_version == 2
+    assert second.state.control_service.settings == first.state.control_service.settings

@@ -15,7 +15,14 @@
 - `/dev/spidev0.0`, SPI mode 1, maximum 500 kHz, 8 bits per word.
 - PT100, three-wire compensation, 430 ohm reference, 50 Hz filter.
 - One-shot conversion with VBIAS disabled after every attempt.
+- Run the MAX31865 automatic fault-detection cycle before every accepted sample
+  and reject timeout or any nonzero fault register.
+- Use that automatic cycle only for a verified module input-filter RC time
+  constant of at most 100 microseconds; otherwise commissioning stops until
+  manual fault-cycle timing is implemented for the exact module.
 - `sensor_commissioned=false` after deployment and automatic `NORMAL` remains impossible until explicit commissioning.
+- Bind commissioning approval to `MAX31865_PT100_SPI0_CE0` so approval from the
+  replaced sensor cannot transfer silently.
 - The CrowPanel receives no PT100-specific diagnostics.
 - No live valve actuation is part of repository implementation or automated verification.
 
@@ -55,11 +62,15 @@
 - Consumes: `TemperatureReading`, `SensorHealth`, a clock callable, a sleep callable, and an injected `Callable[[], SpiDevice]`.
 - Produces: `Max31865TemperatureSource.read() -> TemperatureReading`, `LinuxSpiDevice`, and the administrator-only `diagnostics()` mapping.
 
-- [ ] Write failing tests for the exact `0x13 -> 0x91 -> 0xB1 -> RTD read -> 0x11` sequence and a healthy positive conversion.
+- [ ] Write failing tests for the exact `0x13 -> 0x91 -> 0x95 -> bounded
+  completion/fault check -> 0xB1 -> RTD read -> 0x11` sequence and a healthy
+  positive conversion.
 - [ ] Run the focused test and confirm failure because the adapter is absent.
 - [ ] Implement the injected SPI protocol, Linux `open_path`, register helpers, one-shot sequence, and positive CVD branch.
 - [ ] Run the focused test and confirm green.
-- [ ] Add failing tests for a negative temperature, RTD fault bit and flags, zero/full-scale ratios, short transfer, SPI exception, application range, and VBIAS cleanup.
+- [ ] Add failing tests for a negative temperature, on-demand cable faults,
+  fault-cycle timeout, RTD fault bit and flags, zero/full-scale ratios, short
+  transfer, SPI exception, application range, and VBIAS cleanup.
 - [ ] Implement numerical negative conversion and fail-safe classifications without caching readings.
 - [ ] Run the adapter tests, then the complete suite, ruff, and mypy.
 - [ ] Commit the adapter independently.
@@ -78,7 +89,11 @@
 - Consumes: `Max31865TemperatureSource` from Task 2 and existing `SafetySettings`/SQLite schemas.
 - Produces: production composition using MAX31865, admin commissioning visibility, unchanged legacy settings acceptance, explicit SPI service permissions, and PT100 commissioning instructions.
 
-- [ ] Write failing tests proving production selects MAX31865 lazily, display status omits sensor diagnostics, uncommissioned healthy values appear in admin status while state remains `sensor_pending`, legacy `sensor_device_id` loads, and the service declares `SupplementaryGroups=spi`.
+- [ ] Write failing tests proving production selects MAX31865 lazily, display
+  status omits sensor diagnostics, uncommissioned healthy values appear in
+  admin status while state remains `sensor_pending`, legacy `sensor_device_id`
+  loads, replacement-source commissioning is reset exactly once, and the
+  service declares `SupplementaryGroups=spi`.
 - [ ] Run the focused tests and verify the expected failures.
 - [ ] Replace only the production composition-root selection, narrow the display payload, and update service/deployment documentation; retain the DS18B20 adapter as rollback code.
 - [ ] Run focused tests and confirm green.

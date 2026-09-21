@@ -37,11 +37,15 @@ class FakeSpiDevice:
         *,
         encoded_rtd: int,
         fault_register: int = 0,
+        fault_register_reads: tuple[int, ...] = (),
+        configuration_reads: tuple[int, ...] = (),
         short_rtd_read: bool = False,
         fail_rtd_read: bool = False,
     ) -> None:
         self.encoded_rtd = encoded_rtd
         self.fault_register = fault_register
+        self.fault_register_reads = list(fault_register_reads)
+        self.configuration_reads = list(configuration_reads)
         self.short_rtd_read = short_rtd_read
         self.fail_rtd_read = fail_rtd_read
         self.operations: list[tuple[str, object]] = []
@@ -63,7 +67,17 @@ class FakeSpiDevice:
                 self.encoded_rtd & 0xFF,
             ]
         if payload == [0x07, 0x00]:
-            return [0x00, self.fault_register]
+            fault_register = (
+                self.fault_register_reads.pop(0)
+                if self.fault_register_reads
+                else self.fault_register
+            )
+            return [0x00, fault_register]
+        if payload == [0x00, 0x00]:
+            configuration = (
+                self.configuration_reads.pop(0) if self.configuration_reads else 0x00
+            )
+            return [0x00, configuration]
         return [0x00] * len(payload)
 
     def close(self) -> None:
@@ -91,13 +105,49 @@ def test_one_shot_sequence_returns_a_positive_temperature_and_disables_bias() ->
     assert reading.value_c is not None
     assert isclose(reading.value_c, 25.0, abs_tol=0.03)
     assert reading.observed_at == NOW
-    assert sleeps == [0.010, 0.066]
+    assert sleeps == [0.010, 0.001, 0.010, 0.066]
     assert spi.operations == [
         ("open", None),
         ("transfer", (0x80, 0x13)),
         ("transfer", (0x80, 0x91)),
+        ("transfer", (0x80, 0x95)),
+        ("transfer", (0x00, 0x00)),
+        ("transfer", (0x07, 0x00)),
         ("transfer", (0x80, 0xB1)),
         ("transfer", (0x01, 0x00, 0x00)),
+        ("transfer", (0x80, 0x11)),
+        ("close", None),
+    ]
+
+
+def test_fault_detection_cycle_rejects_plausible_rtd_cable_fault() -> None:
+    spi = FakeSpiDevice(
+        encoded_rtd=encoded_rtd_for_temperature(25.0),
+        fault_register=0x08,
+    )
+    source = source_for(spi)
+
+    reading = source.read()
+
+    assert reading.value_c is None
+    assert reading.health is SensorHealth.INVALID
+    assert source.last_fault_register == 0x08
+    assert source.last_faults == ("RTDIN_LOW",)
+    assert ("transfer", (0x80, 0x95)) in spi.operations
+    assert ("transfer", (0x01, 0x00, 0x00)) not in spi.operations
+
+
+def test_fault_detection_timeout_is_invalid_and_closes_spi() -> None:
+    spi = FakeSpiDevice(
+        encoded_rtd=encoded_rtd_for_temperature(25.0),
+        configuration_reads=(0x04, 0x04, 0x04, 0x04),
+    )
+
+    reading = source_for(spi).read()
+
+    assert reading.value_c is None
+    assert reading.health is SensorHealth.INVALID
+    assert spi.operations[-2:] == [
         ("transfer", (0x80, 0x11)),
         ("close", None),
     ]
@@ -115,7 +165,10 @@ def test_negative_temperature_uses_the_full_callendar_van_dusen_branch() -> None
 
 def test_fault_bit_returns_invalid_and_decodes_the_fault_register() -> None:
     encoded = encoded_rtd_for_temperature(5.0) | 0x01
-    spi = FakeSpiDevice(encoded_rtd=encoded, fault_register=0x44)
+    spi = FakeSpiDevice(
+        encoded_rtd=encoded,
+        fault_register_reads=(0x00, 0x44),
+    )
     source = source_for(spi)
 
     reading = source.read()
@@ -124,7 +177,8 @@ def test_fault_bit_returns_invalid_and_decodes_the_fault_register() -> None:
     assert reading.health is SensorHealth.INVALID
     assert source.last_fault_register == 0x44
     assert source.last_faults == ("RTD_LOW_THRESHOLD", "OVER_UNDERVOLTAGE")
-    assert ("transfer", (0x07, 0x00)) in spi.operations
+    assert ("transfer", (0x01, 0x00, 0x00)) in spi.operations
+    assert spi.operations.count(("transfer", (0x07, 0x00))) == 2
     assert spi.operations[-2:] == [
         ("transfer", (0x80, 0x11)),
         ("close", None),

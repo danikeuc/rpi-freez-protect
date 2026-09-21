@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from freeze_protect.domain.models import SensorHealth, TemperatureReading
 
 _CONFIG_WRITE = 0x80
+_CONFIG_READ = 0x00
 _RTD_READ = 0x01
 _FAULT_READ = 0x07
 
@@ -17,8 +18,12 @@ _CONFIG_3WIRE_50HZ = 0x11
 _CONFIG_FAULT_CLEAR = 0x02
 _CONFIG_BIAS = 0x80
 _CONFIG_ONE_SHOT = 0x20
+_CONFIG_FAULT_CYCLE_AUTO = 0x04
+_CONFIG_FAULT_CYCLE_MASK = 0x0C
 
 _BIAS_SETTLE_S = 0.010
+_FAULT_DETECTION_POLL_S = 0.001
+_FAULT_DETECTION_MAX_POLLS = 4
 _CONVERSION_50HZ_S = 0.066
 
 _PT100_R0_OHM = 100.0
@@ -148,15 +153,33 @@ class Max31865TemperatureSource:
             self._sleeper(_BIAS_SETTLE_S)
             _write_config(
                 spi,
+                _CONFIG_3WIRE_50HZ | _CONFIG_BIAS | _CONFIG_FAULT_CYCLE_AUTO,
+            )
+            for _ in range(_FAULT_DETECTION_MAX_POLLS):
+                self._sleeper(_FAULT_DETECTION_POLL_S)
+                configuration = _transfer_exact(spi, [_CONFIG_READ, 0x00], 2)[1]
+                if configuration & _CONFIG_FAULT_CYCLE_MASK == 0:
+                    break
+            else:
+                raise ValueError("MAX31865 fault detection did not finish")
+            fault_register = _transfer_exact(spi, [_FAULT_READ, 0x00], 2)[1]
+            if fault_register:
+                self.last_fault_register = fault_register
+                self.last_faults = _decode_faults(fault_register)
+                raise ValueError("MAX31865 reported a sensor fault")
+            self._sleeper(_BIAS_SETTLE_S)
+            _write_config(
+                spi,
                 _CONFIG_3WIRE_50HZ | _CONFIG_BIAS | _CONFIG_ONE_SHOT,
             )
             self._sleeper(_CONVERSION_50HZ_S)
             response = _transfer_exact(spi, [_RTD_READ, 0x00, 0x00], 3)
             encoded_rtd = (response[1] << 8) | response[2]
             if encoded_rtd & 0x01:
-                fault_response = _transfer_exact(spi, [_FAULT_READ, 0x00], 2)
-                self.last_fault_register = fault_response[1]
-                self.last_faults = _decode_faults(fault_response[1])
+                self.last_fault_register = _transfer_exact(
+                    spi, [_FAULT_READ, 0x00], 2
+                )[1]
+                self.last_faults = _decode_faults(self.last_fault_register)
                 raise ValueError("MAX31865 reported a sensor fault")
             raw_rtd = encoded_rtd >> 1
             temperature_c = _temperature_from_raw(raw_rtd)

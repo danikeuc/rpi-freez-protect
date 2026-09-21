@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date, datetime
 from pathlib import Path
 from typing import cast
@@ -37,20 +37,40 @@ class SQLiteSettingsStore:
                 raise SettingsVersionConflict(
                     "settings_version must be exactly one greater than the stored version"
                 )
+            _write_settings(connection, settings)
+        return settings
+
+    def bind_sensor_source(self, source_id: str) -> SafetySettings:
+        if not source_id:
+            raise ValueError("source_id must be non-empty")
+        with _connect(self._database_path) as connection:
+            source_row = connection.execute(
+                "SELECT value FROM runtime_metadata WHERE key = 'sensor_source_id'"
+            ).fetchone()
+            settings_row = connection.execute(
+                "SELECT payload_json FROM settings WHERE singleton = 1"
+            ).fetchone()
+            settings = (
+                SafetySettings()
+                if settings_row is None
+                else _load_settings(settings_row["payload_json"])
+            )
+            if source_row is not None and source_row["value"] == source_id:
+                return settings
+            if settings.sensor_commissioned:
+                settings = replace(
+                    settings,
+                    sensor_commissioned=False,
+                    settings_version=settings.settings_version + 1,
+                )
+                _write_settings(connection, settings)
             connection.execute(
                 """
-                INSERT INTO settings (singleton, version, payload_json, updated_at)
-                VALUES (1, ?, ?, ?)
-                ON CONFLICT(singleton) DO UPDATE SET
-                  version = excluded.version,
-                  payload_json = excluded.payload_json,
-                  updated_at = excluded.updated_at
+                INSERT INTO runtime_metadata (key, value)
+                VALUES ('sensor_source_id', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
-                (
-                    settings.settings_version,
-                    json.dumps(asdict(settings), sort_keys=True),
-                    datetime.now().astimezone().isoformat(),
-                ),
+                (source_id,),
             )
         return settings
 
@@ -175,8 +195,32 @@ def _initialize(database_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at
               ON audit_events (occurred_at DESC, id DESC);
+            CREATE TABLE IF NOT EXISTS runtime_metadata (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
             """
         )
+
+
+def _write_settings(
+    connection: sqlite3.Connection, settings: SafetySettings
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO settings (singleton, version, payload_json, updated_at)
+        VALUES (1, ?, ?, ?)
+        ON CONFLICT(singleton) DO UPDATE SET
+          version = excluded.version,
+          payload_json = excluded.payload_json,
+          updated_at = excluded.updated_at
+        """,
+        (
+            settings.settings_version,
+            json.dumps(asdict(settings), sort_keys=True),
+            datetime.now().astimezone().isoformat(),
+        ),
+    )
 
 
 def _load_object(payload_json: str) -> dict[str, object]:

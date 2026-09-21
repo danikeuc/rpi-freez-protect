@@ -53,6 +53,8 @@ from freeze_protect.persistence.sqlite import (
     SQLiteSettingsStore,
 )
 
+_PRODUCTION_SENSOR_SOURCE_ID = "MAX31865_PT100_SPI0_CE0"
+
 
 class SettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -114,6 +116,7 @@ def create_app(
         forecast_client = SimulatedForecastClient()
         actuator_driver: ActuatorDriver = SimulatedActuatorDriver()
     else:
+        settings = settings_store.bind_sensor_source(_PRODUCTION_SENSOR_SOURCE_ID)
         temperature_source = Max31865TemperatureSource(clock=clock_fn)
         forecast_store = SQLiteForecastStore(database_path)
         forecast_client = OpenMeteoForecastClient()

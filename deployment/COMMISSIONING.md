@@ -164,8 +164,19 @@ boards label a regulated input `VIN`, while bare 3.3 V boards label it `VCC`.
 Before powering the logic, photograph and record both module sides, verify the
 reference resistor is 430 ohm (commonly marked `4300`), set the board for
 three-wire operation, and confirm the probe terminal mapping from that board's
-documentation. Keep SPI wiring short and keep logic wiring separated from the
-24 V and wet-area cable run.
+documentation. Verify that the module's input-filter RC time constant is no
+greater than 100 microseconds, as required by the MAX31865 automatic fault
+detection cycle used by this adapter. If it is greater or cannot be established,
+stop commissioning until the adapter uses the datasheet's manual fault-cycle
+timing for that exact filter. Verify from the board schematic or a power-off
+inspection that
+RTDIN+ has the [MAX31865 datasheet](https://www.analog.com/media/en/technical-documentation/data-sheets/MAX31865.pdf)'s
+10 Mohm pull-up to BIAS, or a documented
+equivalent that forces a disconnected sense lead to a detectable state. If the
+exact breakout lacks that safeguard, stop commissioning until an appropriate
+hardware correction is designed and verified; software plausibility limits are
+not a substitute. Keep SPI wiring short and keep logic wiring separated from
+the 24 V and wet-area cable run.
 
 Verify the device and permissions before restarting the Hub:
 
@@ -178,19 +189,24 @@ systemctl show freeze-protect.service -p User -p Group -p SupplementaryGroups
 journalctl -u freeze-protect.service -n 50 --no-pager
 ```
 
-The service must show `SupplementaryGroups=spi`. Keep
-`sensor_commissioned=false`; the authenticated administrator status must show a
-finite `last_reading.value_c` with `HEALTHY`, while controller state remains
-`FROST_PROTECTION` with reason `sensor_pending` and both relay pins remain high.
-The CrowPanel intentionally receives no sensor value or MAX31865 diagnostic.
+The service must show `SupplementaryGroups=spi`. Production startup binds the
+approval to `MAX31865_PT100_SPI0_CE0` and clears any commissioning inherited
+from the replaced sensor once. Confirm `sensor_commissioned=false`; the
+authenticated administrator status must show a finite `last_reading.value_c`
+with `HEALTHY`, while controller state remains `FROST_PROTECTION` with reason
+`sensor_pending` and both relay pins remain high. The CrowPanel intentionally
+receives no sensor value or MAX31865 diagnostic.
 
 Record three stable readings against an independent room thermometer, then test
 near the safety range using a controlled reference around 0 °C and another
-around 8–10 °C. Room-temperature error must be within 1.0 °C. Disconnect and
-short/fault tests must return non-healthy readings and leave the controller in
-`DRAIN`. Mount the probe with good thermal contact directly on the cold-water
-pipe below the insulation and repeat the stability check. A failed read must
-never display or reuse an earlier value.
+around 8–10 °C. Room-temperature error must be within 1.0 °C. With the 24 V
+valve supply still disconnected, disconnect each PT100 lead one at a time,
+including the RTDIN+ sense lead, and test representative shorts allowed by the
+breakout instructions. Every individual case must return a non-healthy reading,
+record the applicable MAX31865 fault, and leave the controller in `DRAIN`; a
+plausible temperature is a failed test. Mount the probe with good thermal
+contact directly on the cold-water pipe below the insulation and repeat the
+stability check. A failed read must never display or reuse an earlier value.
 
 ## 5. Connect and test the valves with water isolated
 
