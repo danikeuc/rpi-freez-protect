@@ -108,7 +108,7 @@ HubResult HubClient::poll() {
   HubStatus status{};
   const bool valid = parse_status(http.getString(), status);
   http.end();
-  return {valid, status};
+  return HubResult(valid, status);
 }
 
 bool HubClient::start_timed_shower() { return post(kTimedShowerPath); }
