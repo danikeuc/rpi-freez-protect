@@ -103,12 +103,14 @@ HubResult HubClient::poll() {
   const int response_code = http.GET();
   if (response_code != HTTP_CODE_OK) {
     http.end();
-    return {};
+    HubResult result{};
+    result.http_status = response_code;
+    return result;
   }
   HubStatus status{};
   const bool valid = parse_status(http.getString(), status);
   http.end();
-  return HubResult(valid, status);
+  return HubResult(valid, status, response_code);
 }
 
 bool HubClient::start_timed_shower() { return post(kTimedShowerPath); }
