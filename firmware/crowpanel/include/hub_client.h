@@ -7,6 +7,10 @@
 struct HubResult {
   bool connected = false;
   HubStatus status;
+
+  HubResult() = default;
+  HubResult(bool is_connected, const HubStatus& hub_status)
+      : connected(is_connected), status(hub_status) {}
 };
 
 class HubClient {
