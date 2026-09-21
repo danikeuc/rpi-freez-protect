@@ -30,6 +30,14 @@ void test_offline_disables_actions_and_shows_required_copy() {
   assert(next_action(model) == DisplayAction::None);
 }
 
+void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
+  assert(connection_diagnostic(false, false, 0) == "WI-FI NI POVEZAN");
+  assert(connection_diagnostic(true, false, 0) == "HUB NEDOSEGLJIV");
+  assert(connection_diagnostic(true, false, 401) == "HUB HTTP 401");
+  assert(connection_diagnostic(true, false, 200) == "HUB ODGOVOR NAPAKA");
+  assert(connection_diagnostic(true, true, 200) == "HUB POVEZAN");
+}
+
 void test_active_timer_maps_primary_action_to_immediate_drain() {
   HubStatus status = healthy_status();
   status.state = "TIMED_SHOWER";
@@ -95,6 +103,9 @@ void test_encoder_navigation_has_exactly_two_pages() {
 #include <unity.h>
 
 void test_offline() { test_offline_disables_actions_and_shows_required_copy(); }
+void test_connection_diagnostic() {
+  test_connection_diagnostic_distinguishes_wifi_and_hub_failures();
+}
 void test_active_timer() { test_active_timer_maps_primary_action_to_immediate_drain(); }
 void test_sensor_visibility() { test_sensor_details_are_not_exposed_on_the_home_screen(); }
 void test_forecast_press() { test_forecast_primary_press_returns_to_the_home_screen(); }
@@ -107,6 +118,7 @@ void test_navigation() { test_encoder_navigation_has_exactly_two_pages(); }
 void setup() {
   UNITY_BEGIN();
   RUN_TEST(test_offline);
+  RUN_TEST(test_connection_diagnostic);
   RUN_TEST(test_active_timer);
   RUN_TEST(test_sensor_visibility);
   RUN_TEST(test_forecast_press);
@@ -122,6 +134,7 @@ void loop() {}
 #else
 int main() {
   test_offline_disables_actions_and_shows_required_copy();
+  test_connection_diagnostic_distinguishes_wifi_and_hub_failures();
   test_active_timer_maps_primary_action_to_immediate_drain();
   test_sensor_details_are_not_exposed_on_the_home_screen();
   test_forecast_primary_press_returns_to_the_home_screen();
