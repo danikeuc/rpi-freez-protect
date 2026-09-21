@@ -62,9 +62,18 @@ DisplayModel reduce_status(const HubStatus& status, bool wifi_connected,
 }
 
 std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
-                                  int http_status) {
+                                  int http_status, int wifi_status) {
   if (!wifi_connected) {
-    return "WI-FI NI POVEZAN";
+    if (wifi_status == 1) {
+      return "WI-FI: SSID NI NAJDEN";
+    }
+    if (wifi_status == 4) {
+      return "WI-FI: PRIJAVA NI USPELA";
+    }
+    if (wifi_status == 5) {
+      return "WI-FI: POVEZAVA IZGUBLJENA";
+    }
+    return "WI-FI: NI POVEZAVE";
   }
   if (hub_connected) {
     return "HUB POVEZAN";
