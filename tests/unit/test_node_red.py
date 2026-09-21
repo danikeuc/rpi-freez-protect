@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Self
 from urllib.error import URLError
 
 import pytest
@@ -15,7 +16,7 @@ class FakeResponse:
         self._payload = json.dumps(payload).encode()
         self.status = status
 
-    def __enter__(self) -> FakeResponse:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:

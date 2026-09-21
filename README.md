@@ -9,7 +9,12 @@ RPi Freeze Protect is a local safety controller for the outdoor shower. It runs 
 | `DRAIN` | high / relay released | high / relay released | `Tuš` ↔ `Izpust` |
 | `SUPPLY` | low / relay energized | low / relay energized | `Dovod` ↔ `Tuš` |
 
-`DRAIN` is the safe state. On Hub or Node-RED restart, a failed bridge request, configuration error, missing sensor, stale sensor, or unsafe forecast, the controller requests `DRAIN`. It never commands a single valve.
+`DRAIN` is the safe state. On Hub or Node-RED restart, a failed bridge request,
+configuration error, missing sensor, stale sensor, or unsafe forecast, the
+controller requests `DRAIN`. Every accepted `SUPPLY` also has a 60-second
+daemon-side lease that the Hub must renew; loss of the Hub therefore returns
+both outputs to `DRAIN` without relying on another request. It never commands a
+single valve.
 
 ## M1 capabilities
 

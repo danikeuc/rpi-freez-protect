@@ -42,9 +42,15 @@ def request(
             response = connection.recv(4096)
         decoded = json.loads(response.decode("utf-8"))
         if not isinstance(decoded, dict):
-            raise ValueError("daemon response must be an object")
+            raise TypeError("daemon response must be an object")
         return decoded
-    except Exception as error:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        TypeError,
+        ValueError,
+    ) as error:
         return {"ok": False, "command": command, "error": str(error)}
 
 

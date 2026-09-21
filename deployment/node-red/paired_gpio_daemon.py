@@ -10,9 +10,12 @@ import mmap
 import os
 import socket
 import struct
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+from signal import SIGINT, SIGTERM, getsignal, signal
+from threading import Event
 from typing import Any, Protocol
 
 PINS = (26, 20)
@@ -22,6 +25,7 @@ GPSET0 = 0x1C
 GPCLR0 = 0x28
 GPLEV0 = 0x34
 MAX_SUPPLY_TTL_S = 1.5
+SUPPLY_LEASE_S = 60.0
 SOCKET_TIMEOUT_S = 1.0
 DEFAULT_SOCKET = "/run/freeze-protect/paired-gpio.sock"
 
@@ -77,6 +81,33 @@ class PairedGpio:
         return result
 
 
+class SupplyLease:
+    """Force DRAIN unless an accepted SUPPLY command is renewed in time."""
+
+    def __init__(
+        self,
+        gpio: PairedGpio,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._gpio = gpio
+        self._clock = clock
+        self._expires_at: float | None = None
+
+    def arm(self, ttl_s: float) -> None:
+        self._expires_at = self._clock() + min(max(ttl_s, 0.0), SUPPLY_LEASE_S)
+
+    def disarm(self) -> None:
+        self._expires_at = None
+
+    def enforce(self) -> bool:
+        if self._expires_at is None or self._clock() < self._expires_at:
+            return False
+        self._gpio.write_and_verify("DRAIN")
+        self._expires_at = None
+        return True
+
+
 def unix_time_ms() -> float:
     return time.time() * 1000
 
@@ -104,32 +135,73 @@ def execute_request(
         return {"ok": False, "command": command, "error": "SUPPLY request expired"}
     try:
         levels = gpio.write_and_verify(command)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - GPIO backends can fail arbitrarily.
         try:
             gpio.write_and_verify("DRAIN")
-        except Exception:
-            pass
+        except Exception as drain_error:  # noqa: BLE001 - preserve both failures.
+            return {
+                "ok": False,
+                "command": command,
+                "error": str(error),
+                "drain_error": str(drain_error),
+            }
         return {"ok": False, "command": command, "error": str(error)}
     return {"ok": True, "command": command, "gpio": levels}
 
 
-def serve(socket_path: Path, gpio: PairedGpio) -> None:
+def serve(
+    socket_path: Path,
+    gpio: PairedGpio,
+    *,
+    stop_requested: Callable[[], bool] = lambda: False,
+) -> None:
     socket_path.unlink(missing_ok=True)
+    lease = SupplyLease(gpio)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(socket_path))
         os.chmod(socket_path, 0o660)
         listener.listen(8)
-        while True:
-            connection, _ = listener.accept()
+        listener.settimeout(0.1)
+        while not stop_requested():
+            lease.enforce()
+            try:
+                connection, _ = listener.accept()
+            except TimeoutError:
+                continue
             with connection:
                 connection.settimeout(SOCKET_TIMEOUT_S)
                 try:
                     raw = connection.recv(4096)
                     request = json.loads(raw.decode("utf-8"))
                     result = execute_request(request, gpio)
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - keep daemon responsive.
                     result = {"ok": False, "error": str(error)}
+                if result.get("ok") and result.get("command") == "SUPPLY":
+                    lease.arm(SUPPLY_LEASE_S)
+                elif result.get("ok") and result.get("command") == "DRAIN":
+                    lease.disarm()
                 connection.sendall(json.dumps(result, sort_keys=True).encode("utf-8"))
+
+
+def run_daemon(socket_path: Path, gpio: PairedGpio) -> None:
+    stop = Event()
+    previous_handlers = {signum: getsignal(signum) for signum in (SIGTERM, SIGINT)}
+
+    def request_stop(_signum: int, _frame: object) -> None:
+        stop.set()
+
+    for signum in previous_handlers:
+        signal(signum, request_stop)
+    try:
+        gpio.write_and_verify("DRAIN")
+        serve(socket_path, gpio, stop_requested=stop.is_set)
+    finally:
+        try:
+            gpio.write_and_verify("DRAIN")
+        except Exception as error:  # noqa: BLE001 - termination remains best effort.
+            print(f"emergency DRAIN failed during shutdown: {error}", file=sys.stderr)
+        for signum, previous_handler in previous_handlers.items():
+            signal(signum, previous_handler)
 
 
 def main() -> int:
@@ -140,8 +212,7 @@ def main() -> int:
     gpio = PairedGpio(registers)
     try:
         gpio.configure_outputs()
-        gpio.write_and_verify("DRAIN")
-        serve(Path(arguments.socket), gpio)
+        run_daemon(Path(arguments.socket), gpio)
     finally:
         registers.close()
     return 0

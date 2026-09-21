@@ -169,6 +169,23 @@ def test_timed_shower_reports_its_exact_monotonic_wake_deadline() -> None:
     assert at_expiry == 0
 
 
+def test_active_timed_shower_renews_the_supply_lease_each_cycle() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(monotonic_clock=elapsed)
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(30)
+
+    decision = service.run_cycle()
+
+    assert decision.reason == "timed_shower_active"
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.SUPPLY,
+    ]
+
+
 def test_decommissioning_sensor_immediately_drains_an_active_normal_state() -> None:
     clock = FakeClock(NOW)
     relay = SimulatedActuatorDriver()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, date, datetime, timedelta
+from typing import Self
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -17,7 +18,7 @@ class FakeResponse:
     def __init__(self, payload: object) -> None:
         self._payload = json.dumps(payload).encode()
 
-    def __enter__(self) -> FakeResponse:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_: object) -> None:

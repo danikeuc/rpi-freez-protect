@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Protocol
+from typing import Protocol, Self, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from urllib.request import urlopen as stdlib_urlopen
 from uuid import uuid4
 
 from freeze_protect.application.ports import AdapterError
@@ -15,7 +16,7 @@ from freeze_protect.domain.models import ActuatorCommand, ActuatorReceipt
 class _Response(Protocol):
     status: int
 
-    def __enter__(self) -> _Response: ...
+    def __enter__(self) -> Self: ...
 
     def __exit__(self, *args: object) -> None: ...
 
@@ -25,13 +26,17 @@ class _Response(Protocol):
 UrlOpen = Callable[[Request, float], _Response]
 
 
+def _urlopen(request: Request, timeout: float) -> _Response:
+    return cast(_Response, stdlib_urlopen(request, timeout=timeout))
+
+
 class NodeRedActuatorDriver:
     def __init__(
         self,
         endpoint: str,
         hub_token: str,
         *,
-        urlopen: UrlOpen = urlopen,
+        urlopen: UrlOpen = _urlopen,
         timeout_s: float = 3.0,
     ) -> None:
         parsed = urlparse(endpoint)

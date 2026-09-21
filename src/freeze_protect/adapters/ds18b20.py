@@ -5,7 +5,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from freeze_protect.domain.models import SafetySettings, SensorHealth, TemperatureReading
+from freeze_protect.domain.models import (
+    SafetySettings,
+    SensorHealth,
+    TemperatureReading,
+)
 
 _TEMPERATURE_PATTERN = re.compile(r"(?:^|\s)t=(-?\d+)(?:\s|$)")
 

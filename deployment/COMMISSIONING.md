@@ -226,7 +226,9 @@ stability check. A failed read must never display or reuse an earlier value.
 1. Isolate water and make sure the safe physical path is `Tuš` to `Izpust` while the Pi is stopped.
 2. Connect 24 V to both valve contact circuits, start a timed shower, and verify both valves move together to `Dovod` to `Tuš`.
 3. Keep `SUPPLY` active for one minute so both return capacitors charge. Invoke immediate drain; verify both return to `Tuš` to `Izpust`.
-4. Repeat once by stopping `freeze-protect.service`; the Node-RED startup and Hub restart paths must both leave the relays released/high.
+4. Repeat once by stopping `freeze-protect.service`; without Hub renewal, the
+   daemon must release both relays high within 60 seconds. The Node-RED startup
+   and Hub restart paths must also leave the relays released/high.
 5. Only after the PT100/MAX31865 checks in step 4a are recorded as passed may `sensor_commissioned` be changed to `true` in the administrator settings.
 
 ## Troubleshooting boundary

@@ -4,10 +4,11 @@ import json
 from collections.abc import Callable
 from datetime import date, datetime
 from math import isfinite
-from typing import Protocol, cast
+from typing import Protocol, Self, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from urllib.request import urlopen as stdlib_urlopen
 
 from freeze_protect.application.ports import AdapterError
 from freeze_protect.domain.models import ForecastSnapshot, SafetySettings
@@ -16,7 +17,7 @@ _BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 
 class _Response(Protocol):
-    def __enter__(self) -> _Response: ...
+    def __enter__(self) -> Self: ...
 
     def __exit__(self, *args: object) -> None: ...
 
@@ -26,8 +27,12 @@ class _Response(Protocol):
 UrlOpen = Callable[[Request, float], _Response]
 
 
+def _urlopen(request: Request, timeout: float) -> _Response:
+    return cast(_Response, stdlib_urlopen(request, timeout=timeout))
+
+
 class OpenMeteoForecastClient:
-    def __init__(self, request_opener: UrlOpen = urlopen, timeout_s: float = 5.0) -> None:
+    def __init__(self, request_opener: UrlOpen = _urlopen, timeout_s: float = 5.0) -> None:
         self._request_opener = request_opener
         self._timeout_s = timeout_s
 
@@ -60,7 +65,7 @@ def _parse_snapshot(
     payload: object, settings: SafetySettings, now: datetime
 ) -> ForecastSnapshot:
     if not isinstance(payload, dict):
-        raise ValueError("response must be an object")
+        raise TypeError("response must be an object")
     latitude = _finite_number(payload, "latitude")
     longitude = _finite_number(payload, "longitude")
     if settings.latitude is None or settings.longitude is None:
@@ -72,7 +77,7 @@ def _parse_snapshot(
         raise ValueError("response location does not match configuration")
     daily = payload.get("daily")
     if not isinstance(daily, dict):
-        raise ValueError("daily data is missing")
+        raise TypeError("daily data is missing")
     return ForecastSnapshot(
         dates=_dates(daily.get("time")),
         daily_minima_c=_minima(daily.get("temperature_2m_min")),
@@ -95,7 +100,7 @@ def _minima(value: object) -> tuple[float, ...]:
     if not isinstance(value, list) or len(value) != 7:
         raise ValueError("forecast must contain exactly seven minima")
     minima = tuple(_finite_value(item) for item in value)
-    return cast(tuple[float, ...], minima)
+    return minima
 
 
 def _finite_number(payload: dict[object, object], key: str) -> float:
@@ -104,7 +109,7 @@ def _finite_number(payload: dict[object, object], key: str) -> float:
 
 def _finite_value(value: object) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise ValueError("forecast values must be numeric")
+        raise TypeError("forecast values must be numeric")
     numeric = float(value)
     if not isfinite(numeric):
         raise ValueError("forecast values must be finite")

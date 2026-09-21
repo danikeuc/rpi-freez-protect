@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import socket
 from pathlib import Path
 from types import ModuleType
+from typing import Self
 
 import pytest
-
 
 CLIENT_PATH = (
     Path(__file__).parents[2]
@@ -46,7 +45,7 @@ class FakeSocket:
     def __init__(self) -> None:
         self.sent = b""
 
-    def __enter__(self) -> FakeSocket:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *_args: object) -> None:

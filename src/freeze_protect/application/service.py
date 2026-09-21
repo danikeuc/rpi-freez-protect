@@ -108,6 +108,9 @@ class ControlService:
                     self._timed_shower_monotonic_deadline is not None
                     and self._monotonic_clock() < self._timed_shower_monotonic_deadline
                 ):
+                    if not self._send(ActuatorCommand.SUPPLY, force=True):
+                        self._best_effort_drain()
+                        return self._fault("relay_driver_error")
                     return self._set_decision(
                         Decision(
                             ControllerState.TIMED_SHOWER,
@@ -198,7 +201,7 @@ class ControlService:
             except AdapterError as error:
                 self._append_event("forecast_refresh_failed", {"error": str(error)})
                 return None
-            except Exception:
+            except Exception:  # noqa: BLE001 - persistence ports are user supplied.
                 self._latch_persistence_failure()
                 return None
             if not self._append_event(
@@ -246,13 +249,13 @@ class ControlService:
         return decision
 
     def _run_automatic(self) -> Decision:
-        if self._state is ControllerState.FAULT:
+        if self._is_faulted():
             return self._last_decision
         reading = self._read_temperature()
-        if self._state is ControllerState.FAULT:
+        if self._is_faulted():
             return self._last_decision
         forecast = self._load_forecast()
-        if self._state is ControllerState.FAULT:
+        if self._is_faulted():
             return self._last_decision
         decision = evaluate_automatic(
             reading=reading,
@@ -260,7 +263,10 @@ class ControlService:
             settings=self._settings,
             now=self._clock(),
         )
-        if not self._send(decision.command):
+        if not self._send(
+            decision.command,
+            force=decision.command is ActuatorCommand.SUPPLY,
+        ):
             if decision.command is ActuatorCommand.SUPPLY:
                 self._best_effort_drain()
             return self._fault("relay_driver_error")
@@ -276,6 +282,9 @@ class ControlService:
             return self._last_decision
         return decision
 
+    def _is_faulted(self) -> bool:
+        return self._state is ControllerState.FAULT
+
     def _read_temperature(self) -> TemperatureReading:
         now = self._clock()
         try:
@@ -283,7 +292,7 @@ class ControlService:
         except AdapterError as error:
             self._append_event("sensor_source_error", {"error": str(error)})
             reading = TemperatureReading(None, now, SensorHealth.STALE)
-        except Exception:
+        except Exception:  # noqa: BLE001 - persistence ports are user supplied.
             self._latch_persistence_failure()
             reading = TemperatureReading(None, now, SensorHealth.STALE)
         self._last_reading = reading
@@ -292,7 +301,7 @@ class ControlService:
     def _load_forecast(self) -> ForecastSnapshot | None:
         try:
             return self._forecast_store.load()
-        except Exception:
+        except Exception:  # noqa: BLE001 - persistence ports are user supplied.
             self._latch_persistence_failure()
             return None
 
@@ -362,7 +371,7 @@ class ControlService:
                     payload=payload,
                 )
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - persistence ports are user supplied.
             self._latch_persistence_failure()
             return False
         return True
@@ -422,7 +431,7 @@ class PeriodicControlLoop:
                     self._service.refresh_forecast()
                     next_forecast = monotonic() + self._forecast_interval_s
                 self._service.run_cycle()
-            except Exception:
+            except Exception:  # noqa: BLE001 - fail-safe loop boundary.
                 self._service.handle_persistence_failure()
             wait_seconds = self._cycle_interval_s
             shower_expiry = self._service.seconds_until_timed_shower_expiry()
