@@ -21,6 +21,7 @@ final_ssh_policy_had_previous=false
 final_ssh_policy_previous_restorable=false
 final_ssh_policy_keep_backup=false
 final_ssh_policy_target_changed=false
+quarantine_ssh_policy_moved=false
 ssh_policy_pending=false
 
 require_root_protected() {
@@ -107,22 +108,36 @@ restore_pending_ssh_policy() {
   fi
 
   rollback_failed=false
+  final_ssh_policy_restored=false
   if [ "${final_ssh_policy_target_changed:-true}" = true ]; then
     if [ "$final_ssh_policy_had_previous" = true ] &&
        [ "$final_ssh_policy_previous_restorable" = true ]; then
       if [ -z "$final_ssh_policy_backup" ] ||
-         [ ! -f "$final_ssh_policy_backup" ] ||
-         ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
+         [ ! -f "$final_ssh_policy_backup" ]; then
         rollback_failed=true
       else
-        final_ssh_policy_backup=
+        final_ssh_policy_restore=
+        if final_ssh_policy_restore=$(mktemp \
+             "$(dirname -- "$final_ssh_policy_target")/.freezeprotect-restore.XXXXXX"); then
+          if install -o root -g root -m 0600 "$final_ssh_policy_backup" \
+               "$final_ssh_policy_restore" &&
+             /usr/bin/mv -T "$final_ssh_policy_restore" "$final_ssh_policy_target"; then
+            final_ssh_policy_restored=true
+          else
+            rollback_failed=true
+            /usr/bin/rm -f "$final_ssh_policy_restore" || :
+          fi
+        else
+          rollback_failed=true
+        fi
       fi
     elif ! /usr/bin/rm -f "$final_ssh_policy_target"; then
       rollback_failed=true
     fi
   fi
 
-  if [ ! -e "$quarantine_ssh_policy_target" ] &&
+  if [ "${quarantine_ssh_policy_moved:-false}" = true ] &&
+     [ ! -e "$quarantine_ssh_policy_target" ] &&
      [ -e "$quarantine_ssh_policy_disabled_target" ]; then
     if ! /usr/bin/mv -T "$quarantine_ssh_policy_disabled_target" "$quarantine_ssh_policy_target"; then
       rollback_failed=true
@@ -140,6 +155,10 @@ restore_pending_ssh_policy() {
     return 1
   fi
 
+  if [ "$final_ssh_policy_restored" = true ] &&
+     /usr/bin/rm -f "$final_ssh_policy_backup"; then
+    final_ssh_policy_backup=
+  fi
   ssh_policy_pending=false
   if [ "$final_ssh_policy_keep_backup" = true ] &&
      [ -n "$final_ssh_policy_backup" ]; then
@@ -718,6 +737,7 @@ fi
 # Validate the exact post-handover configuration before replacing quarantine.
 # The commissioning key and sudoers file are still absent, so even a reload
 # failure cannot create new remote access for that account.
+quarantine_ssh_policy_moved=true
 /usr/bin/mv -T "$quarantine_ssh_policy_target" \
   "$quarantine_ssh_policy_disabled_target"
 sshd -t -f /etc/ssh/sshd_config
