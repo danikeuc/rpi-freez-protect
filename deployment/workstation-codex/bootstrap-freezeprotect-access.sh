@@ -20,6 +20,7 @@ final_ssh_policy_backup=
 final_ssh_policy_had_previous=false
 final_ssh_policy_previous_restorable=false
 final_ssh_policy_keep_backup=false
+final_ssh_policy_target_changed=false
 ssh_policy_pending=false
 
 require_root_protected() {
@@ -62,23 +63,18 @@ prepare_final_ssh_policy_transaction() {
   fi
   if [ -e "$quarantine_ssh_policy_disabled_target" ]; then
     require_root_owned_file "$quarantine_ssh_policy_disabled_target"
-    /usr/bin/rm -f "$quarantine_ssh_policy_disabled_target"
-  fi
-
-  previous_configuration_valid=true
-  if ! sshd -t -f /etc/ssh/sshd_config; then
-    previous_configuration_valid=false
   fi
 
   if [ ! -e "$final_ssh_policy_target" ]; then
-    if [ "$previous_configuration_valid" != true ]; then
-      echo "existing SSH configuration is invalid without a commissioning final policy" >&2
-      return 1
-    fi
     final_ssh_policy_had_previous=false
     final_ssh_policy_previous_restorable=false
     final_ssh_policy_keep_backup=false
+    final_ssh_policy_target_changed=true
     ssh_policy_pending=true
+    if ! sshd -t -f /etc/ssh/sshd_config; then
+      echo "existing SSH configuration is invalid without a commissioning final policy" >&2
+      return 1
+    fi
     return
   fi
 
@@ -86,24 +82,22 @@ prepare_final_ssh_policy_transaction() {
   final_ssh_policy_backup=$(mktemp /etc/ssh/sshd_config.d/.freezeprotect-final-policy.XXXXXX)
   install -o root -g root -m 0600 "$final_ssh_policy_target" "$final_ssh_policy_backup"
   final_ssh_policy_had_previous=true
-  final_ssh_policy_previous_restorable=true
-  final_ssh_policy_keep_backup=false
+  final_ssh_policy_previous_restorable=false
+  final_ssh_policy_keep_backup=true
+  final_ssh_policy_target_changed=false
   ssh_policy_pending=true
+
+  if sshd -t -f /etc/ssh/sshd_config; then
+    final_ssh_policy_previous_restorable=true
+    final_ssh_policy_keep_backup=false
+  fi
+
+  final_ssh_policy_target_changed=true
   /usr/bin/rm -f "$final_ssh_policy_target"
 
-  if [ "$previous_configuration_valid" != true ]; then
-    if ! sshd -t -f /etc/ssh/sshd_config; then
-      echo "existing SSH configuration remains invalid without the commissioning final policy" >&2
-      if ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
-        echo "could not restore the pre-existing final SSH policy" >&2
-      else
-        final_ssh_policy_backup=
-        ssh_policy_pending=false
-      fi
-      return 1
-    fi
-    final_ssh_policy_previous_restorable=false
-    final_ssh_policy_keep_backup=true
+  if ! sshd -t -f /etc/ssh/sshd_config; then
+    echo "existing SSH configuration remains invalid without the commissioning final policy" >&2
+    return 1
   fi
 }
 
@@ -113,17 +107,19 @@ restore_pending_ssh_policy() {
   fi
 
   rollback_failed=false
-  if [ "$final_ssh_policy_had_previous" = true ] &&
-     [ "$final_ssh_policy_previous_restorable" = true ]; then
-    if [ -z "$final_ssh_policy_backup" ] ||
-       [ ! -f "$final_ssh_policy_backup" ] ||
-       ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
+  if [ "${final_ssh_policy_target_changed:-true}" = true ]; then
+    if [ "$final_ssh_policy_had_previous" = true ] &&
+       [ "$final_ssh_policy_previous_restorable" = true ]; then
+      if [ -z "$final_ssh_policy_backup" ] ||
+         [ ! -f "$final_ssh_policy_backup" ] ||
+         ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
+        rollback_failed=true
+      else
+        final_ssh_policy_backup=
+      fi
+    elif ! /usr/bin/rm -f "$final_ssh_policy_target"; then
       rollback_failed=true
-    else
-      final_ssh_policy_backup=
     fi
-  elif ! /usr/bin/rm -f "$final_ssh_policy_target"; then
-    rollback_failed=true
   fi
 
   if [ ! -e "$quarantine_ssh_policy_target" ] &&
@@ -133,8 +129,7 @@ restore_pending_ssh_policy() {
     fi
   fi
 
-  if [ "$rollback_failed" != true ] &&
-     ! sshd -t -f /etc/ssh/sshd_config; then
+  if ! sshd -t -f /etc/ssh/sshd_config; then
     rollback_failed=true
   fi
   if [ "$rollback_failed" = true ]; then
@@ -760,8 +755,8 @@ if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/
   exit 1
 fi
 reload_active_ssh_service "commissioning"
-/usr/bin/rm -f "$quarantine_ssh_policy_disabled_target"
 ssh_policy_pending=false
+/usr/bin/rm -f "$quarantine_ssh_policy_disabled_target"
 if [ -n "$final_ssh_policy_backup" ] &&
    [ "$final_ssh_policy_keep_backup" != true ]; then
   /usr/bin/rm -f "$final_ssh_policy_backup"
