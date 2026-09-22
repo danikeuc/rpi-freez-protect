@@ -1013,6 +1013,7 @@ final_ssh_policy_backup={shlex.quote(str(backup))}
 final_ssh_policy_target={shlex.quote(str(final_target))}
 quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
 quarantine_ssh_policy_disabled_target={shlex.quote(str(disabled_quarantine))}
+quarantine_ssh_policy_moved=true
 sshd() {{ return 0; }}
 {restore}
 restore_pending_ssh_policy
@@ -1068,6 +1069,7 @@ final_ssh_policy_backup=
 final_ssh_policy_had_previous=false
 final_ssh_policy_previous_restorable=false
 final_ssh_policy_keep_backup=false
+quarantine_ssh_policy_moved=false
 ssh_policy_pending=false
 final_ssh_policy_target={shlex.quote(str(final_target))}
 quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
@@ -1093,6 +1095,7 @@ trap 'cleanup_key_snapshot $?' 0
 prepare_final_ssh_policy_transaction
 printf '%s\n' 'DenyUsers freezeprotect freezeprotect-commission' > "$quarantine_ssh_policy_target"
 printf '%s\n' 'invalid new candidate' > "$final_ssh_policy_target"
+quarantine_ssh_policy_moved=true
 /usr/bin/mv -T "$quarantine_ssh_policy_target" "$quarantine_ssh_policy_disabled_target"
 exit 73
 """
@@ -1140,6 +1143,7 @@ final_ssh_policy_had_previous=false
 final_ssh_policy_previous_restorable=false
 final_ssh_policy_keep_backup=false
 final_ssh_policy_target_changed=false
+quarantine_ssh_policy_moved=false
 ssh_policy_pending=false
 final_ssh_policy_target={shlex.quote(str(final_target))}
 quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
@@ -1165,8 +1169,64 @@ exit 73
 
     assert result.returncode == 73, result.stderr
     assert not final_target.exists()
-    assert quarantine_target.read_text(encoding="utf-8") == (
+    assert not quarantine_target.exists()
+    assert disabled_quarantine.read_text(encoding="utf-8") == (
         "DenyUsers freezeprotect\n"
+    )
+
+
+def test_bootstrap_failed_preparation_preserves_preexisting_disabled_quarantine(
+    tmp_path: Path,
+) -> None:
+    """Cleanup must not activate quarantine state this transaction did not move."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    prepare = extract_shell_function(
+        bootstrap, "prepare_final_ssh_policy_transaction"
+    )
+    restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
+    final_target = tmp_path / "70-freezeprotect-commission.conf"
+    quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
+    disabled_quarantine = Path(str(quarantine_target) + ".disabled")
+    disabled_quarantine.write_text("unvalidated old quarantine\n", encoding="utf-8")
+    script = f"""set -eu
+commission_grant_pending=false
+commission_home=/home/freezeprotect-commission
+key_snapshot=
+final_ssh_policy_backup=
+final_ssh_policy_had_previous=false
+final_ssh_policy_previous_restorable=false
+final_ssh_policy_keep_backup=false
+final_ssh_policy_target_changed=false
+quarantine_ssh_policy_moved=false
+ssh_policy_pending=false
+final_ssh_policy_target={shlex.quote(str(final_target))}
+quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
+quarantine_ssh_policy_disabled_target={shlex.quote(str(disabled_quarantine))}
+sshd() {{ return 1; }}
+{require_file}
+{prepare}
+{restore}
+{cleanup}
+trap 'cleanup_key_snapshot $?' 0
+prepare_final_ssh_policy_transaction
+"""
+    result = subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert not quarantine_target.exists()
+    assert disabled_quarantine.read_text(encoding="utf-8") == (
+        "unvalidated old quarantine\n"
     )
 
 
@@ -1245,6 +1305,7 @@ final_ssh_policy_backup={shlex.quote(str(backup))}
 final_ssh_policy_target={shlex.quote(str(final_target))}
 quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
 quarantine_ssh_policy_disabled_target={shlex.quote(str(disabled_quarantine))}
+quarantine_ssh_policy_moved=true
 sshd() {{ printf 'validated\n' >> {shlex.quote(str(sshd_log))}; return 1; }}
 {restore}
 {cleanup}
@@ -1266,6 +1327,60 @@ exit 73
     assert final_target.read_text(encoding="utf-8") == "invalid candidate\n"
     assert disabled_quarantine.exists()
     assert sshd_log.read_text(encoding="utf-8").splitlines() == ["validated"]
+
+
+def test_bootstrap_preserves_backup_when_post_restore_validation_fails(
+    tmp_path: Path,
+) -> None:
+    """A later rollback failure must not consume the only prior-policy backup."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
+    final_target = tmp_path / "70-freezeprotect-commission.conf"
+    quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
+    disabled_quarantine = Path(str(quarantine_target) + ".disabled")
+    backup = tmp_path / "previous-policy"
+    final_target.write_text("invalid candidate\n", encoding="utf-8")
+    disabled_quarantine.write_text("DenyUsers freezeprotect\n", encoding="utf-8")
+    backup.write_text("previous valid policy\n", encoding="utf-8")
+    script = f"""set -eu
+commission_grant_pending=false
+commission_home=/home/freezeprotect-commission
+key_snapshot=
+ssh_policy_pending=true
+final_ssh_policy_had_previous=true
+final_ssh_policy_previous_restorable=true
+final_ssh_policy_keep_backup=false
+final_ssh_policy_target_changed=true
+final_ssh_policy_backup={shlex.quote(str(backup))}
+final_ssh_policy_target={shlex.quote(str(final_target))}
+quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
+quarantine_ssh_policy_disabled_target={shlex.quote(str(disabled_quarantine))}
+quarantine_ssh_policy_moved=true
+sshd() {{ return 1; }}
+{restore}
+{cleanup}
+trap 'cleanup_key_snapshot $?' 0
+exit 73
+"""
+    result = subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode != 73
+    assert "SSH policy rollback failed" in result.stderr
+    assert final_target.read_text(encoding="utf-8") == "previous valid policy\n"
+    assert backup.read_text(encoding="utf-8") == "previous valid policy\n"
+    assert quarantine_target.read_text(encoding="utf-8") == (
+        "DenyUsers freezeprotect\n"
+    )
 
 
 def test_bootstrap_commits_policy_before_discarding_quarantine_recovery() -> None:
