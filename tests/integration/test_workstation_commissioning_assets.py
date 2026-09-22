@@ -8,6 +8,44 @@ import pytest
 ROOT = Path(__file__).parents[2]
 
 
+def test_root_agents_file_loads_commissioning_boundaries_for_local_codex() -> None:
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md" in agents
+    assert "Keep the 24 V valve supply disconnected" in agents
+    assert "Do not run SUPPLY" in agents
+    assert "freezeprotect-commission" in agents
+    assert "Do not install Codex on the Pi" in agents
+    assert "Do not widen the commissioning allowlist" in agents
+
+
+def test_first_contact_host_key_prompt_is_handled_as_a_trust_gate() -> None:
+    prompt = (
+        ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
+    ).read_text(encoding="utf-8")
+    guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
+
+    for document in (prompt, guide):
+        assert "not an authentication failure" in document
+        assert "ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256" in document
+        assert "Do not use `StrictHostKeyChecking=no`" in document
+        assert "trusted local console" in document
+
+
+def test_desktop_handoff_uses_local_repo_and_repository_instructions() -> None:
+    guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "ChatGPT desktop app" in guide
+    assert "This computer" in guide
+    assert "repository root" in guide
+    assert "`AGENTS.md`" in guide
+    assert "Do not install Codex on the Pi" in guide
+
+
 def test_bootstrap_remains_executable_for_trusted_console_use() -> None:
     """Catch an asset replacement that makes the documented bootstrap unrunnable."""
     bootstrap = ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"

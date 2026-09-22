@@ -9,6 +9,15 @@ the dedicated non-root freezeprotect-commission account over the Pi private
 LAN; freezeprotect is a non-login service identity. Do not use root SSH,
 public SSH exposure, credentials, or tokens.
 
+A first-contact `The authenticity of host ... can't be established` prompt is
+not an authentication failure. Do not retry it as a password/key problem and
+stop before accepting the key. Do not use `StrictHostKeyChecking=no` or
+`accept-new`. At the trusted local console, ask the operator to run
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256` and compare the
+complete ED25519 fingerprint. Only after an exact match may the operator
+establish trust interactively. A changed-host-key event is a separate incident;
+do not remove a `known_hosts` entry without the same out-of-band verification.
+
 For read-only Pi checks, use the non-interactive form:
 
 ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
