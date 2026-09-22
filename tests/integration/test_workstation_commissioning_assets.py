@@ -994,6 +994,8 @@ def test_bootstrap_exit_cleanup_restores_ssh_policy_files(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
+    assert "restore_pending_ssh_policy" in cleanup
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
     disabled_quarantine = Path(str(quarantine_target) + ".disabled")
