@@ -573,25 +573,27 @@ install -o root -g root -m 0755 "$helper_source" \
 install -o root -g root -m 0644 "$sshd_policy_source" \
   "$final_ssh_policy_target"
 sshd -t -f /etc/ssh/sshd_config
-effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
-for expected_setting in \
-  'passwordauthentication no' \
-  'kbdinteractiveauthentication no' \
-  'authenticationmethods publickey' \
-  'forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch' \
-  'allowtcpforwarding no' \
-  'allowstreamlocalforwarding no' \
-  'allowagentforwarding no' \
-  'x11forwarding no' \
-  'permittunnel no' \
-  'permittty no' \
-  'gatewayports no' \
-  'permituserrc no' \
-  'permituserenvironment no'; do
-  if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx "$expected_setting" >/dev/null; then
-    echo "commissioning SSH policy is ineffective: expected $expected_setting" >&2
-    exit 1
-  fi
+for commission_source_address in 192.168.111.30 192.168.114.1; do
+  effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr="$commission_source_address")
+  for expected_setting in \
+    'passwordauthentication no' \
+    'kbdinteractiveauthentication no' \
+    'authenticationmethods publickey' \
+    'forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch' \
+    'allowtcpforwarding no' \
+    'allowstreamlocalforwarding no' \
+    'allowagentforwarding no' \
+    'x11forwarding no' \
+    'permittunnel no' \
+    'permittty no' \
+    'gatewayports no' \
+    'permituserrc no' \
+    'permituserenvironment no'; do
+    if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx "$expected_setting" >/dev/null; then
+      echo "commissioning SSH policy is ineffective for $commission_source_address: expected $expected_setting" >&2
+      exit 1
+    fi
+  done
 done
 service_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect,host=localhost,addr=192.168.114.1)
 if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/dev/null; then
@@ -605,25 +607,27 @@ fi
 mv -f "$quarantine_ssh_policy_target" \
   "$quarantine_ssh_policy_target.disabled"
 sshd -t -f /etc/ssh/sshd_config
-effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
-for expected_setting in \
-  'passwordauthentication no' \
-  'kbdinteractiveauthentication no' \
-  'authenticationmethods publickey' \
-  'forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch' \
-  'allowtcpforwarding no' \
-  'allowstreamlocalforwarding no' \
-  'allowagentforwarding no' \
-  'x11forwarding no' \
-  'permittunnel no' \
-  'permittty no' \
-  'gatewayports no' \
-  'permituserrc no' \
-  'permituserenvironment no'; do
-  if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx "$expected_setting" >/dev/null; then
-    echo "post-handover commissioning SSH policy is ineffective: expected $expected_setting" >&2
-    exit 1
-  fi
+for commission_source_address in 192.168.111.30 192.168.114.1; do
+  effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr="$commission_source_address")
+  for expected_setting in \
+    'passwordauthentication no' \
+    'kbdinteractiveauthentication no' \
+    'authenticationmethods publickey' \
+    'forcecommand /usr/local/lib/freeze-protect-commission/ssh-dispatch' \
+    'allowtcpforwarding no' \
+    'allowstreamlocalforwarding no' \
+    'allowagentforwarding no' \
+    'x11forwarding no' \
+    'permittunnel no' \
+    'permittty no' \
+    'gatewayports no' \
+    'permituserrc no' \
+    'permituserenvironment no'; do
+    if ! printf '%s\n' "$effective_ssh_policy" | grep -Fx "$expected_setting" >/dev/null; then
+      echo "post-handover commissioning SSH policy is ineffective for $commission_source_address: expected $expected_setting" >&2
+      exit 1
+    fi
+  done
 done
 off_lan_commission_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.115.1)
 if ! printf '%s\n' "$off_lan_commission_ssh_policy" | grep -E \
