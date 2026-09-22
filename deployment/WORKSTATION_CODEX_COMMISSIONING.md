@@ -7,7 +7,8 @@ state and environment and must never be used for SSH. Do not configure an
 automation runner or use a privileged remote login. The 24 V valve supply
 remains disconnected until Danijel explicitly approves the physical test in
 the current session. Keep Pi SSH private-LAN-only; do not expose it publicly.
-The bootstrap allows the commissioning account only from `192.168.114.0/24`;
+The bootstrap allows the commissioning account only from the trusted
+workstation LAN `192.168.111.0/24` and Pi LAN `192.168.114.0/24`;
 do not add a router port-forward for TCP 22.
 
 ## 1. Windows workstation prerequisites
