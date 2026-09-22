@@ -293,9 +293,9 @@ def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
         "PermitTTY no",
         "GatewayPorts no",
         "PermitUserRC no",
-        "PermitUserEnvironment no",
     ):
         assert setting in ssh_policy
+    assert "PermitUserEnvironment" not in ssh_policy
 
 
 @pytest.mark.parametrize(
@@ -983,6 +983,53 @@ def test_bootstrap_revokes_an_incomplete_new_commissioning_grant_on_exit() -> No
     assert cleanup < pending_cleanup < sudoers_revoke
     assert pending_cleanup < key_revoke
     assert pending_set < sudoers_install < pending_clear
+
+
+@pytest.mark.parametrize("previous_policy", [None, "previous final policy\n"])
+def test_bootstrap_exit_cleanup_restores_ssh_policy_files(
+    tmp_path: Path, previous_policy: str | None
+) -> None:
+    """A failed candidate must leave a valid quarantine-first disk state."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    final_target = tmp_path / "70-freezeprotect-commission.conf"
+    quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
+    disabled_quarantine = Path(str(quarantine_target) + ".disabled")
+    backup = tmp_path / "previous-policy"
+    final_target.write_text("invalid candidate\n", encoding="utf-8")
+    disabled_quarantine.write_text("DenyUsers freezeprotect\n", encoding="utf-8")
+    if previous_policy is not None:
+        backup.write_text(previous_policy, encoding="utf-8")
+    script = f"""set -eu
+ssh_policy_pending=true
+final_ssh_policy_had_previous={'true' if previous_policy is not None else 'false'}
+final_ssh_policy_backup={shlex.quote(str(backup))}
+final_ssh_policy_target={shlex.quote(str(final_target))}
+quarantine_ssh_policy_target={shlex.quote(str(quarantine_target))}
+{restore}
+restore_pending_ssh_policy
+"""
+    result = subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    if previous_policy is None:
+        assert not final_target.exists()
+    else:
+        assert final_target.read_text(encoding="utf-8") == previous_policy
+    assert quarantine_target.read_text(encoding="utf-8") == (
+        "DenyUsers freezeprotect\n"
+    )
+    assert not disabled_quarantine.exists()
+    assert not backup.exists()
 
 
 def test_bootstrap_exit_cleanup_revokes_a_pending_new_commissioning_grant(
