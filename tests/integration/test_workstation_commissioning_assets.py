@@ -1394,3 +1394,66 @@ def test_drain_accepts_success_receipt_and_both_output_high_records() -> None:
         "20: op dh pn | hi // GPIO20 = output",
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        "denyusers freezeprotect freezeprotect-commission\n",
+        "denyusers freezeprotect\ndenyusers freezeprotect-commission\n",
+    ],
+)
+def test_sshd_policy_denies_users_across_canonical_output_forms(policy: str) -> None:
+    """Accept OpenSSH output whether DenyUsers is combined or split."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    policy_check = extract_shell_function(bootstrap, "sshd_policy_denies_user")
+    script = f"""set -eu
+commission_awk=/usr/bin/awk
+{policy_check}
+policy={shlex.quote(policy)}
+sshd_policy_denies_user "$policy" freezeprotect
+sshd_policy_denies_user "$policy" freezeprotect-commission
+"""
+
+    result = subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_sshd_policy_denies_user_requires_an_exact_username() -> None:
+    """Reject absent users and usernames that only share a prefix."""
+    bootstrap = (
+        ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
+    ).read_text(encoding="utf-8")
+    policy_check = extract_shell_function(bootstrap, "sshd_policy_denies_user")
+    script = f"""set -eu
+commission_awk=/usr/bin/awk
+{policy_check}
+policy='denyusers freezeprotect-other freezeprotect-commission-other'
+if sshd_policy_denies_user "$policy" freezeprotect; then
+  exit 91
+fi
+if sshd_policy_denies_user "$policy" freezeprotect-commission; then
+  exit 92
+fi
+"""
+
+    result = subprocess.run(
+        ["/bin/sh", "-s"],
+        input=script,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
