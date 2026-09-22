@@ -18,6 +18,8 @@ key_snapshot=
 commission_grant_pending=false
 final_ssh_policy_backup=
 final_ssh_policy_had_previous=false
+final_ssh_policy_previous_restorable=false
+final_ssh_policy_keep_backup=false
 ssh_policy_pending=false
 
 require_root_protected() {
@@ -51,32 +53,114 @@ require_root_owned_file() {
   fi
 }
 
+prepare_final_ssh_policy_transaction() {
+  if [ -L "$quarantine_ssh_policy_disabled_target" ] ||
+     { [ -e "$quarantine_ssh_policy_disabled_target" ] &&
+       [ ! -f "$quarantine_ssh_policy_disabled_target" ]; }; then
+    echo "invalid disabled quarantine target: $quarantine_ssh_policy_disabled_target" >&2
+    return 1
+  fi
+  if [ -e "$quarantine_ssh_policy_disabled_target" ]; then
+    require_root_owned_file "$quarantine_ssh_policy_disabled_target"
+    /usr/bin/rm -f "$quarantine_ssh_policy_disabled_target"
+  fi
+
+  previous_configuration_valid=true
+  if ! sshd -t -f /etc/ssh/sshd_config; then
+    previous_configuration_valid=false
+  fi
+
+  if [ ! -e "$final_ssh_policy_target" ]; then
+    if [ "$previous_configuration_valid" != true ]; then
+      echo "existing SSH configuration is invalid without a commissioning final policy" >&2
+      return 1
+    fi
+    final_ssh_policy_had_previous=false
+    final_ssh_policy_previous_restorable=false
+    final_ssh_policy_keep_backup=false
+    ssh_policy_pending=true
+    return
+  fi
+
+  require_root_owned_file "$final_ssh_policy_target"
+  final_ssh_policy_backup=$(mktemp /etc/ssh/sshd_config.d/.freezeprotect-final-policy.XXXXXX)
+  install -o root -g root -m 0600 "$final_ssh_policy_target" "$final_ssh_policy_backup"
+  final_ssh_policy_had_previous=true
+  final_ssh_policy_previous_restorable=true
+  final_ssh_policy_keep_backup=false
+  ssh_policy_pending=true
+  /usr/bin/rm -f "$final_ssh_policy_target"
+
+  if [ "$previous_configuration_valid" != true ]; then
+    if ! sshd -t -f /etc/ssh/sshd_config; then
+      echo "existing SSH configuration remains invalid without the commissioning final policy" >&2
+      if ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
+        echo "could not restore the pre-existing final SSH policy" >&2
+      else
+        final_ssh_policy_backup=
+        ssh_policy_pending=false
+      fi
+      return 1
+    fi
+    final_ssh_policy_previous_restorable=false
+    final_ssh_policy_keep_backup=true
+  fi
+}
+
 restore_pending_ssh_policy() {
   if [ "$ssh_policy_pending" != true ]; then
     return
   fi
 
+  rollback_failed=false
   if [ "$final_ssh_policy_had_previous" = true ] &&
-     [ -n "$final_ssh_policy_backup" ] &&
-     [ -f "$final_ssh_policy_backup" ]; then
-    /usr/bin/mv -f "$final_ssh_policy_backup" "$final_ssh_policy_target" || :
-    final_ssh_policy_backup=
-  else
-    /usr/bin/rm -f "$final_ssh_policy_target" || :
+     [ "$final_ssh_policy_previous_restorable" = true ]; then
+    if [ -z "$final_ssh_policy_backup" ] ||
+       [ ! -f "$final_ssh_policy_backup" ] ||
+       ! /usr/bin/mv -T "$final_ssh_policy_backup" "$final_ssh_policy_target"; then
+      rollback_failed=true
+    else
+      final_ssh_policy_backup=
+    fi
+  elif ! /usr/bin/rm -f "$final_ssh_policy_target"; then
+    rollback_failed=true
   fi
 
   if [ ! -e "$quarantine_ssh_policy_target" ] &&
-     [ -e "$quarantine_ssh_policy_target.disabled" ]; then
-    /usr/bin/mv -f "$quarantine_ssh_policy_target.disabled"       "$quarantine_ssh_policy_target" || :
+     [ -e "$quarantine_ssh_policy_disabled_target" ]; then
+    if ! /usr/bin/mv -T "$quarantine_ssh_policy_disabled_target" "$quarantine_ssh_policy_target"; then
+      rollback_failed=true
+    fi
   fi
+
+  if [ "$rollback_failed" != true ] &&
+     ! sshd -t -f /etc/ssh/sshd_config; then
+    rollback_failed=true
+  fi
+  if [ "$rollback_failed" = true ]; then
+    echo "SSH policy rollback failed; recover at the trusted local console" >&2
+    if [ -n "$final_ssh_policy_backup" ]; then
+      echo "SSH policy recovery backup: $final_ssh_policy_backup" >&2
+    fi
+    return 1
+  fi
+
   ssh_policy_pending=false
+  if [ "$final_ssh_policy_keep_backup" = true ] &&
+     [ -n "$final_ssh_policy_backup" ]; then
+    echo "retained invalid SSH policy for diagnosis: $final_ssh_policy_backup" >&2
+  fi
 }
 
 cleanup_key_snapshot() {
   status=$1
-  trap - 0 HUP INT TERM
+  cleanup_status=$status
+  trap - 0
+  trap '' HUP INT TERM
   if [ "${ssh_policy_pending:-false}" = true ]; then
-    restore_pending_ssh_policy
+    if ! restore_pending_ssh_policy; then
+      cleanup_status=1
+    fi
   fi
   if [ "$commission_grant_pending" = true ]; then
     /usr/bin/rm -f /etc/sudoers.d/freeze-protect-commission || :
@@ -85,10 +169,12 @@ cleanup_key_snapshot() {
   if [ -n "$key_snapshot" ] && [ -x /usr/bin/rm ]; then
     /usr/bin/rm -f "$key_snapshot" || :
   fi
-  if [ -n "${final_ssh_policy_backup:-}" ] && [ -x /usr/bin/rm ]; then
+  if [ "${ssh_policy_pending:-false}" != true ] &&
+     [ "${final_ssh_policy_keep_backup:-false}" != true ] &&
+     [ -n "${final_ssh_policy_backup:-}" ] && [ -x /usr/bin/rm ]; then
     /usr/bin/rm -f "$final_ssh_policy_backup" || :
   fi
-  exit "$status"
+  exit "$cleanup_status"
 }
 
 revoke_legacy_commission_grants() {
@@ -334,6 +420,7 @@ sshd_policy_source=$script_dir/60-freezeprotect-commission.conf
 quarantine_ssh_policy_source=$script_dir/60-freezeprotect-commission-quarantine.conf
 legacy_ssh_policy_target=/etc/ssh/sshd_config.d/60-freezeprotect-commission.conf
 quarantine_ssh_policy_target=/etc/ssh/sshd_config.d/60-freezeprotect-commission-quarantine.conf
+quarantine_ssh_policy_disabled_target=/etc/ssh/sshd_config.d/60-freezeprotect-commission-quarantine.conf.disabled
 final_ssh_policy_target=/etc/ssh/sshd_config.d/70-freezeprotect-commission.conf
 ssh_dispatch_source=$script_dir/freeze-protect-commission-ssh-dispatch
 client_source=$script_dir/../node-red/paired_gpio_client.py
@@ -487,12 +574,14 @@ if [ -e /etc/ssh/sshd_config.d ]; then
   require_root_protected /etc/ssh/sshd_config.d
 fi
 for ssh_policy_target in "$legacy_ssh_policy_target" \
-  "$quarantine_ssh_policy_target" "$final_ssh_policy_target"; do
+  "$quarantine_ssh_policy_target" "$quarantine_ssh_policy_disabled_target" \
+  "$final_ssh_policy_target"; do
   if [ -L "$ssh_policy_target" ]; then
     echo "refusing symlink installation target: $ssh_policy_target" >&2
     exit 1
   fi
 done
+prepare_final_ssh_policy_transaction
 
 # Deny new SSH logins for both service-related identities while deployment
 # cleanup and final-policy validation run.
@@ -596,23 +685,12 @@ install -o root -g root -m 0755 "$ssh_dispatch_source" \
 install -o root -g root -m 0755 "$helper_source" \
   /usr/local/sbin/freeze-protect-commission
 
-# Retire the legacy single-file policy while quarantine remains active, then
-# prepare the final policy in a distinct file.  Snapshot any previous final
-# policy first: a failed validation must not leave an invalid active include on
-# disk for the next ssh.service start.
-final_ssh_policy_backup=$(mktemp /root/freezeprotect-sshd-policy.XXXXXX)
-if [ -e "$final_ssh_policy_target" ]; then
-  require_root_owned_file "$final_ssh_policy_target"
-  install -o root -g root -m 0600 "$final_ssh_policy_target"     "$final_ssh_policy_backup"
-  final_ssh_policy_had_previous=true
-else
-  /usr/bin/rm -f "$final_ssh_policy_backup"
-  final_ssh_policy_backup=
-  final_ssh_policy_had_previous=false
-fi
-ssh_policy_pending=true
+# The previous final policy was isolated before the first whole-config
+# validation. Quarantine remains active while this candidate is installed and
+# checked.
 /usr/bin/rm -f "$legacy_ssh_policy_target"
-install -o root -g root -m 0644 "$sshd_policy_source"   "$final_ssh_policy_target"
+install -o root -g root -m 0644 "$sshd_policy_source" \
+  "$final_ssh_policy_target"
 sshd -t -f /etc/ssh/sshd_config
 for commission_source_address in 192.168.111.30 192.168.114.1; do
   effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr="$commission_source_address")
@@ -645,8 +723,8 @@ fi
 # Validate the exact post-handover configuration before replacing quarantine.
 # The commissioning key and sudoers file are still absent, so even a reload
 # failure cannot create new remote access for that account.
-mv -f "$quarantine_ssh_policy_target" \
-  "$quarantine_ssh_policy_target.disabled"
+/usr/bin/mv -T "$quarantine_ssh_policy_target" \
+  "$quarantine_ssh_policy_disabled_target"
 sshd -t -f /etc/ssh/sshd_config
 for commission_source_address in 192.168.111.30 192.168.114.1; do
   effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr="$commission_source_address")
@@ -682,10 +760,14 @@ if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/
   exit 1
 fi
 reload_active_ssh_service "commissioning"
+/usr/bin/rm -f "$quarantine_ssh_policy_disabled_target"
 ssh_policy_pending=false
-if [ -n "$final_ssh_policy_backup" ]; then
+if [ -n "$final_ssh_policy_backup" ] &&
+   [ "$final_ssh_policy_keep_backup" != true ]; then
   /usr/bin/rm -f "$final_ssh_policy_backup"
   final_ssh_policy_backup=
+elif [ -n "$final_ssh_policy_backup" ]; then
+  echo "retained invalid SSH policy for diagnosis: $final_ssh_policy_backup" >&2
 fi
 
 # The restrictive SSH policy is active and all old grants/deferred state have
