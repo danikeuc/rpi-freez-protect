@@ -28,5 +28,6 @@ The dial is deliberately limited to four actions:
 - short press on the forecast returns home without sending a Hub command;
 - hold the dial for two seconds on either page to send `DRAIN` once.
 
-The DS18B20 stays part of the Hub safety policy. Its health and measurement are
-not shown on the CrowPanel.
+The production Hub safety sensor is the three-wire PT100/MAX31865 on SPI0 CE0.
+Its health, measurement and diagnostics are deliberately not shown on the
+CrowPanel. The DS18B20 adapter remains rollback code only.

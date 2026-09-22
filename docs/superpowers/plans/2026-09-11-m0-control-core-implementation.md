@@ -1,5 +1,8 @@
 # RPi Freeze Protect M0 Implementation Plan
 
+> **Historical implementation record.** Do not use this plan as a runbook or
+> project-status source. See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a locally runnable, fully simulated and safety-first freeze-protection control service that is ready for Raspberry Pi hardware adapters but cannot drive GPIO yet.

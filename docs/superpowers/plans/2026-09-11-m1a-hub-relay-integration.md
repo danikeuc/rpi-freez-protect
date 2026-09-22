@@ -1,5 +1,8 @@
 # M1A Hub and relay integration Implementation Plan
 
+> **Historical implementation record.** Do not use this plan as a runbook or
+> project-status source. See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the safe Pi-side controller that keeps both valves paired, persists and validates seven-day Open-Meteo forecasts, exposes a constrained display API, and drives Node-RED only through an authenticated loopback bridge.

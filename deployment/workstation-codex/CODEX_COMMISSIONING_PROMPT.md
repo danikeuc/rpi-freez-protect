@@ -18,17 +18,16 @@ complete ED25519 fingerprint. Only after an exact match may the operator
 establish trust interactively. A changed-host-key event is a separate incident;
 do not remove a `known_hosts` entry without the same out-of-band verification.
 
-For read-only Pi checks, use the non-interactive form:
+For read-only Pi checks, use these non-interactive PowerShell forms with the
+dedicated identity named explicitly:
 
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
 
-The only allowed privileged helper subcommands are `inventory`, `usb`,
-`status`, and `drain`. Their only runnable forms are:
+The only allowed privileged helper subcommands are `inventory`, `status`, and
+`drain`. Their only runnable forms are:
 
 sudo -n /usr/local/sbin/freeze-protect-commission inventory
-sudo -n /usr/local/sbin/freeze-protect-commission usb
 sudo -n /usr/local/sbin/freeze-protect-commission status
 sudo -n /usr/local/sbin/freeze-protect-commission drain
 
@@ -43,15 +42,15 @@ Keep the 24 V valve supply disconnected. Do not run SUPPLY. Stop and ask Danijel
 for explicit approval in the current conversation before beginning the 24 V
 stage or any physical valve test.
 
-Before uploading firmware, discover USB serial devices through
-/dev/serial/by-id. Continue only when exactly one device is found. Stop for
-zero devices or more than one device; do not guess a serial path. With the
-single discovered device recorded as serial_device, run
-pio run --target upload --upload-port "$serial_device"
-and collect boot output with
-pio device monitor --baud 115200 --port "$serial_device"
-Use that sole discovered path for both commands; do not allow automatic port
-selection. Use the workstation or Pi USB-location
-branch documented in WORKSTATION_CODEX_COMMISSIONING.md. The Pi USB branch is
-trusted-local-console-only; do not read or provision `secrets.h` over SSH.
+The CrowPanel USB cable for this installation is on the Windows workstation.
+The operator-confirmed port is COM6. Verify exactly one matching `port` from
+`pio device list --serial --json-output`,
+set `$CrowPanelPort = 'COM6'`, and use that exact variable for both
+`pio run -e crowpanel --target upload --upload-port $CrowPanelPort` and
+`pio device monitor --baud 115200 --port $CrowPanelPort`. Never ask the Pi
+helper to inventory workstation USB and never allow automatic port selection.
+Do not reflash merely to diagnose connectivity: when firmware sources have not
+changed, prefer serial observation and preserve the installed image. If the
+cable is ever moved to the Pi, that documented branch is trusted-local-console
+only; do not read or provision `secrets.h` over SSH.
 ```

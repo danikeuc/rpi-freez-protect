@@ -90,7 +90,7 @@ Bootstrap makes the commissioning home root-owned `0750`, `.ssh` root-owned
 account's primary group. It installs a key-only `sshd` policy for this user,
 disables password/interactive authentication, forwarding and TTYs, and forces
 every SSH request through a root-owned dispatcher. The dispatcher allows only
-the four documented helper commands; it never opens a remote shell or permits
+the three documented helper commands; it never opens a remote shell or permits
 access to local-only Node-RED. On an upgrade bootstrap first verifies the
 root-controlled legacy grant paths and removes their old key and sudo grant.
 It then validates the commissioning identity before signalling its UID and
@@ -185,7 +185,7 @@ Keep the 24 V valve supply disconnected. The trusted-console operator performs
 the service installation/restarts, environment configuration, Node-RED edits,
 and deployment preflight from
 [`COMMISSIONING.md` steps 1–4](COMMISSIONING.md#1-make-the-pi-service-files).
-Those actions are outside the remote account's four-command sudo allowlist;
+Those actions are outside the remote account's three-command sudo allowlist;
 local Codex must hand them off, not widen the allowlist or use arbitrary sudo.
 Do not copy secrets into the Codex session or its logs.
 
@@ -211,44 +211,55 @@ Stop on any failed preflight, service result, receipt, or GPIO readback. Keep
 proof that physical DRAIN was achieved. Have the trusted-console operator
 investigate before continuing; do not retry `SUPPLY` or enable legacy routes.
 
-Run these fixed Pi-helper checks in this exact order:
+Run these fixed Pi-helper checks in this exact order from PowerShell. Always
+name the dedicated key; do not rely on whichever identity the SSH agent offers:
 
-```bash
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission usb
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
-ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission drain
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission drain
 ```
 
-The `usb` output is an inventory, not permission to select a device. Before
-any upload, serial discovery must return exactly one `/dev/serial/by-id`
-device. Stop for zero matching devices or for more than one matching device;
-do not guess a serial path.
+The Pi helper deliberately has no `usb` command. CrowPanel USB discovery and
+firmware work happen on the computer to which the cable is physically attached.
+For this installation that is the Windows workstation and the operator-confirmed
+port is `COM6`.
 
 ### USB cable on the workstation
 
-Before upload, create `include/secrets.h` locally from
+Before any build, create `include/secrets.h` locally from
 [`CROWPANEL_COMMISSIONING.md` step 1](CROWPANEL_COMMISSIONING.md#1-prepare-the-build-workstation).
 Enter Wi-Fi and display-token values only in that ignored local file; never put
 them in this guide, a Codex prompt, terminal capture, or Git.
 
-From `firmware/crowpanel`, discover and capture exactly one serial-by-id device.
-`serial_device` below is the only permitted upload/monitor path.
+The operator has identified this CrowPanel as `COM6`. Verify that the port is
+still listed, bind it explicitly, and use the same value for upload and monitor.
+Do not substitute automatic port selection. Reflashing is not a diagnostic
+step: if firmware sources have not changed and the installed revision is not
+otherwise in doubt, collect serial output without uploading again.
 
-```bash
-if [ ! -e include/secrets.h ]; then
-  cp include/secrets.example.h include/secrets.h
-fi
-serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)
-serial_count=$(printf '%s\n' "$serial_device" | sed '/^$/d' | wc -l)
-[ "$serial_count" -eq 1 ] || { echo "expected exactly one serial device" >&2; exit 1; }
-printf '%s\n' "$serial_device"
-pio run --target upload --upload-port "$serial_device"
-pio device monitor --baud 115200 --port "$serial_device"
+```powershell
+Set-Location 'C:\Users\danik\Projects\rpi-freez-protect\firmware\crowpanel'
+if (-not (Test-Path include\secrets.h)) {
+    Copy-Item include/secrets.example.h include/secrets.h
+}
+$CrowPanelPort = 'COM6'
+$SerialInventory = @(pio device list --serial --json-output | ConvertFrom-Json)
+$CrowPanelMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+if ($CrowPanelMatches.Count -ne 1) {
+    throw "Expected exactly one device on operator-confirmed port $CrowPanelPort; stop."
+}
+$CrowPanelMatches | ConvertTo-Json -Depth 4
+
+# Run only when a firmware change or an explicitly approved recovery requires it:
+pio run -e crowpanel --target upload --upload-port $CrowPanelPort
+
+# Serial evidence does not require another upload:
+pio device monitor --baud 115200 --port $CrowPanelPort
 ```
 
-Collect the boot output from the monitor. Stop rather than use either `pio`
-command if discovery returned zero or more than one device.
+Stop if `COM6` is absent or identifies a different device. Do not guess another
+port and do not move the USB check to the Pi.
 
 ### USB cable on the Pi — trusted-console-only
 
@@ -316,4 +327,5 @@ plumbing paths plus both output/high readbacks. No `SUPPLY` helper or additional
 sudo permission is introduced. Any failed receipt/readback stops the test:
 request DRAIN, have the local operator safely disconnect valve power, and
 investigate without repeating SUPPLY or assuming safe physical position.
-DS18B20 commissioning remains a separate later stage.
+PT100/MAX31865 commissioning remains a separate required stage and must pass
+before `sensor_commissioned` can be enabled. DS18B20 is rollback code only.

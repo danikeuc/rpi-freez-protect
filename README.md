@@ -2,6 +2,10 @@
 
 RPi Freeze Protect is a local safety controller for the outdoor shower. It runs on the DietPi Raspberry Pi, keeps two 24 V motorized valves paired, uses Node-RED only as the authenticated HTTP bridge, and uses a local atomic paired-GPIO daemon for the relay outputs.
 
+For the reconciled distinction between repository state, deployed observations
+and still-unverified physical behavior, start with
+[`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+
 ## Safe physical model
 
 | Logical state | BCM GPIO 26 / V1 | BCM GPIO 20 / V2 | Plumbing result |

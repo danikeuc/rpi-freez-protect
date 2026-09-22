@@ -1,5 +1,8 @@
 # M1B CrowPanel firmware Implementation Plan
 
+> **Historical implementation record.** Do not use this plan as a runbook or
+> project-status source. See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a flashable, local-only Elecrow CrowPanel firmware that displays Hub status and can request a fixed server-controlled shower or immediate drain without knowing relay, weather, or policy details.

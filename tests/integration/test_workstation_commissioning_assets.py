@@ -84,20 +84,20 @@ def test_acceptance_uses_copy_safe_fixed_commands_and_batch_mode() -> None:
         encoding="utf-8"
     )
 
-    assert "{inventory|usb|status}" not in prompt
-    assert "{inventory|usb|status|drain}" not in prompt
-    for subcommand in ("inventory", "usb", "status", "drain"):
+    assert "freeze-protect-commission usb" not in prompt
+    for subcommand in ("inventory", "status", "drain"):
         assert (
             f"sudo -n /usr/local/sbin/freeze-protect-commission {subcommand}" in prompt
         )
 
-    for subcommand in ("inventory", "usb", "status"):
+    identity = r'$env:USERPROFILE\.ssh\freezeprotect_commission'
+    for subcommand in ("inventory", "status", "drain"):
         assert (
-            "ssh -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> "
+            f'ssh -i "{identity}" -o BatchMode=yes '
+            "freezeprotect-commission@<Pi-LAN-IP> "
             f"sudo -n /usr/local/sbin/freeze-protect-commission {subcommand}"
         ) in guide
-    assert "cd /opt/rpi-freez-protect/firmware/crowpanel" in guide
-    assert "/opt/freezeprotect-local-flash-tools/bin/pio run --target upload" in guide
+    assert "freeze-protect-commission usb" not in guide
 
 
 def test_privileged_helper_has_only_fixed_subcommands() -> None:
@@ -107,7 +107,7 @@ def test_privileged_helper_has_only_fixed_subcommands() -> None:
 
     assert 'case "${1:-}" in' in helper
     assert "inventory)" in helper
-    assert "usb)" in helper
+    assert "usb)" not in helper
     assert "status)" in helper
     assert "drain)" in helper
     assert "eval " not in helper
@@ -124,13 +124,18 @@ def test_privileged_helper_clears_inherited_environment() -> None:
     assert 'exec /usr/bin/env -i PATH="$PATH" /bin/sh -s -- "$1"' in helper
 
 
-def test_usb_inventory_does_not_dereference_links() -> None:
-    helper = (
-        ROOT / "deployment/workstation-codex/freeze-protect-commission"
-    ).read_text(encoding="utf-8")
+def test_privileged_helper_rejects_workstation_usb_inventory() -> None:
+    helper = ROOT / "deployment/workstation-codex/freeze-protect-commission"
+    result = subprocess.run(
+        [str(helper), "usb"],
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
 
-    assert "find /dev/serial/by-id -maxdepth 1 -type l" in helper
-    assert "find -L /dev/serial/by-id" not in helper
+    assert result.returncode == 64
+    assert "usage:" in result.stderr
 
 
 def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule() -> (
@@ -152,7 +157,7 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     )
     assert "NOPASSWD:" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission inventory" in sudoers
-    assert "/usr/local/sbin/freeze-protect-commission usb" in sudoers
+    assert "/usr/local/sbin/freeze-protect-commission usb" not in sudoers
     assert "/usr/local/sbin/freeze-protect-commission status" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission drain" in sudoers
     assert "ALL" not in sudoers.replace("ALL=(root)", "")
@@ -343,6 +348,7 @@ def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
         "curl http://127.0.0.1:1880/admin",
         "sudo -n /usr/local/sbin/freeze-protect-commission supply",
         "sudo -n /usr/local/sbin/freeze-protect-commission SUPPLY",
+        "sudo -n /usr/local/sbin/freeze-protect-commission usb",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain --force",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain; curl http://127.0.0.1:1880/admin",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain\ncurl http://127.0.0.1:1880/admin",
@@ -394,10 +400,6 @@ def run_ssh_dispatcher(
         (
             "sudo -n /usr/local/sbin/freeze-protect-commission inventory",
             ["-n", "/usr/local/sbin/freeze-protect-commission", "inventory"],
-        ),
-        (
-            "sudo -n /usr/local/sbin/freeze-protect-commission usb",
-            ["-n", "/usr/local/sbin/freeze-protect-commission", "usb"],
         ),
         (
             "sudo -n /usr/local/sbin/freeze-protect-commission status",
@@ -1746,16 +1748,24 @@ def test_helper_execution_path_excludes_unvalidated_usr_local_bin() -> None:
     assert "require_root_protected /usr/sbin" in bootstrap
 
 
-def test_guide_provisions_secrets_and_captures_exactly_one_serial_device() -> None:
-    """Catch an upload path that uses an empty port or tries to build without secrets."""
+def test_guide_uses_operator_confirmed_windows_com_port() -> None:
+    """Catch a workstation upload path that probes the Pi or guesses a port."""
     guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
         encoding="utf-8"
     )
 
     assert "freezeprotect-commission@<Pi-LAN-IP>" in guide
-    assert "if [ ! -e include/secrets.h ]; then" in guide
-    assert "cp include/secrets.example.h include/secrets.h" in guide
-    assert "serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)" in guide
+    workstation_usb = guide.split("### USB cable on the workstation", 1)[1].split(
+        "### USB cable on the Pi", 1
+    )[0]
+    assert "$CrowPanelPort = 'COM6'" in workstation_usb
+    assert "pio device list --serial --json-output" in workstation_usb
+    assert "Where-Object { $_.port -eq $CrowPanelPort }" in workstation_usb
+    assert "$CrowPanelMatches.Count -ne 1" in workstation_usb
+    assert "Copy-Item include/secrets.example.h include/secrets.h" in workstation_usb
+    assert "--upload-port $CrowPanelPort" in workstation_usb
+    assert "--port $CrowPanelPort" in workstation_usb
+    assert "/dev/serial/by-id" not in workstation_usb
     pi_usb = guide.split("### USB cable on the Pi", 1)[1]
     assert "trusted-console-only" in pi_usb
     assert "freezeprotect-commission@<Pi-LAN-IP>" not in pi_usb
@@ -1766,6 +1776,15 @@ def test_guide_provisions_secrets_and_captures_exactly_one_serial_device() -> No
     assert "install -o root -g root -m 0600" in pi_usb
     assert "umask 077" in pi_usb
     assert "rm -rf .pio" in pi_usb
+
+
+def test_crowpanel_example_targets_display_gateway() -> None:
+    secrets = (ROOT / "firmware/crowpanel/include/secrets.example.h").read_text(
+        encoding="utf-8"
+    )
+
+    assert '#define HUB_BASE_URL "http://192.0.2.10:8081"' in secrets
+    assert 'HUB_BASE_URL "http://192.0.2.10:8000"' not in secrets
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'
