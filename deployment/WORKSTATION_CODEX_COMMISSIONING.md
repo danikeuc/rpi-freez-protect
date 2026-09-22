@@ -160,6 +160,13 @@ so copying the prompt into every session is no longer required. Restart the
 Codex session after changing instruction files because instruction discovery
 occurs at session start.
 
+Before any network action in the desktop app, ask Codex to summarize the active
+repository instructions without accessing the network or Pi. The summary must
+include the 24 V stop gate, prohibition on SUPPLY, dedicated commissioning
+identity, first-contact host-key verification, and prohibition on installing
+Codex on the Pi. If any item is absent, stop and restart Codex from the
+repository root rather than proceeding with partial instructions.
+
 The standalone Codex CLI remains a supported fallback. Start it from the
 repository root, then verify instruction discovery before any network action:
 
@@ -168,10 +175,7 @@ Set-Location 'C:\Users\danik\Projects\rpi-freez-protect'
 codex --ask-for-approval never "Summarize the active repository instructions; do not access the network or Pi."
 ```
 
-The summary must include the 24 V stop gate, prohibition on SUPPLY, dedicated
-commissioning identity, first-contact host-key verification, and prohibition
-on installing Codex on the Pi. If any item is absent, stop and restart Codex
-from the repository root rather than proceeding with partial instructions.
+Apply the same summary gate to the CLI response before proceeding.
 
 ## 4. Staged acceptance
 
