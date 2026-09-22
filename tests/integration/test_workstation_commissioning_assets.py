@@ -271,13 +271,13 @@ def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
     assert "AllowUsers" not in ssh_policy
     assert (
         ssh_policy.splitlines()[1]
-        == "Match User freezeprotect-commission Address *,!192.168.114.0/24"
+        == "Match User freezeprotect-commission Address *,!192.168.111.0/24,!192.168.114.0/24"
     )
     assert ssh_policy.splitlines()[2] == "    DenyUsers freezeprotect-commission"
     assert ssh_policy.splitlines()[3] == "Match all"
     assert (
         ssh_policy.splitlines()[4]
-        == "Match User freezeprotect-commission Address 192.168.114.0/24"
+        == "Match User freezeprotect-commission Address 192.168.111.0/24,192.168.114.0/24"
     )
     assert ssh_policy.splitlines()[-1] == "Match all"
     for setting in (
@@ -843,6 +843,11 @@ def test_bootstrap_installs_and_validates_the_commissioning_ssh_policy() -> None
         assert f"'{setting}'" in bootstrap
     assert "-C user=freezeprotect,host=localhost,addr=192.168.114.1" in bootstrap
     assert "'denyusers freezeprotect'" in bootstrap
+    assert (
+        "for commission_source_address in 192.168.111.30 192.168.114.1; do"
+        in bootstrap
+    )
+    assert 'addr="$commission_source_address"' in bootstrap
     assert (
         "-C user=freezeprotect-commission,host=localhost,addr=192.168.115.1"
         in bootstrap
