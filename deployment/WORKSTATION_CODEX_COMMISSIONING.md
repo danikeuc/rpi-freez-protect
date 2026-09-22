@@ -24,8 +24,21 @@ The following procedure requires the OpenSSH service already verified on port
 ssh root@192.168.114.192
 ```
 
+On first contact, `The authenticity of host ... can't be established` is a
+trust gate, not an authentication failure. Do not use `StrictHostKeyChecking=no`
+or `accept-new`. At the trusted local console, obtain the Pi's ED25519 host-key
+fingerprint:
+
+```bash
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
+```
+
+Compare the complete fingerprint with the PowerShell prompt. Only after an
+exact match may the operator accept it interactively. Record the verified
+fingerprint in the commissioning evidence without copying any private key.
+
 Only after a changed-host-key error, compare the replacement fingerprint
-through a trusted existing session or local console. Do not accept the
+through a trusted existing session or trusted local console. Do not accept the
 replacement key merely because SSH prompted for it. After the fingerprint
 matches, run this in PowerShell and reconnect:
 
@@ -130,13 +143,35 @@ as a separate change. Keep the root session available for the remaining
 software-only preflight, and remove the temporary public-key file from
 `/root/.ssh` only after the restricted account has been rechecked.
 
-## 3. Local Codex session
+## 3. Local Codex handoff
 
-Start Codex from the cloned repository on the workstation. Copy the complete
-local instruction from
-[`workstation-codex/CODEX_COMMISSIONING_PROMPT.md`](workstation-codex/CODEX_COMMISSIONING_PROMPT.md).
-It requires the dedicated non-root account, non-interactive read-only SSH
-checks, and Danijel's explicit approval before any 24 V stage.
+The preferred controller is Codex in the ChatGPT desktop app on the Windows
+workstation. Sign in to the same ChatGPT account and workspace, select Codex,
+choose `This computer`, and open the workstation clone's repository root. Do
+not connect the app directly to the Pi. Do not install Codex on the Pi. The
+local Codex process uses the workstation's Git checkout, OpenSSH client, and
+commissioning key; the Pi continues to expose only the restricted
+`freezeprotect-commission` command boundary.
+
+Codex automatically loads the repository-root [`AGENTS.md`](../AGENTS.md) at
+the start of a new run. It directs Codex to this guide and the focused
+[`workstation-codex/CODEX_COMMISSIONING_PROMPT.md`](workstation-codex/CODEX_COMMISSIONING_PROMPT.md),
+so copying the prompt into every session is no longer required. Restart the
+Codex session after changing instruction files because instruction discovery
+occurs at session start.
+
+The standalone Codex CLI remains a supported fallback. Start it from the
+repository root, then verify instruction discovery before any network action:
+
+```powershell
+Set-Location 'C:\Users\danik\Projects\rpi-freez-protect'
+codex --ask-for-approval never "Summarize the active repository instructions; do not access the network or Pi."
+```
+
+The summary must include the 24 V stop gate, prohibition on SUPPLY, dedicated
+commissioning identity, first-contact host-key verification, and prohibition
+on installing Codex on the Pi. If any item is absent, stop and restart Codex
+from the repository root rather than proceeding with partial instructions.
 
 ## 4. Staged acceptance
 
