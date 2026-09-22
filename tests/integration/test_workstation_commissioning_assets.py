@@ -1296,8 +1296,13 @@ def test_bootstrap_retains_quarantine_until_the_final_policy_is_ready() -> None:
         deferred_cleanup,
     )
     legacy_policy_remove = bootstrap.index('/usr/bin/rm -f "$legacy_ssh_policy_target"')
-    final_policy_install = bootstrap.index('  "$final_ssh_policy_target"')
-    quarantine_disable = bootstrap.index('mv -f "$quarantine_ssh_policy_target"')
+    final_policy_install = bootstrap.index(
+        'install -o root -g root -m 0644 "$sshd_policy_source"',
+        legacy_policy_remove,
+    )
+    quarantine_disable = bootstrap.index(
+        '/usr/bin/mv -T "$quarantine_ssh_policy_target"'
+    )
     final_reload = bootstrap.index('reload_active_ssh_service "commissioning"')
     sudoers_install = bootstrap.index(
         'install -o root -g root -m 0440 "$sudoers_source"'
@@ -1327,8 +1332,12 @@ def test_bootstrap_uses_an_openssh_handover_without_stopping_admin_ssh() -> None
         "/etc/ssh/sshd_config.d/60-freezeprotect-commission-quarantine.conf"
     )
     final_target = "/etc/ssh/sshd_config.d/70-freezeprotect-commission.conf"
-    final_install = bootstrap.index('  "$final_ssh_policy_target"')
-    quarantine_disable = bootstrap.index('mv -f "$quarantine_ssh_policy_target"')
+    final_install = bootstrap.index(
+        'install -o root -g root -m 0644 "$sshd_policy_source"'
+    )
+    quarantine_disable = bootstrap.index(
+        '/usr/bin/mv -T "$quarantine_ssh_policy_target"'
+    )
     final_reload = bootstrap.index('reload_active_ssh_service "commissioning"')
     key_install = bootstrap.index(
         'install -o root -g "$commission_primary_group" -m 0640 "$key_snapshot"'
@@ -1375,7 +1384,9 @@ def test_bootstrap_revalidates_service_ssh_deny_after_disabling_quarantine() -> 
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
 
-    quarantine_disable = bootstrap.index('mv -f "$quarantine_ssh_policy_target"')
+    quarantine_disable = bootstrap.index(
+        '/usr/bin/mv -T "$quarantine_ssh_policy_target"'
+    )
     final_service_policy = bootstrap.index(
         "service_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config ",
         quarantine_disable,
