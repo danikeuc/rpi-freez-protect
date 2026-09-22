@@ -116,6 +116,21 @@ terminate_commission_processes() {
   fi
 }
 
+sshd_policy_denies_user() {
+  policy=$1
+  denied_user=$2
+  printf '%s\n' "$policy" | "$commission_awk" -v user="$denied_user" '
+    $1 == "denyusers" {
+      for (field = 2; field <= NF; field++) {
+        if ($field == user) {
+          found = 1
+        }
+      }
+    }
+    END { exit !found }
+  '
+}
+
 reload_active_ssh_service() {
   policy_name=$1
   if systemctl is-active --quiet ssh.service; then
@@ -457,8 +472,8 @@ install -o root -g root -m 0644 "$quarantine_ssh_policy_source" \
   "$quarantine_ssh_policy_target"
 sshd -t -f /etc/ssh/sshd_config
 quarantine_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr=192.168.114.1)
-if ! printf '%s\n' "$quarantine_ssh_policy" | grep -Fx \
-  'denyusers freezeprotect freezeprotect-commission' >/dev/null; then
+if ! sshd_policy_denies_user "$quarantine_ssh_policy" "$service_account" ||
+   ! sshd_policy_denies_user "$quarantine_ssh_policy" "$commission_account"; then
   echo "commissioning SSH quarantine is ineffective" >&2
   exit 1
 fi
