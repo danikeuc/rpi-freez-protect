@@ -16,6 +16,9 @@ commission_atrm=/usr/bin/atrm
 commission_awk=/usr/bin/awk
 key_snapshot=
 commission_grant_pending=false
+final_ssh_policy_backup=
+final_ssh_policy_had_previous=false
+ssh_policy_pending=false
 
 require_root_protected() {
   path=$1
@@ -48,15 +51,42 @@ require_root_owned_file() {
   fi
 }
 
+restore_pending_ssh_policy() {
+  if [ "$ssh_policy_pending" != true ]; then
+    return
+  fi
+
+  if [ "$final_ssh_policy_had_previous" = true ] &&
+     [ -n "$final_ssh_policy_backup" ] &&
+     [ -f "$final_ssh_policy_backup" ]; then
+    /usr/bin/mv -f "$final_ssh_policy_backup" "$final_ssh_policy_target" || :
+    final_ssh_policy_backup=
+  else
+    /usr/bin/rm -f "$final_ssh_policy_target" || :
+  fi
+
+  if [ ! -e "$quarantine_ssh_policy_target" ] &&
+     [ -e "$quarantine_ssh_policy_target.disabled" ]; then
+    /usr/bin/mv -f "$quarantine_ssh_policy_target.disabled"       "$quarantine_ssh_policy_target" || :
+  fi
+  ssh_policy_pending=false
+}
+
 cleanup_key_snapshot() {
   status=$1
   trap - 0 HUP INT TERM
+  if [ "${ssh_policy_pending:-false}" = true ]; then
+    restore_pending_ssh_policy
+  fi
   if [ "$commission_grant_pending" = true ]; then
     /usr/bin/rm -f /etc/sudoers.d/freeze-protect-commission || :
     /usr/bin/rm -f "$commission_home/.ssh/authorized_keys" || :
   fi
   if [ -n "$key_snapshot" ] && [ -x /usr/bin/rm ]; then
     /usr/bin/rm -f "$key_snapshot" || :
+  fi
+  if [ -n "${final_ssh_policy_backup:-}" ] && [ -x /usr/bin/rm ]; then
+    /usr/bin/rm -f "$final_ssh_policy_backup" || :
   fi
   exit "$status"
 }
@@ -567,11 +597,22 @@ install -o root -g root -m 0755 "$helper_source" \
   /usr/local/sbin/freeze-protect-commission
 
 # Retire the legacy single-file policy while quarantine remains active, then
-# prepare the final policy in a distinct file.  The old daemon keeps the
-# quarantine configuration until the final reload succeeds.
+# prepare the final policy in a distinct file.  Snapshot any previous final
+# policy first: a failed validation must not leave an invalid active include on
+# disk for the next ssh.service start.
+final_ssh_policy_backup=$(mktemp /root/freezeprotect-sshd-policy.XXXXXX)
+if [ -e "$final_ssh_policy_target" ]; then
+  require_root_owned_file "$final_ssh_policy_target"
+  install -o root -g root -m 0600 "$final_ssh_policy_target"     "$final_ssh_policy_backup"
+  final_ssh_policy_had_previous=true
+else
+  /usr/bin/rm -f "$final_ssh_policy_backup"
+  final_ssh_policy_backup=
+  final_ssh_policy_had_previous=false
+fi
+ssh_policy_pending=true
 /usr/bin/rm -f "$legacy_ssh_policy_target"
-install -o root -g root -m 0644 "$sshd_policy_source" \
-  "$final_ssh_policy_target"
+install -o root -g root -m 0644 "$sshd_policy_source"   "$final_ssh_policy_target"
 sshd -t -f /etc/ssh/sshd_config
 for commission_source_address in 192.168.111.30 192.168.114.1; do
   effective_ssh_policy=$(sshd -T -f /etc/ssh/sshd_config -C user=freezeprotect-commission,host=localhost,addr="$commission_source_address")
@@ -641,6 +682,11 @@ if ! printf '%s\n' "$service_ssh_policy" | grep -Fx 'denyusers freezeprotect' >/
   exit 1
 fi
 reload_active_ssh_service "commissioning"
+ssh_policy_pending=false
+if [ -n "$final_ssh_policy_backup" ]; then
+  /usr/bin/rm -f "$final_ssh_policy_backup"
+  final_ssh_policy_backup=
+fi
 
 # The restrictive SSH policy is active and all old grants/deferred state have
 # been removed before either new remote grant is installed.
