@@ -137,11 +137,10 @@ def test_pair_gpio_diagnostic_is_fixed_read_only_and_omits_journal_messages() ->
     ):
         assert property_name in helper
     assert "/usr/bin/systemctl show" in helper
-    assert "/usr/bin/systemctl status" in helper
-    assert "--lines=0" in helper
+    assert "/usr/bin/systemctl status" not in helper
     assert "/usr/bin/ps" in helper
-    assert "/usr/bin/stat" in helper
-    assert "/usr/bin/sha256sum" in helper
+    assert "os.O_NOFOLLOW" in helper
+    assert "hashlib.file_digest" in helper
     assert "journal-output=omitted" in helper
     assert "journalctl" not in helper
     for forbidden in (
@@ -153,6 +152,107 @@ def test_pair_gpio_diagnostic_is_fixed_read_only_and_omits_journal_messages() ->
         "SUPPLY",
     ):
         assert forbidden not in helper
+
+
+def run_pair_gpio_diagnostic(
+    tmp_path: Path, *, main_pid: str = "321", missing_first_artifact: bool = False
+) -> subprocess.CompletedProcess[str]:
+    helper_source = (
+        ROOT / "deployment/workstation-codex/freeze-protect-commission"
+    ).read_text(encoding="utf-8")
+    command_log = tmp_path / "commands.log"
+    fake_systemctl = tmp_path / "systemctl"
+    fake_systemctl.write_text(
+        "#!/bin/sh\n"
+        f"printf 'systemctl %s\\n' \"$*\" >> {shlex.quote(str(command_log))}\n"
+        "case \"$*\" in\n"
+        f"  *--property=MainPID*) printf '%s\\n' {shlex.quote(main_pid)} ;;\n"
+        "  *--property=ActiveState*) printf '%s\\n' 'activating' ;;\n"
+        "  *--property=SubState*) printf '%s\\n' 'auto-restart' ;;\n"
+        "  *--property=Result*) printf '%s\\n' 'exit-code' ;;\n"
+        "  *--property=Type*) printf '%s\\n' 'simple' ;;\n"
+        "  *--property=ExecMainStatus*) printf '%s\\n' '1' ;;\n"
+        "  *--property=ExecMainCode*) printf '%s\\n' 'exited' ;;\n"
+        "  *--property=NRestarts*) printf '%s\\n' '3' ;;\n"
+        "  *Timestamp*) printf '%s\\n' 'Tue 2026-09-23 01:00:00 UTC' ;;\n"
+        "  *status*) printf '%s\\n' 'StatusText=LEAK-ME-NOT' ;;\n"
+        "  *) exit 90 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_systemctl.chmod(0o755)
+    fake_ps = tmp_path / "ps"
+    fake_ps.write_text(
+        "#!/bin/sh\n"
+        f"printf 'ps %s\\n' \"$*\" >> {shlex.quote(str(command_log))}\n"
+        "printf '%s\\n' 'S'\n",
+        encoding="utf-8",
+    )
+    fake_ps.chmod(0o755)
+
+    artifacts = [tmp_path / f"artifact-{index}" for index in range(3)]
+    for index, artifact in enumerate(artifacts):
+        if not (missing_first_artifact and index == 0):
+            artifact.write_text(f"artifact {index}\n", encoding="utf-8")
+
+    replacements = {
+        "/usr/bin/systemctl": str(fake_systemctl),
+        "/usr/bin/ps": str(fake_ps),
+        "/etc/systemd/system/freeze-protect-pair-gpio.service": str(artifacts[0]),
+        "/opt/rpi-freez-protect/deployment/node-red/paired_gpio_daemon.py": str(
+            artifacts[1]
+        ),
+        "/usr/local/sbin/freeze-protect-commission": str(artifacts[2]),
+    }
+    for production, stand_in in replacements.items():
+        helper_source = helper_source.replace(production, stand_in)
+    helper = tmp_path / "freeze-protect-commission"
+    helper.write_text(helper_source, encoding="utf-8")
+    helper.chmod(0o755)
+
+    return subprocess.run(
+        [str(helper), "diagnose-pair-gpio"],
+        env=os.environ,
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+
+def test_pair_gpio_diagnostic_normalizes_process_output(tmp_path: Path) -> None:
+    result = run_pair_gpio_diagnostic(tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert "main-process-state=S" in result.stdout
+    assert "StatusText=LEAK-ME-NOT" not in result.stdout
+    assert "systemctl-status" not in result.stdout
+    command_log = (tmp_path / "commands.log").read_text(encoding="utf-8")
+    assert "ps -p 321 -o stat=" in command_log
+    assert "comm=" not in command_log
+
+
+def test_pair_gpio_diagnostic_rejects_invalid_main_pid_without_ps(
+    tmp_path: Path,
+) -> None:
+    result = run_pair_gpio_diagnostic(tmp_path, main_pid="1;id")
+
+    assert result.returncode != 0
+    assert "main-process=invalid-pid" in result.stdout
+    command_log = (tmp_path / "commands.log").read_text(encoding="utf-8")
+    assert "ps " not in command_log
+
+
+def test_pair_gpio_diagnostic_reports_all_artifacts_after_missing_file(
+    tmp_path: Path,
+) -> None:
+    result = run_pair_gpio_diagnostic(tmp_path, missing_first_artifact=True)
+
+    assert result.returncode != 0
+    assert result.stdout.count("artifact=") == 3
+    assert "artifact-state=missing-not-regular-or-changed" in result.stdout
+    assert result.stdout.count("metadata=") == 2
+    assert "journal-output=omitted" in result.stdout
 
 
 def test_privileged_helper_rejects_diagnostic_extra_arguments() -> None:

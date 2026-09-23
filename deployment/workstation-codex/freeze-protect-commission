@@ -11,6 +11,7 @@ fi
 
 exec /usr/bin/env -i PATH="$PATH" /bin/sh -s -- "$1" <<'CLEAN_ENV'
 set -eu
+set -f
 
 case "${1:-}" in
   inventory)
@@ -27,30 +28,59 @@ case "${1:-}" in
     ;;
   diagnose-pair-gpio)
     unit=freeze-protect-pair-gpio.service
-    properties=ActiveState,SubState,Result,Type,MainPID,ExecMainStatus,ExecMainCode,NRestarts,ActiveEnterTimestamp,InactiveExitTimestamp
+    diagnostic_status=0
 
     echo "section=systemd-show"
-    show_status=0
-    /usr/bin/systemctl show "$unit" --no-pager --property="$properties" || show_status=$?
-    printf 'systemd-show-exit-code=%s\n' "$show_status"
-
-    echo "section=systemd-status"
-    status_status=0
-    /usr/bin/systemctl status "$unit" --no-pager --lines=0 || status_status=$?
-    printf 'systemd-status-exit-code=%s\n' "$status_status"
+    for property in \
+      ActiveState SubState Result Type MainPID ExecMainStatus ExecMainCode \
+      NRestarts ActiveEnterTimestamp InactiveExitTimestamp
+    do
+      property_value=$(
+        /usr/bin/systemctl show "$unit" --no-pager \
+          --property="$property" --value 2>/dev/null
+      ) || {
+        printf '%s=unavailable\n' "$property"
+        diagnostic_status=1
+        continue
+      }
+      case "$property_value" in
+        ''|*[!A-Za-z0-9_.:,+/\ -]*)
+          printf '%s=invalid\n' "$property"
+          diagnostic_status=1
+          ;;
+        *)
+          if [ "${#property_value}" -gt 127 ]; then
+            printf '%s=invalid\n' "$property"
+            diagnostic_status=1
+          else
+            printf '%s=%s\n' "$property" "$property_value"
+          fi
+          ;;
+      esac
+    done
 
     echo "section=main-process"
     main_pid=$(/usr/bin/systemctl show "$unit" --property=MainPID --value 2>/dev/null || true)
     case "$main_pid" in
       ''|*[!0-9]*)
-        echo "main-process=unavailable"
+        echo "main-process=invalid-pid"
+        diagnostic_status=1
         ;;
       0)
         echo "main-process=none"
         ;;
       *)
-        /usr/bin/ps -p "$main_pid" -o pid=,stat=,comm= ||
-          echo "main-process=not-running"
+        process_state=$(/usr/bin/ps -p "$main_pid" -o stat= 2>/dev/null || true)
+        case "$process_state" in
+          ''|*[!A-Za-z0-9+\<]*)
+            echo "main-process=not-running-or-invalid-state"
+            diagnostic_status=1
+            ;;
+          *)
+            printf 'main-process-pid=%s\n' "$main_pid"
+            printf 'main-process-state=%s\n' "$process_state"
+            ;;
+        esac
         ;;
     esac
 
@@ -61,15 +91,63 @@ case "${1:-}" in
       /usr/local/sbin/freeze-protect-commission
     do
       printf 'artifact=%s\n' "$artifact"
-      if [ -f "$artifact" ] && [ ! -L "$artifact" ]; then
-        /usr/bin/stat --format='metadata=%U:%G:%a:%s:%y' -- "$artifact"
-        /usr/bin/sha256sum -- "$artifact"
-      else
-        echo "artifact-state=missing-or-not-regular"
-      fi
+      artifact_evidence=$(/usr/bin/python3 -I - "$artifact" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb", closefd=True) as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        after = os.fstat(stream.fileno())
+    identity_before = (
+        before.st_dev,
+        before.st_ino,
+        before.st_size,
+        before.st_mtime_ns,
+        before.st_ctime_ns,
+        before.st_mode,
+        before.st_uid,
+        before.st_gid,
+    )
+    identity_after = (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+        after.st_ctime_ns,
+        after.st_mode,
+        after.st_uid,
+        after.st_gid,
+    )
+    if identity_before != identity_after:
+        raise OSError
+except (OSError, ValueError):
+    sys.exit(1)
+
+print(
+    "metadata="
+    f"{before.st_uid}:{before.st_gid}:{stat.S_IMODE(before.st_mode):o}:"
+    f"{before.st_size}:{before.st_mtime_ns}:{before.st_dev}:{before.st_ino}"
+)
+print(f"sha256={digest}")
+PY
+      ) || {
+        echo "artifact-state=missing-not-regular-or-changed"
+        diagnostic_status=1
+        continue
+      }
+      printf '%s\n' "$artifact_evidence"
     done
 
     echo "journal-output=omitted: unrestricted service messages cannot be proven secret-free"
+    exit "$diagnostic_status"
     ;;
   drain)
     receipt=$(/usr/bin/python3 -I /usr/local/lib/freeze-protect-commission/paired_gpio_client.py DRAIN)
