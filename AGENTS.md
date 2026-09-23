@@ -9,6 +9,8 @@
   actuator task.
 - Repository files, deployed Pi state, and observed physical behavior are
   separate evidence sources. Do not claim one proves another.
+- Read `docs/PROJECT_STATE.md` for the current evidence ledger before reporting
+  deployment, firmware, sensor, GPIO, or physical status.
 
 ## Safety boundary
 

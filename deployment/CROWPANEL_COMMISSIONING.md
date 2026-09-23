@@ -4,11 +4,14 @@ Use this only after the Hub, Node-RED bridge and display-only Nginx gateway from
 
 ## 1. Prepare the build workstation
 
-Install PlatformIO Core and a USB serial driver suitable for the CrowPanel's USB bridge. In the repository:
+Install PlatformIO Core and a USB serial driver suitable for the CrowPanel's
+USB bridge on the Windows workstation. In PowerShell:
 
-```bash
-cd firmware/crowpanel
-cp include/secrets.example.h include/secrets.h
+```powershell
+Set-Location 'C:\Users\danik\Projects\rpi-freez-protect\firmware\crowpanel'
+if (-not (Test-Path include\secrets.h)) {
+    Copy-Item include/secrets.example.h include/secrets.h
+}
 ```
 
 Edit the new, ignored `include/secrets.h`:
@@ -19,29 +22,55 @@ Edit the new, ignored `include/secrets.h`:
 
 Run the pure UI tests and the embedded build:
 
-```bash
+```powershell
 pio test -e native
 pio run -e crowpanel
 ```
 
 ## 2. Put the CrowPanel in flash mode
 
-Connect a known data-capable USB cable to the CrowPanel's programming/data connector, then list ports:
+Connect a known data-capable USB cable to the CrowPanel's programming/data
+connector. For this installation the operator-confirmed workstation port is
+`COM6`. First compare the JSON inventory with the panel disconnected and then
+reconnected. Record the exact `hwid` of the newly appeared entry; the mutable
+COM number alone is not device identity. Verify both values before proceeding:
 
-```bash
-pio device list
+```powershell
+$CrowPanelPort = 'COM6'
+$SerialInventory = @(pio device list --serial --json-output | ConvertFrom-Json)
+$PortMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+$CrowPanelExpectedHwid = Read-Host 'Paste the exact CrowPanel hwid recorded by disconnect/reconnect verification'
+if ([string]::IsNullOrWhiteSpace($CrowPanelExpectedHwid)) {
+    throw 'A verified CrowPanel hwid is required; stop.'
+}
+$CrowPanelMatches = @($PortMatches | Where-Object { $_.hwid -eq $CrowPanelExpectedHwid })
+if ($CrowPanelMatches.Count -ne 1) {
+    throw "COM port or hwid does not match the verified CrowPanel identity; stop."
+}
+$CrowPanelMatches | ConvertTo-Json -Depth 4
 ```
 
-If no port appears, hold **BOOT**, tap **RESET**, release **RESET**, then release **BOOT**. Repeat `pio device list`. Do not open the enclosure or attach any relay wiring to the CrowPanel; it is a Wi-Fi display only.
+If `COM6` does not appear, stop before upload. If an explicitly approved
+recovery requires flash mode, hold **BOOT**, tap **RESET**, release **RESET**,
+then release **BOOT**, and repeat the inventory. Do not guess another port. Do
+not open the enclosure or attach relay wiring to the CrowPanel; it is a Wi-Fi
+display only.
 
 ## 3. Flash and inspect serial output
 
-With the detected port selected automatically or through `--upload-port`, run:
+Do not reflash as a routine diagnostic. Firmware has already been uploaded on
+this installation; upload again only after a firmware change or an explicitly
+approved recovery. When upload is required, bind the already verified port
+explicitly. Serial observation can run without another upload:
 
-```bash
-pio run -e crowpanel -t upload
-pio device monitor -e crowpanel
+```powershell
+pio run -e crowpanel -t upload --upload-port $CrowPanelPort
+pio device monitor --baud 115200 --port $CrowPanelPort
 ```
+
+After the monitor opens, tap **RESET** once without holding **BOOT**. Require a
+fresh `Freeze Protect CrowPanel boot` line. Opening a monitor after the panel is
+already running does not replay the one-time boot message.
 
 Expected serial line:
 

@@ -2,6 +2,12 @@
 
 **Status:** Approved for implementation on 11 September 2026.
 
+> **Historical M1 design.** The DS18B20 sections were superseded by the
+> production PT100/MAX31865 design in
+> [`2026-09-21-pt100-max31865-design.md`](2026-09-21-pt100-max31865-design.md).
+> Use [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md) and current deployment
+> guides for present state and commissioning.
+
 ## Goal
 
 Extend the M0 local control core into a safe Raspberry Pi installation for the outdoor shower. M1 delivers a cached Open-Meteo forecast adapter, a protected Node-RED bridge for the existing relay board, and CrowPanel display firmware. The DS18B20 adapter is prepared now but automatic normal operation remains disabled until the sensor arrives, is wired, and passes commissioning.

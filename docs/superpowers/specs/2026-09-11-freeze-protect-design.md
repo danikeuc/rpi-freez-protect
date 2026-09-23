@@ -1,5 +1,11 @@
 # RPi Freeze Protect — architecture and first delivery design
 
+> **Historical architecture baseline.** This records the initial delivery
+> decisions and is not a commissioning runbook. For current production state
+> and evidence use [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md); the
+> current sensor design is
+> [`2026-09-21-pt100-max31865-design.md`](2026-09-21-pt100-max31865-design.md).
+
 ## Purpose
 
 RPi Freeze Protect protects a vulnerable water installation from freezing. A Raspberry Pi is the local control hub. It reads a temperature sensor attached directly to the cold-water pipe below the insulation, applies a conservative protection policy, controls low-voltage relays located on the warm side, and provides a local screen and browser-based administration.

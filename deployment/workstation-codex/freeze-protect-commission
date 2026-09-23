@@ -5,7 +5,7 @@ PATH=/usr/sbin:/usr/bin
 export PATH
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: freeze-protect-commission {inventory|usb|status|drain}" >&2
+  echo "usage: freeze-protect-commission {inventory|status|drain}" >&2
   exit 64
 fi
 
@@ -17,9 +17,6 @@ case "${1:-}" in
     uname -a
     id freezeprotect
     git -C /opt/rpi-freez-protect rev-parse HEAD
-    ;;
-  usb)
-    find /dev/serial/by-id -maxdepth 1 -type l -printf '%f -> %l\n'
     ;;
   status)
     systemctl is-active node-red.service
@@ -69,7 +66,7 @@ sys.exit(0 if valid else 1)
     fi
     ;;
   *)
-    echo "usage: freeze-protect-commission {inventory|usb|status|drain}" >&2
+    echo "usage: freeze-protect-commission {inventory|status|drain}" >&2
     exit 64
     ;;
 esac

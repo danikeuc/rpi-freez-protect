@@ -1,5 +1,11 @@
 # Workstation Codex commissioning design
 
+> **Historical design, partially superseded.** Account names, SSH restrictions,
+> USB location and helper commands evolved during hardening. Use
+> [`../../../deployment/WORKSTATION_CODEX_COMMISSIONING.md`](../../../deployment/WORKSTATION_CODEX_COMMISSIONING.md)
+> and [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md), not this document, as
+> the current operating contract.
+
 ## Goal
 
 Use Codex on Danijel's workstation as the interactive engineering control plane for the DietPi-based Freeze Protect installation and CrowPanel. The Pi must remain private on the LAN; no GitHub self-hosted runner, public SSH exposure, or autonomous valve-power test is introduced.

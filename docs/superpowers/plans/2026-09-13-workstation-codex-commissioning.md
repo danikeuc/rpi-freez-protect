@@ -1,5 +1,10 @@
 # Workstation Codex Commissioning Implementation Plan
 
+> **Historical implementation record.** The current account, SSH and USB
+> contract is in
+> [`../../../deployment/WORKSTATION_CODEX_COMMISSIONING.md`](../../../deployment/WORKSTATION_CODEX_COMMISSIONING.md).
+> See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md) for current evidence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Enable a workstation-hosted Codex session to build, flash and safely commission the DietPi Freeze Protect installation through a dedicated non-root SSH account.

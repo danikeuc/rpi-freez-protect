@@ -8,9 +8,6 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
   "sudo -n /usr/local/sbin/freeze-protect-commission inventory")
     exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission inventory
     ;;
-  "sudo -n /usr/local/sbin/freeze-protect-commission usb")
-    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission usb
-    ;;
   "sudo -n /usr/local/sbin/freeze-protect-commission status")
     exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission status
     ;;

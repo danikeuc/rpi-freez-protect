@@ -1,5 +1,9 @@
 # CrowPanel Dial and PT100/MAX31865 Integration Implementation Plan
 
+> **Historical implementation record.** Do not use unchecked plan boxes as
+> current status. See [`../../PROJECT_STATE.md`](../../PROJECT_STATE.md) and the
+> current commissioning guides.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver the CrowPanel encoder electrical-mode correction and replace the production DS18B20 source with a fail-safe PT100/MAX31865 source.
