@@ -43,14 +43,18 @@ for explicit approval in the current conversation before beginning the 24 V
 stage or any physical valve test.
 
 The CrowPanel USB cable for this installation is on the Windows workstation.
-The operator-confirmed port is COM6. Verify exactly one matching `port` from
-`pio device list --serial --json-output`,
-set `$CrowPanelPort = 'COM6'`, and use that exact variable for both
+The operator-confirmed port is COM6. A COM number is not stable device identity:
+compare `pio device list --serial --json-output` with the panel disconnected
+and reconnected, record the newly appeared exact `hwid`, and require both that
+`hwid` and COM6 before proceeding. Set `$CrowPanelPort = 'COM6'` and use that
+exact variable for both
 `pio run -e crowpanel --target upload --upload-port $CrowPanelPort` and
 `pio device monitor --baud 115200 --port $CrowPanelPort`. Never ask the Pi
 helper to inventory workstation USB and never allow automatic port selection.
 Do not reflash merely to diagnose connectivity: when firmware sources have not
-changed, prefer serial observation and preserve the installed image. If the
-cable is ever moved to the Pi, that documented branch is trusted-local-console
-only; do not read or provision `secrets.h` over SSH.
+changed, prefer serial observation and preserve the installed image. After the
+monitor opens, tap **RESET** once without holding **BOOT** and require a fresh
+`Freeze Protect CrowPanel boot` line. If the cable is ever moved to the Pi,
+that documented branch is trusted-local-console only; do not read or provision
+`secrets.h` over SSH.
 ```

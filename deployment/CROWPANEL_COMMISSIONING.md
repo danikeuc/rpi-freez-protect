@@ -31,14 +31,21 @@ pio run -e crowpanel
 
 Connect a known data-capable USB cable to the CrowPanel's programming/data
 connector. For this installation the operator-confirmed workstation port is
-`COM6`. Verify that it is still present:
+`COM6`. First compare the JSON inventory with the panel disconnected and then
+reconnected. Record the exact `hwid` of the newly appeared entry; the mutable
+COM number alone is not device identity. Verify both values before proceeding:
 
 ```powershell
 $CrowPanelPort = 'COM6'
 $SerialInventory = @(pio device list --serial --json-output | ConvertFrom-Json)
-$CrowPanelMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+$PortMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+$CrowPanelExpectedHwid = Read-Host 'Paste the exact CrowPanel hwid recorded by disconnect/reconnect verification'
+if ([string]::IsNullOrWhiteSpace($CrowPanelExpectedHwid)) {
+    throw 'A verified CrowPanel hwid is required; stop.'
+}
+$CrowPanelMatches = @($PortMatches | Where-Object { $_.hwid -eq $CrowPanelExpectedHwid })
 if ($CrowPanelMatches.Count -ne 1) {
-    throw "Expected exactly one device on operator-confirmed port $CrowPanelPort; stop."
+    throw "COM port or hwid does not match the verified CrowPanel identity; stop."
 }
 $CrowPanelMatches | ConvertTo-Json -Depth 4
 ```
@@ -60,6 +67,10 @@ explicitly. Serial observation can run without another upload:
 pio run -e crowpanel -t upload --upload-port $CrowPanelPort
 pio device monitor --baud 115200 --port $CrowPanelPort
 ```
+
+After the monitor opens, tap **RESET** once without holding **BOOT**. Require a
+fresh `Freeze Protect CrowPanel boot` line. Opening a monitor after the panel is
+already running does not replay the one-time boot message.
 
 Expected serial line:
 

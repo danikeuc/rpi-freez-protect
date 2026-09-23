@@ -233,10 +233,14 @@ Enter Wi-Fi and display-token values only in that ignored local file; never put
 them in this guide, a Codex prompt, terminal capture, or Git.
 
 The operator has identified this CrowPanel as `COM6`. Verify that the port is
-still listed, bind it explicitly, and use the same value for upload and monitor.
-Do not substitute automatic port selection. Reflashing is not a diagnostic
-step: if firmware sources have not changed and the installed revision is not
-otherwise in doubt, collect serial output without uploading again.
+still listed and that its stable `hwid` belongs to the CrowPanel. Establish the
+identity once by comparing the JSON inventory with the panel disconnected and
+then reconnected; record the exact newly appeared `hwid` in the commissioning
+evidence. A COM number alone is not device identity. Bind the verified port and
+`hwid` explicitly and use the same port for upload and monitor. Do not
+substitute automatic port selection. Reflashing is not a diagnostic step: if
+firmware sources have not changed and the installed revision is not otherwise
+in doubt, collect serial output without uploading again.
 
 ```powershell
 Set-Location 'C:\Users\danik\Projects\rpi-freez-protect\firmware\crowpanel'
@@ -245,9 +249,14 @@ if (-not (Test-Path include\secrets.h)) {
 }
 $CrowPanelPort = 'COM6'
 $SerialInventory = @(pio device list --serial --json-output | ConvertFrom-Json)
-$CrowPanelMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+$PortMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
+$CrowPanelExpectedHwid = Read-Host 'Paste the exact CrowPanel hwid recorded by disconnect/reconnect verification'
+if ([string]::IsNullOrWhiteSpace($CrowPanelExpectedHwid)) {
+    throw 'A verified CrowPanel hwid is required; stop.'
+}
+$CrowPanelMatches = @($PortMatches | Where-Object { $_.hwid -eq $CrowPanelExpectedHwid })
 if ($CrowPanelMatches.Count -ne 1) {
-    throw "Expected exactly one device on operator-confirmed port $CrowPanelPort; stop."
+    throw "COM port or hwid does not match the verified CrowPanel identity; stop."
 }
 $CrowPanelMatches | ConvertTo-Json -Depth 4
 
@@ -258,8 +267,11 @@ pio run -e crowpanel --target upload --upload-port $CrowPanelPort
 pio device monitor --baud 115200 --port $CrowPanelPort
 ```
 
-Stop if `COM6` is absent or identifies a different device. Do not guess another
-port and do not move the USB check to the Pi.
+After the monitor opens, tap **RESET** once without holding **BOOT**. Require a
+fresh `Freeze Protect CrowPanel boot` line; merely attaching to an already
+running panel cannot recover that one-time boot message. Stop if `COM6` or its
+`hwid` differs from the recorded identity. Do not guess another port and do not
+move the USB check to the Pi.
 
 ### USB cable on the Pi — trusted-console-only
 

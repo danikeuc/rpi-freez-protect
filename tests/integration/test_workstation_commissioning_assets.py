@@ -1761,10 +1761,15 @@ def test_guide_uses_operator_confirmed_windows_com_port() -> None:
     assert "$CrowPanelPort = 'COM6'" in workstation_usb
     assert "pio device list --serial --json-output" in workstation_usb
     assert "Where-Object { $_.port -eq $CrowPanelPort }" in workstation_usb
+    assert "$_.hwid -eq $CrowPanelExpectedHwid" in workstation_usb
+    assert "Read-Host" in workstation_usb
+    assert "disconnect/reconnect" in workstation_usb
     assert "$CrowPanelMatches.Count -ne 1" in workstation_usb
     assert "Copy-Item include/secrets.example.h include/secrets.h" in workstation_usb
     assert "--upload-port $CrowPanelPort" in workstation_usb
     assert "--port $CrowPanelPort" in workstation_usb
+    assert "After the monitor opens, tap **RESET**" in workstation_usb
+    assert "Freeze Protect CrowPanel boot" in workstation_usb
     assert "/dev/serial/by-id" not in workstation_usb
     pi_usb = guide.split("### USB cable on the Pi", 1)[1]
     assert "trusted-console-only" in pi_usb
@@ -1785,6 +1790,23 @@ def test_crowpanel_example_targets_display_gateway() -> None:
 
     assert '#define HUB_BASE_URL "http://192.0.2.10:8081"' in secrets
     assert 'HUB_BASE_URL "http://192.0.2.10:8000"' not in secrets
+
+
+def test_crowpanel_commissioning_requires_stable_usb_identity_and_reset() -> None:
+    documents = [
+        (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
+            encoding="utf-8"
+        ),
+        (
+            ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
+        ).read_text(encoding="utf-8"),
+    ]
+
+    for document in documents:
+        assert "hwid" in document
+        assert "COM6" in document
+        assert "RESET" in document
+        assert "Freeze Protect CrowPanel boot" in document
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'
