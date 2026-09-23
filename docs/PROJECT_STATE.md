@@ -20,7 +20,9 @@ classes. Never promote one class into another without a new observation.
   `DRAIN`; this software contract is not evidence of physical valve movement.
 - Workstation commissioning uses the command-only
   `freezeprotect-commission` SSH account. Its allowlist is exactly
-  `inventory`, `status`, and `drain`. It has no USB or firmware command.
+  `inventory`, `status`, `diagnose-pair-gpio`, and `drain`.
+  `diagnose-pair-gpio` is a fixed read-only service diagnostic that omits
+  journal messages; the account has no USB or firmware command.
 - The CrowPanel cable is on the Windows workstation. The operator-confirmed
   port for this installation is `COM6`; both upload and monitor commands must
   name it explicitly. Reflashing is not a connectivity diagnostic.
@@ -30,7 +32,7 @@ classes. Never promote one class into another without a new observation.
 | Evidence class | Verified evidence | Limits / unresolved state |
 | --- | --- | --- |
 | Git repository | GitHub `main` and the Pi checkout were both observed at `432ff9e007bad2efc423a96862d0a5d230034c3b` on 2026-09-22 before this reconciliation. The reconciled checkout passed 178 Python tests, Ruff, shell syntax, Node-RED JSON/JavaScript syntax, relative-link validation and `git diff --check`. | A matching commit does not prove matching installed packages, unit files, secrets, processes, GPIO, or hardware. PlatformIO is unavailable in the reconciliation environment, so no current firmware build is claimed. This reconciliation is not deployed until separately installed and observed. |
-| Raspberry Pi inventory | Restricted `inventory` succeeded. The Pi reported DietPi, kernel `6.18.39+rpt-rpi-v8`, `aarch64`, service account UID `999` and GID `984`, and the commit above. | Current services, installed Python package, deployed unit contents, GPIO levels, SPI transactions, Node-RED flow and sensor state are **UNKNOWN** because a current `status`/commissioning capture was not completed. |
+| Raspberry Pi inventory | Restricted `inventory` succeeded. A later restricted `status` returned `active` for `node-red.service`, then `activating` for `freeze-protect-pair-gpio.service` and exit code 3 before checking the Hub or GPIO. The Pi previously reported DietPi, kernel `6.18.39+rpt-rpi-v8`, `aarch64`, service account UID `999` and GID `984`, and commit `432ff9e007bad2efc423a96862d0a5d230034c3b`. | The cause of the paired-GPIO `activating` state, installed unit/helper contents, Hub state, GPIO levels, SPI transactions, Node-RED flow and sensor state remain **UNKNOWN**. Repository diagnostics are not deployed until separately installed and observed. |
 | SSH boundary | A restricted `freezeprotect-commission` inventory call succeeded with the dedicated key. | This proves that one allowed command worked at that time, not that every installed commissioning asset matches this source tree. |
 | Windows / CrowPanel | The operator states the CrowPanel is attached to the PC as `COM6` and firmware has previously been uploaded many times. | Exact firmware revision currently installed on the CrowPanel is **NOT_VERIFIED**. The boot message contains no commit/version identifier. Do not infer revision from prior upload count. |
 | Physical installation | No actuator command or 24 V operation was performed during this reconciliation. | Current 24 V connection, water isolation, valve position, paired physical movement, return-capacitor behavior and PT100 terminal mapping are **UNKNOWN / NOT_VERIFIED**. GPIO readback would still not prove valve position. |
@@ -65,8 +67,8 @@ marked and may describe superseded hardware or access arrangements.
 
 ## Next safe observation
 
-The next remote action, when explicitly requested, is the restricted `status`
-command using the dedicated key. It is read-only with respect to requested
-actuator state, but it still does not prove physical valve position. Do not run
-`SUPPLY`, connect 24 V, restart services, or reflash firmware merely to complete
-this evidence register.
+After the reconciled helper is separately reviewed and installed by the
+trusted-console operator, the next remote action is the restricted
+`diagnose-pair-gpio` command using the dedicated key. It is read-only and does
+not prove GPIO levels or physical valve position. Do not run `SUPPLY`, connect
+24 V, restart services, or reflash firmware merely to complete this register.

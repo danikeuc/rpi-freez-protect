@@ -85,13 +85,13 @@ def test_acceptance_uses_copy_safe_fixed_commands_and_batch_mode() -> None:
     )
 
     assert "freeze-protect-commission usb" not in prompt
-    for subcommand in ("inventory", "status", "drain"):
+    for subcommand in ("inventory", "status", "diagnose-pair-gpio", "drain"):
         assert (
             f"sudo -n /usr/local/sbin/freeze-protect-commission {subcommand}" in prompt
         )
 
     identity = r'$env:USERPROFILE\.ssh\freezeprotect_commission'
-    for subcommand in ("inventory", "status", "drain"):
+    for subcommand in ("inventory", "status", "diagnose-pair-gpio", "drain"):
         assert (
             f'ssh -i "{identity}" -o BatchMode=yes '
             "freezeprotect-commission@<Pi-LAN-IP> "
@@ -109,11 +109,64 @@ def test_privileged_helper_has_only_fixed_subcommands() -> None:
     assert "inventory)" in helper
     assert "usb)" not in helper
     assert "status)" in helper
+    assert "diagnose-pair-gpio)" in helper
     assert "drain)" in helper
     assert "eval " not in helper
     assert "bash -c" not in helper
     assert "pinctrl get 26" in helper
     assert "pinctrl get 20" in helper
+
+
+def test_pair_gpio_diagnostic_is_fixed_read_only_and_omits_journal_messages() -> None:
+    helper = (
+        ROOT / "deployment/workstation-codex/freeze-protect-commission"
+    ).read_text(encoding="utf-8")
+
+    assert "freeze-protect-pair-gpio.service" in helper
+    for property_name in (
+        "ActiveState",
+        "SubState",
+        "Result",
+        "Type",
+        "MainPID",
+        "ExecMainStatus",
+        "ExecMainCode",
+        "NRestarts",
+        "ActiveEnterTimestamp",
+        "InactiveExitTimestamp",
+    ):
+        assert property_name in helper
+    assert "/usr/bin/systemctl show" in helper
+    assert "/usr/bin/systemctl status" in helper
+    assert "--lines=0" in helper
+    assert "/usr/bin/ps" in helper
+    assert "/usr/bin/stat" in helper
+    assert "/usr/bin/sha256sum" in helper
+    assert "journal-output=omitted" in helper
+    assert "journalctl" not in helper
+    for forbidden in (
+        "systemctl restart",
+        "systemctl start",
+        "systemctl stop",
+        "systemctl daemon-reload",
+        "pinctrl set",
+        "SUPPLY",
+    ):
+        assert forbidden not in helper
+
+
+def test_privileged_helper_rejects_diagnostic_extra_arguments() -> None:
+    helper = ROOT / "deployment/workstation-codex/freeze-protect-commission"
+    result = subprocess.run(
+        [str(helper), "diagnose-pair-gpio", "--unit=ssh.service"],
+        text=True,
+        capture_output=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert result.returncode == 64
+    assert "usage:" in result.stderr
 
 
 def test_privileged_helper_clears_inherited_environment() -> None:
@@ -159,6 +212,7 @@ def test_bootstrap_requires_one_public_key_file_and_installs_exact_sudoers_rule(
     assert "/usr/local/sbin/freeze-protect-commission inventory" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission usb" not in sudoers
     assert "/usr/local/sbin/freeze-protect-commission status" in sudoers
+    assert "/usr/local/sbin/freeze-protect-commission diagnose-pair-gpio" in sudoers
     assert "/usr/local/sbin/freeze-protect-commission drain" in sudoers
     assert "ALL" not in sudoers.replace("ALL=(root)", "")
 
@@ -349,6 +403,8 @@ def test_commissioning_ssh_policy_is_key_only_and_disables_forwarding() -> None:
         "sudo -n /usr/local/sbin/freeze-protect-commission supply",
         "sudo -n /usr/local/sbin/freeze-protect-commission SUPPLY",
         "sudo -n /usr/local/sbin/freeze-protect-commission usb",
+        "sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio --all",
+        "sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio; id",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain --force",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain; curl http://127.0.0.1:1880/admin",
         "sudo -n /usr/local/sbin/freeze-protect-commission drain\ncurl http://127.0.0.1:1880/admin",
@@ -404,6 +460,14 @@ def run_ssh_dispatcher(
         (
             "sudo -n /usr/local/sbin/freeze-protect-commission status",
             ["-n", "/usr/local/sbin/freeze-protect-commission", "status"],
+        ),
+        (
+            "sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio",
+            [
+                "-n",
+                "/usr/local/sbin/freeze-protect-commission",
+                "diagnose-pair-gpio",
+            ],
         ),
         (
             "sudo -n /usr/local/sbin/freeze-protect-commission drain",

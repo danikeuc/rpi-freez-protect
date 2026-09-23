@@ -11,6 +11,9 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
   "sudo -n /usr/local/sbin/freeze-protect-commission status")
     exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission status
     ;;
+  "sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio")
+    exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio
+    ;;
   "sudo -n /usr/local/sbin/freeze-protect-commission drain")
     exec /usr/bin/sudo -n /usr/local/sbin/freeze-protect-commission drain
     ;;

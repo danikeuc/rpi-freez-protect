@@ -1,5 +1,6 @@
 Cmnd_Alias FREEZE_PROTECT_COMMISSION = \
   /usr/local/sbin/freeze-protect-commission inventory, \
   /usr/local/sbin/freeze-protect-commission status, \
+  /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio, \
   /usr/local/sbin/freeze-protect-commission drain
 freezeprotect-commission ALL=(root) NOPASSWD: FREEZE_PROTECT_COMMISSION

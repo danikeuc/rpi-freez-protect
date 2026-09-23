@@ -5,7 +5,7 @@ PATH=/usr/sbin:/usr/bin
 export PATH
 
 if [ "$#" -ne 1 ]; then
-  echo "usage: freeze-protect-commission {inventory|status|drain}" >&2
+  echo "usage: freeze-protect-commission {inventory|status|diagnose-pair-gpio|drain}" >&2
   exit 64
 fi
 
@@ -24,6 +24,52 @@ case "${1:-}" in
     systemctl is-active freeze-protect.service
     pinctrl get 26
     pinctrl get 20
+    ;;
+  diagnose-pair-gpio)
+    unit=freeze-protect-pair-gpio.service
+    properties=ActiveState,SubState,Result,Type,MainPID,ExecMainStatus,ExecMainCode,NRestarts,ActiveEnterTimestamp,InactiveExitTimestamp
+
+    echo "section=systemd-show"
+    show_status=0
+    /usr/bin/systemctl show "$unit" --no-pager --property="$properties" || show_status=$?
+    printf 'systemd-show-exit-code=%s\n' "$show_status"
+
+    echo "section=systemd-status"
+    status_status=0
+    /usr/bin/systemctl status "$unit" --no-pager --lines=0 || status_status=$?
+    printf 'systemd-status-exit-code=%s\n' "$status_status"
+
+    echo "section=main-process"
+    main_pid=$(/usr/bin/systemctl show "$unit" --property=MainPID --value 2>/dev/null || true)
+    case "$main_pid" in
+      ''|*[!0-9]*)
+        echo "main-process=unavailable"
+        ;;
+      0)
+        echo "main-process=none"
+        ;;
+      *)
+        /usr/bin/ps -p "$main_pid" -o pid=,stat=,comm= ||
+          echo "main-process=not-running"
+        ;;
+    esac
+
+    echo "section=installed-artifacts"
+    for artifact in \
+      /etc/systemd/system/freeze-protect-pair-gpio.service \
+      /opt/rpi-freez-protect/deployment/node-red/paired_gpio_daemon.py \
+      /usr/local/sbin/freeze-protect-commission
+    do
+      printf 'artifact=%s\n' "$artifact"
+      if [ -f "$artifact" ] && [ ! -L "$artifact" ]; then
+        /usr/bin/stat --format='metadata=%U:%G:%a:%s:%y' -- "$artifact"
+        /usr/bin/sha256sum -- "$artifact"
+      else
+        echo "artifact-state=missing-or-not-regular"
+      fi
+    done
+
+    echo "journal-output=omitted: unrestricted service messages cannot be proven secret-free"
     ;;
   drain)
     receipt=$(/usr/bin/python3 -I /usr/local/lib/freeze-protect-commission/paired_gpio_client.py DRAIN)
@@ -66,7 +112,7 @@ sys.exit(0 if valid else 1)
     fi
     ;;
   *)
-    echo "usage: freeze-protect-commission {inventory|status|drain}" >&2
+    echo "usage: freeze-protect-commission {inventory|status|diagnose-pair-gpio|drain}" >&2
     exit 64
     ;;
 esac
