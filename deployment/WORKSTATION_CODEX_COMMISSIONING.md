@@ -90,7 +90,7 @@ Bootstrap makes the commissioning home root-owned `0750`, `.ssh` root-owned
 account's primary group. It installs a key-only `sshd` policy for this user,
 disables password/interactive authentication, forwarding and TTYs, and forces
 every SSH request through a root-owned dispatcher. The dispatcher allows only
-the three documented helper commands; it never opens a remote shell or permits
+the four documented helper commands; it never opens a remote shell or permits
 access to local-only Node-RED. On an upgrade bootstrap first verifies the
 root-controlled legacy grant paths and removes their old key and sudo grant.
 It then validates the commissioning identity before signalling its UID and
@@ -185,7 +185,7 @@ Keep the 24 V valve supply disconnected. The trusted-console operator performs
 the service installation/restarts, environment configuration, Node-RED edits,
 and deployment preflight from
 [`COMMISSIONING.md` steps 1–4](COMMISSIONING.md#1-make-the-pi-service-files).
-Those actions are outside the remote account's three-command sudo allowlist;
+Those actions are outside the remote account's four-command sudo allowlist;
 local Codex must hand them off, not widen the allowlist or use arbitrary sudo.
 Do not copy secrets into the Codex session or its logs.
 
@@ -217,8 +217,16 @@ name the dedicated key; do not rely on whichever identity the SSH agent offers:
 ```powershell
 ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
 ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio
 ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission drain
 ```
+
+`diagnose-pair-gpio` is read-only and fixed to
+`freeze-protect-pair-gpio.service`. It reports bounded systemd state, the
+validated main-process identity, and metadata plus SHA-256 for three fixed
+installed artifacts. It deliberately omits journal messages because arbitrary
+service output cannot be proven free of credentials. It accepts no additional
+arguments and does not restart services or read or write GPIO.
 
 The Pi helper deliberately has no `usb` command. CrowPanel USB discovery and
 firmware work happen on the computer to which the cable is physically attached.

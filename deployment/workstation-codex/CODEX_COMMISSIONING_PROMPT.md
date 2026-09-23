@@ -23,13 +23,20 @@ dedicated identity named explicitly:
 
 ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission inventory
 ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission status
+ssh -i "$env:USERPROFILE\.ssh\freezeprotect_commission" -o BatchMode=yes freezeprotect-commission@<Pi-LAN-IP> sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio
 
-The only allowed privileged helper subcommands are `inventory`, `status`, and
-`drain`. Their only runnable forms are:
+The only allowed privileged helper subcommands are `inventory`, `status`,
+`diagnose-pair-gpio`, and `drain`. Their only runnable forms are:
 
 sudo -n /usr/local/sbin/freeze-protect-commission inventory
 sudo -n /usr/local/sbin/freeze-protect-commission status
+sudo -n /usr/local/sbin/freeze-protect-commission diagnose-pair-gpio
 sudo -n /usr/local/sbin/freeze-protect-commission drain
+
+`diagnose-pair-gpio` is read-only, accepts no additional arguments, and is
+fixed to the paired-GPIO service and three installed artifact paths. It omits
+journal messages rather than risk returning secrets. It does not authorize a
+restart, service mutation, GPIO command, shell, or arbitrary systemd query.
 
 The SSH account is command-only: an interactive shell, a local Node-RED call,
 port forwarding, extra arguments, and arbitrary sudo commands are rejected.
