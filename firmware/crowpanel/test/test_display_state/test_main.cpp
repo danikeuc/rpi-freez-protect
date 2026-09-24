@@ -2,6 +2,7 @@
 #include <string>
 
 #include "display_state.h"
+#include "display_layout.h"
 #include "hub_client.h"
 
 namespace {
@@ -105,6 +106,36 @@ void test_encoder_navigation_has_exactly_two_pages() {
   assert(move_page(DisplayPage::Forecast, false) == DisplayPage::Home);
 }
 
+void test_home_state_label_reflects_hub_state() {
+  HubStatus status = healthy_status();
+  status.state = "NORMAL";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "NORMALNO DELOVANJE");
+
+  status.state = "FROST_PROTECTION";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "ZAŠČITA PRED MRAZOM");
+
+  status.state = "FAULT";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "NAPAKA SISTEMA");
+
+  status.state = "TIMED_SHOWER";
+  assert(home_state_label(reduce_status(status, true, true)) == "TUŠ AKTIVEN");
+
+  assert(home_state_label(reduce_status(status, true, false)) == "NI POVEZAVE");
+}
+
+void test_forecast_rows_fit_above_the_return_prompt() {
+  constexpr int rows_bottom = DisplayLayout::kForecastRowsY +
+                              DisplayLayout::kForecastLineCount *
+                                  DisplayLayout::kForecastLineHeight;
+  constexpr int footer_top = DisplayLayout::kDisplayHeight -
+                             DisplayLayout::kForecastFooterBottomMargin -
+                             DisplayLayout::kForecastFooterFontHeight;
+  assert(rows_bottom <= footer_top);
+}
+
 }  // namespace
 
 #ifdef PIO_UNIT_TESTING
@@ -122,6 +153,8 @@ int main() {
   RUN_TEST(test_hub_result_constructs_with_connection_and_status);
   RUN_TEST(test_action_paths_are_display_api_only);
   RUN_TEST(test_encoder_navigation_has_exactly_two_pages);
+  RUN_TEST(test_home_state_label_reflects_hub_state);
+  RUN_TEST(test_forecast_rows_fit_above_the_return_prompt);
   return UNITY_END();
 }
 #else
@@ -136,5 +169,7 @@ int main() {
   test_hub_result_constructs_with_connection_and_status();
   test_action_paths_are_display_api_only();
   test_encoder_navigation_has_exactly_two_pages();
+  test_home_state_label_reflects_hub_state();
+  test_forecast_rows_fit_above_the_return_prompt();
 }
 #endif

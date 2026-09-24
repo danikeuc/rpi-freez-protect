@@ -9,3 +9,4 @@ std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
 DisplayAction next_action(const DisplayModel& model);
 DisplayInteraction primary_press(DisplayPage page, const DisplayModel& model);
 DisplayPage move_page(DisplayPage current, bool forward);
+std::string home_state_label(const DisplayModel& model);

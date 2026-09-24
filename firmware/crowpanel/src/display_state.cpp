@@ -116,3 +116,25 @@ DisplayPage move_page(DisplayPage current, bool forward) {
   }
   return current;
 }
+
+std::string home_state_label(const DisplayModel& model) {
+  if (!model.connected) {
+    return "NI POVEZAVE";
+  }
+  if (model.state == "TIMED_SHOWER") {
+    return "TUŠ AKTIVEN";
+  }
+  if (model.state == "NORMAL") {
+    return "NORMALNO DELOVANJE";
+  }
+  if (model.state == "FROST_PROTECTION") {
+    return "ZAŠČITA PRED MRAZOM";
+  }
+  if (model.state == "FAULT") {
+    return "NAPAKA SISTEMA";
+  }
+  if (model.state == "STARTING") {
+    return "ZAGON SISTEMA";
+  }
+  return "STANJE NEZNANO";
+}
