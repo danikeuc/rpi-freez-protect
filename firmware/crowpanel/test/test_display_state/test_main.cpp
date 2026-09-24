@@ -141,6 +141,9 @@ void test_forecast_rows_fit_above_the_return_prompt() {
 #ifdef PIO_UNIT_TESTING
 #include <unity.h>
 
+extern "C" void setUp(void) {}
+extern "C" void tearDown(void) {}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_offline_disables_actions_and_shows_required_copy);

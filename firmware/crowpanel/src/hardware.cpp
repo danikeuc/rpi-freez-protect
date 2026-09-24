@@ -13,6 +13,7 @@
 
 #include "board_pins.h"
 #include "display_layout.h"
+#include "display_state.h"
 
 namespace {
 
