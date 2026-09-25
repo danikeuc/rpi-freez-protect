@@ -20,6 +20,17 @@ For faults:
 
 Do not use shotgun debugging. Reuse existing evidence and do not repeat a test that already proved the same boundary unless the relevant implementation, configuration or hardware changed.
 
+## Specialist skill routing
+
+When the runtime exposes specialist skills, use the most specific one before acting:
+
+- `embedded-edge-systems-engineer` for ESP32/ESP32-S3, Raspberry Pi, DietPi, GPIO, SPI/I2C/UART/1-Wire, sensors, relays, valves, firmware, device integration, commissioning and live-hardware safety.
+- `node-red-engineer` for Node-RED flow design, Function nodes, message contracts, context, runtime configuration, security, Projects/Git, custom nodes, deployment and Node-RED troubleshooting.
+- `rpi-freez-protect-documentation-evidence-reconciler` after meaningful changes or whenever repository documentation, deployed state, evidence claims or physical observations diverge.
+- Use the applicable Superpowers workflow for non-trivial work: brainstorming before behaviour/design changes, systematic debugging for faults, test-driven development for code changes, receiving-code-review for review feedback, and verification-before-completion before any success claim.
+
+Skills are specialist guidance, not authority to bypass this repository's safety gates, access boundaries, approval requirements, source-of-truth rules or commissioning procedures.
+
 ## Evidence classification
 
 Always distinguish:
@@ -43,6 +54,7 @@ Examples:
 - Treat this repository as control software for physical water valves.
 - Review `deployment/WORKSTATION_CODEX_COMMISSIONING.md` and `deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md` before any deployment, commissioning, SSH-policy, firmware-upload, GPIO, relay or actuator task.
 - Read `docs/PROJECT_STATE.md` before reporting deployment, firmware, sensor, GPIO or physical status.
+- For ChatGPT project sessions, keep `docs/PROJECT_INSTRUCTIONS.md` aligned with the Project Instructions field.
 - Repository files, deployed Pi state and observed physical behaviour are separate evidence sources. Do not claim one proves another.
 
 ## Repository discipline
@@ -117,8 +129,7 @@ Do not infer physical valve position from GPIO alone.
 This system controls water and freeze protection and is safety-critical.
 
 - Keep the 24 V valve supply disconnected unless Danijel explicitly approves the same bounded physical test in the current conversation.
-- Do not run an unbounded SUPPLY command.
-- Use only the documented timed-shower path after all software gates pass and explicit approval is recorded.
+- Do not run SUPPLY. Use only the documented timed-shower path after all software gates pass and explicit approval is recorded.
 - Preserve the paired-output invariant: GPIO 26 and GPIO 20 move together.
 - GPIO readback does not prove valve position.
 - Stop on any failed receipt, readback, service check or deployed-flow preflight.
@@ -187,6 +198,27 @@ Use runtime evidence such as `systemctl`, `journalctl`, sockets, ports, service 
 - Use `ssh-keygen -R` only for a verified changed-host-key event, never for normal first contact.
 - Treat PowerShell and the remote POSIX shell as separate interpreters. Prefer reviewed files or simple documented commands over nested one-liners.
 - Diagnose from evidence before changing SSH policy, accounts, permissions or services. Preserve unrelated local and deployed changes.
+
+## Node-RED engineering boundary
+
+Node-RED is an authenticated, loopback-only integration bridge. It is not the safety authority and must not become a second control state machine.
+
+For Node-RED work:
+
+- keep the editor and HTTP runtime bound to loopback unless an approved architecture change explicitly says otherwise;
+- never reintroduce direct `rpi-gpio out` ownership of GPIO 26/20, legacy `/trigger/...` control routes, or any second process that can independently write the paired outputs;
+- route paired-valve intent through the fixed `paired_gpio_client.py` → Unix socket → `paired_gpio_daemon.py` path;
+- keep authentication, validation, timeout, idempotency and error behaviour explicit at the Node-RED/API boundary;
+- do not store safety-critical desired state only in volatile Node-RED context or make context persistence the mechanism that restores actuator state after restart;
+- keep Function-node work bounded and observable; handle errors explicitly and avoid blocking work that can starve the event loop;
+- keep secrets in approved environment/credential mechanisms, never in exported flow JSON, Function-node source, debug output or Git;
+- export/retain a rollback copy before replacing an active flow and reconcile the deployed active flow separately from repository JSON.
+
+For repository Node-RED changes, at minimum validate the flow JSON/JavaScript and run the relevant integration coverage, including `tests/integration/test_node_red_flow.py`. For commissioning/cutover, run `deployment/node-red/preflight-no-legacy-gpio.js` against the deployed active `flows.json` exactly as documented in `deployment/COMMISSIONING.md`.
+
+A successful deploy, HTTP response or Node-RED receipt proves only its own layer. It does not prove GPIO state, relay state, valve movement or plumbing outcome.
+
+Use the official Node-RED documentation at `https://nodered.org/docs/` as the primary external reference for version-sensitive Node-RED behaviour.
 
 ## ESP32 / CrowPanel
 
@@ -323,7 +355,7 @@ Use these terms precisely:
 - **TESTED** — relevant tests pass.
 - **INTEGRATED** — works across required software/device boundaries.
 - **DEPLOYED** — intended version is running on target.
-- **VERIFIED** — runtime evidence confirms expected behaviour.
+- **RUNTIME_VERIFIED** — target runtime evidence confirms the expected deployed behaviour.
 - **COMMISSIONED** — physical behaviour and required failure/recovery cases are verified.
 
 Do not collapse these states into one.
