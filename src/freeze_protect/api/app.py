@@ -228,6 +228,14 @@ def create_app(
         payload: SettingsInput,
         _integration: None = Depends(require_integration),
     ) -> dict[str, object]:
+        if (
+            payload.sensor_commissioned != service.settings.sensor_commissioned
+            or payload.sensor_device_id != service.settings.sensor_device_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="sensor commissioning is administrator-only",
+            )
         return put_settings(payload, None)
 
     @app.post("/api/v1/commands/clear-fault")
