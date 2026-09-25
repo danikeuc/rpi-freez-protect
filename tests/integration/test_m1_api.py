@@ -204,6 +204,26 @@ def test_uhc_integration_settings_reject_invalid_policy(
     assert response.status_code == 422
 
 
+def test_uhc_integration_cannot_commission_or_replace_the_sensor(client: TestClient) -> None:
+    settings = client.get(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION
+    ).json()
+    settings["sensor_commissioned"] = True
+    settings["sensor_device_id"] = "28-000000000000"
+    settings["settings_version"] += 1
+
+    response = client.put(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION, json=settings
+    )
+    persisted = client.get(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION
+    ).json()
+
+    assert response.status_code == 403
+    assert persisted["sensor_commissioned"] is False
+    assert persisted["sensor_device_id"] is None
+
+
 def test_settings_persistence_failure_latches_fault_and_returns_service_unavailable(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
