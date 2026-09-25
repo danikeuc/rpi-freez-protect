@@ -19,6 +19,7 @@ app = create_app(
     development_mode=_development_mode(os.environ.get("FREEZE_PROTECT_DEVELOPMENT_MODE")),
     node_red_url=os.environ.get("FREEZE_PROTECT_NODE_RED_URL"),
     node_red_token=os.environ.get("FREEZE_PROTECT_NODE_RED_TOKEN"),
+    integration_token=os.environ.get("FREEZE_PROTECT_INTEGRATION_TOKEN"),
 )
 
 
