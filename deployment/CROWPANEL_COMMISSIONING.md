@@ -80,6 +80,12 @@ Freeze Protect CrowPanel boot
 
 The screen must first show `NI POVEZAVE — PREVERI HUB` until Wi-Fi and the display gateway are available. It must never show GPIO, Node-RED, a weather-provider name, or an administrative token.
 
+If Wi-Fi is disconnected, the screen also shows a diagnostic block with the
+current Wi-Fi status, IP and MAC, the last disconnect reason, and the most
+recent Hub poll's HTTP result, JSON validity and age. Treat these as separate
+observations: an earlier HTTP 200 does not prove the current Wi-Fi state, and
+neither value proves relay or valve operation.
+
 ## 4. Functional test with valve power disconnected
 
 1. After a successful poll, verify the Home page shows a title matching the Hub

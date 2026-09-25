@@ -32,6 +32,8 @@ void test_offline_disables_actions_and_shows_required_copy() {
 }
 
 void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
+  assert(connection_diagnostic(false, false, 0, 0) ==
+         "WI-FI: POVEZOVANJE");
   assert(connection_diagnostic(false, false, 0, 1) ==
          "WI-FI: SSID NI NAJDEN");
   assert(connection_diagnostic(false, false, 0, 4) ==
@@ -39,11 +41,26 @@ void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
   assert(connection_diagnostic(false, false, 0, 5) ==
          "WI-FI: POVEZAVA IZGUBLJENA");
   assert(connection_diagnostic(false, false, 0, 6) ==
-         "WI-FI: NI POVEZAVE");
+         "WI-FI: ODKLOPLJEN");
   assert(connection_diagnostic(true, false, 0, 3) == "HUB NEDOSEGLJIV");
   assert(connection_diagnostic(true, false, 401, 3) == "HUB HTTP 401");
   assert(connection_diagnostic(true, false, 200, 3) == "HUB ODGOVOR NAPAKA");
   assert(connection_diagnostic(true, true, 200, 3) == "HUB POVEZAN");
+}
+
+void test_wifi_diagnostic_exposes_device_state_and_network_identity() {
+  assert(wifi_diagnostic_details(6, "192.168.114.226", "AA:BB:CC:92:AE:DC",
+                                201, 200, true, 0, true) ==
+         "Wi-Fi status: 6\nIP: 192.168.114.226\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: 201\nHub HTTP: 200, JSON valid (0s ago)");
+  assert(wifi_diagnostic_details(0, "0.0.0.0", "AA:BB:CC:92:AE:DC", -1,
+                                0, false, 0, false) ==
+         "Wi-Fi status: 0\nIP: 0.0.0.0\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: none\nHub: no poll yet");
+  assert(wifi_diagnostic_details(6, "0.0.0.0", "AA:BB:CC:92:AE:DC", 201,
+                                200, false, 5, true) ==
+         "Wi-Fi status: 6\nIP: 0.0.0.0\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: 201\nHub HTTP: 200, JSON invalid (5s ago)");
 }
 
 void test_active_timer_maps_primary_action_to_immediate_drain() {
@@ -148,6 +165,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_offline_disables_actions_and_shows_required_copy);
   RUN_TEST(test_connection_diagnostic_distinguishes_wifi_and_hub_failures);
+  RUN_TEST(test_wifi_diagnostic_exposes_device_state_and_network_identity);
   RUN_TEST(test_active_timer_maps_primary_action_to_immediate_drain);
   RUN_TEST(test_sensor_details_are_not_exposed_on_the_home_screen);
   RUN_TEST(test_forecast_primary_press_returns_to_the_home_screen);
@@ -164,6 +182,7 @@ int main() {
 int main() {
   test_offline_disables_actions_and_shows_required_copy();
   test_connection_diagnostic_distinguishes_wifi_and_hub_failures();
+  test_wifi_diagnostic_exposes_device_state_and_network_identity();
   test_active_timer_maps_primary_action_to_immediate_drain();
   test_sensor_details_are_not_exposed_on_the_home_screen();
   test_forecast_primary_press_returns_to_the_home_screen();

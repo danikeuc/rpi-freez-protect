@@ -270,7 +270,10 @@ void HardwareUi::render(const DisplayModel& model) {
   lv_label_set_text(temperature_label, summary.c_str());
   lv_obj_set_style_text_font(temperature_label, &lv_font_montserrat_20, 0);
   lv_obj_align(temperature_label, LV_ALIGN_TOP_MID, 0, 48);
-  lv_label_set_text(detail_label, "");
+  lv_label_set_text(detail_label,
+                    unavailable ? model.connection_detail_text.c_str() : "");
+  lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_line_space(detail_label, 1, 0);
   lv_obj_align(detail_label, LV_ALIGN_TOP_MID, 0, 76);
   lv_label_set_text(action_label, model.primary_action_text.c_str());
   lv_obj_set_style_text_font(action_label, &lv_font_montserrat_16, 0);
