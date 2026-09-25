@@ -17,6 +17,7 @@ from freeze_protect.persistence.sqlite import SQLiteSettingsStore
 
 ADMIN = {"X-Admin-Token": "admin-token"}
 DISPLAY = {"X-Display-Token": "display-token"}
+INTEGRATION = {"X-Integration-Token": "integration-token"}
 
 
 class FailingTemperatureSource:
@@ -33,6 +34,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         development_mode=True,
         clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
         run_background=False,
+        integration_token="integration-token",
     )
     with TestClient(app) as test_client:
         yield test_client
@@ -131,6 +133,95 @@ def test_status_and_settings_are_administrator_only(client: TestClient) -> None:
     assert settings.status_code == 200
     assert settings.json()["sensor_commissioned"] is False
     assert "display_token" not in settings.json()
+
+
+def test_uhc_integration_token_reads_only_status_and_settings(
+    client: TestClient,
+) -> None:
+    relay = client.app.state.relay_driver
+    commands_before = list(relay.commands)
+
+    status = client.get("/api/v1/integrations/uhc/status", headers=INTEGRATION)
+    settings = client.get("/api/v1/integrations/uhc/settings", headers=INTEGRATION)
+
+    assert status.status_code == 200
+    assert status.json()["state"] == "FROST_PROTECTION"
+    assert settings.status_code == 200
+    assert settings.json()["timed_shower_default_s"] == 600
+    assert relay.commands == commands_before
+
+
+def test_uhc_integration_token_is_distinct_from_admin_and_display_tokens(
+    client: TestClient,
+) -> None:
+    for headers in ({}, ADMIN, DISPLAY):
+        assert (
+            client.get("/api/v1/integrations/uhc/status", headers=headers).status_code
+            == 401
+        )
+
+    assert (
+        client.get("/api/v1/status", headers=INTEGRATION).status_code == 401
+    )
+    assert (
+        client.get("/api/v1/display/status", headers=INTEGRATION).status_code == 401
+    )
+
+
+def test_uhc_integration_token_updates_validated_settings_without_supply(
+    client: TestClient,
+) -> None:
+    relay = client.app.state.relay_driver
+    commands_before = list(relay.commands)
+    settings = client.get("/api/v1/settings", headers=ADMIN).json()
+    settings["timed_shower_default_s"] = 900
+    settings["settings_version"] += 1
+
+    response = client.put(
+        "/api/v1/integrations/uhc/settings",
+        headers=INTEGRATION,
+        json=settings,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["timed_shower_default_s"] == 900
+    assert "SUPPLY" not in [command.value for command in relay.commands[ len(commands_before) :]]
+
+
+def test_uhc_integration_settings_reject_invalid_policy(
+    client: TestClient,
+) -> None:
+    settings = client.get("/api/v1/settings", headers=ADMIN).json()
+    settings["timed_shower_default_s"] = 1_900
+    settings["settings_version"] += 1
+
+    response = client.put(
+        "/api/v1/integrations/uhc/settings",
+        headers=INTEGRATION,
+        json=settings,
+    )
+
+    assert response.status_code == 422
+
+
+def test_uhc_integration_cannot_commission_or_replace_the_sensor(client: TestClient) -> None:
+    settings = client.get(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION
+    ).json()
+    settings["sensor_commissioned"] = True
+    settings["sensor_device_id"] = "28-000000000000"
+    settings["settings_version"] += 1
+
+    response = client.put(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION, json=settings
+    )
+    persisted = client.get(
+        "/api/v1/integrations/uhc/settings", headers=INTEGRATION
+    ).json()
+
+    assert response.status_code == 403
+    assert persisted["sensor_commissioned"] is False
+    assert persisted["sensor_device_id"] is None
 
 
 def test_settings_persistence_failure_latches_fault_and_returns_service_unavailable(

@@ -96,8 +96,11 @@ def test_display_gateway_rejects_methods_outside_its_device_contract() -> None:
         encoding="utf-8"
     )
 
-    assert nginx.count("if ($request_method != GET) { return 405; }") == 1
+    assert nginx.count("if ($request_method != GET) { return 405; }") == 2
     assert nginx.count("if ($request_method != POST) { return 405; }") == 2
+    assert "location = /api/v1/integrations/uhc/status" in nginx
+    assert "location = /api/v1/integrations/uhc/settings" in nginx
+    assert "if ($request_method !~ ^(GET|PUT)$) { return 405; }" in nginx
 
 
 def test_crowpanel_enables_fonts_and_renders_the_dedicated_forecast_page() -> None:

@@ -22,6 +22,7 @@ from freeze_protect.adapters.weather import OpenMeteoForecastClient
 from freeze_protect.api.auth import (
     build_admin_guard,
     build_display_guard,
+    build_integration_guard,
     require_confirmation,
 )
 from freeze_protect.application.ports import (
@@ -100,6 +101,7 @@ def create_app(
     node_red_token: str | None = None,
     clock: Callable[[], datetime] | None = None,
     run_background: bool = True,
+    integration_token: str | None = None,
 ) -> FastAPI:
     clock_fn = clock or _now
     settings_store = SQLiteSettingsStore(database_path)
@@ -134,6 +136,7 @@ def create_app(
     control_loop = PeriodicControlLoop(service)
     require_admin = build_admin_guard(admin_token)
     require_display = build_display_guard(display_token)
+    require_integration = build_integration_guard(integration_token)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -205,6 +208,35 @@ def create_app(
                 detail=decision.reason,
             )
         return asdict(saved)
+
+    @app.get("/api/v1/integrations/uhc/status")
+    def uhc_integration_status(
+        _integration: None = Depends(require_integration),
+    ) -> dict[str, object]:
+        return _admin_status_payload(
+            service.status(), service.settings, _sensor_diagnostics(temperature_source)
+        )
+
+    @app.get("/api/v1/integrations/uhc/settings")
+    def uhc_integration_get_settings(
+        _integration: None = Depends(require_integration),
+    ) -> dict[str, object]:
+        return asdict(service.settings)
+
+    @app.put("/api/v1/integrations/uhc/settings")
+    def uhc_integration_put_settings(
+        payload: SettingsInput,
+        _integration: None = Depends(require_integration),
+    ) -> dict[str, object]:
+        if (
+            payload.sensor_commissioned != service.settings.sensor_commissioned
+            or payload.sensor_device_id != service.settings.sensor_device_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="sensor commissioning is administrator-only",
+            )
+        return put_settings(payload, None)
 
     @app.post("/api/v1/commands/clear-fault")
     def clear_fault(

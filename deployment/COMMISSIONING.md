@@ -41,7 +41,7 @@ sudo cp deployment/systemd/freeze-protect.service /etc/systemd/system/freeze-pro
 sudo cp deployment/systemd/freeze-protect-pair-gpio.service /etc/systemd/system/freeze-protect-pair-gpio.service
 ```
 
-Edit `/etc/rpi-freeze-protect/environment` locally. Generate three independent long random values; the Node-RED token is shared only with the Node-RED environment file in the next section.
+Edit `/etc/rpi-freeze-protect/environment` locally. Generate four independent long random values. The Node-RED token is shared only with Node-RED; the integration token is shared only with the UHC container on Heimdall.
 
 ## 2. Bind Node-RED to loopback, then add the bridge
 
@@ -117,9 +117,9 @@ sudo -u nodered node /opt/rpi-freez-protect/deployment/node-red/preflight-no-leg
 
 It must print `Preflight passed` and exit with code zero. If it reports a legacy GPIO 26/20 node, `/trigger` route, or a missing/duplicate bridge route, keep valve power disconnected, correct the tabs in the editor, deploy, and run the command again. The exported legacy file is only a rollback record; it must not be imported as an active relay flow.
 
-## 3. Expose only the display API to the local Wi-Fi
+## 3. Expose only the display and scoped UHC APIs to the trusted LAN
 
-The Hub itself stays on `127.0.0.1:8000`. Install the supplied narrow Nginx gateway so the CrowPanel can reach only its three device-token-protected endpoints:
+The Hub itself stays on `127.0.0.1:8000`. Install the supplied narrow Nginx gateway. It exposes the three display-token-protected routes for the CrowPanel plus three `X-Integration-Token`-protected read/settings routes for UHC. The integration token cannot access relay commands, event history, simulation, or the administrator routes.
 
 ```bash
 sudo apt update
@@ -130,7 +130,9 @@ sudo nginx -t
 sudo systemctl enable --now nginx
 ```
 
-The CrowPanel receives `http://<Pi-LAN-IP>:8081` as `HUB_BASE_URL`. Verify `curl http://<Pi-LAN-IP>:8081/api/v1/status` returns `404`; that route must never leave loopback. Do not forward port 8081 on the internet router.
+The CrowPanel receives `http://<Pi-LAN-IP>:8081` as `HUB_BASE_URL`. Configure the Heimdall UHC container with `UHC_FREEZE_PROTECT_BASE_URL=http://<Pi-LAN-IP>:8081` and the same secret as `FREEZE_PROTECT_INTEGRATION_TOKEN` in `UHC_FREEZE_PROTECT_TOKEN`. Keep the secret in the container's protected environment file and restrict port 8081 to the trusted LAN path; do not forward it on the internet router.
+
+Verify `curl http://<Pi-LAN-IP>:8081/api/v1/status` returns `404`; the broad admin route must never leave loopback. The UHC gateway exposes only `GET /api/v1/integrations/uhc/status`, `GET /api/v1/integrations/uhc/settings`, and `PUT /api/v1/integrations/uhc/settings`.
 
 ## 4. Prove the bridge with valve power still disconnected
 

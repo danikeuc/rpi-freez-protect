@@ -80,6 +80,7 @@ Follow [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CO
 ## Security boundary
 
 - The Hub and Node-RED bridge are bound to loopback; do not reverse-proxy their control routes to the internet.
-- Set `FREEZE_PROTECT_ADMIN_TOKEN`, `FREEZE_PROTECT_DISPLAY_TOKEN`, and `FREEZE_PROTECT_NODE_RED_TOKEN` to independent secrets stored outside Git.
+- Set `FREEZE_PROTECT_ADMIN_TOKEN`, `FREEZE_PROTECT_DISPLAY_TOKEN`, `FREEZE_PROTECT_INTEGRATION_TOKEN`, and `FREEZE_PROTECT_NODE_RED_TOKEN` to independent secrets stored outside Git.
+- The UHC service token is limited to the status and policy-settings routes. Configure the same value as `UHC_FREEZE_PROTECT_TOKEN` in the Heimdall container; never reuse the administrator or display token.
 - The display never receives a Node-RED address, relay pin, weather credential, or automatic safety policy.
 - Never use the legacy unauthenticated Node-RED timer/GET trigger flow after cutover.
