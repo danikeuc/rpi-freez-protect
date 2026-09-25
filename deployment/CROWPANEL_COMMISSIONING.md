@@ -80,9 +80,19 @@ Freeze Protect CrowPanel boot
 
 The screen must first show `NI POVEZAVE — PREVERI HUB` until Wi-Fi and the display gateway are available. It must never show GPIO, Node-RED, a weather-provider name, or an administrative token.
 
+If Wi-Fi is disconnected, the screen also shows a diagnostic block with the
+current Wi-Fi status, IP and MAC, the last disconnect reason, and the most
+recent Hub poll's HTTP result, JSON validity and age. Treat these as separate
+observations: an earlier HTTP 200 does not prove the current Wi-Fi state, and
+neither value proves relay or valve operation.
+
 ## 4. Functional test with valve power disconnected
 
-1. Verify the Home page shows `VODA ZAPRTA`, `7 DNI · MIN … °C`, the turquoise shower icon, `VKLOPI TUŠ` and `10 MIN` after a successful poll. It must not show sensor health, pipe temperature, `sensor_pending` or any other technical reason.
+1. After a successful poll, verify the Home page shows a title matching the Hub
+   state (`NORMALNO DELOVANJE`, `ZAŠČITA PRED MRAZOM` or `TUŠ AKTIVEN`),
+   `7 DNI · MIN … °C`, the turquoise shower icon, `VKLOPI TUŠ` and `10 MIN`.
+   It must not show sensor health, pipe temperature, `sensor_pending` or any
+   other technical reason.
 2. Turn the encoder right to open the Forecast page and left to return. The Forecast page must show seven date/minimum rows; its short press returns Home without sending a Hub command.
 3. Press the encoder or touch the bottom action on Home. Only after the Hub accepts the request may the screen change to `TUŠ AKTIVEN`, `SAMODEJNI IZKLOP VKLJUČEN`, the red STOP icon and `ZAPRI VODO`.
 4. On the Pi, confirm GPIO 26 and GPIO 20 both become low together. Do not connect 24 V yet.
