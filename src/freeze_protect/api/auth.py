@@ -25,6 +25,21 @@ def build_display_guard(display_token: str | None) -> Callable[[str | None], Non
     return require_display
 
 
+def build_integration_guard(
+    integration_token: str | None,
+) -> Callable[[str | None], None]:
+    def require_integration(
+        x_integration_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        _require_token(
+            x_integration_token,
+            integration_token,
+            "service integration authentication",
+        )
+
+    return require_integration
+
+
 def require_confirmation(received: str | None, expected: str) -> None:
     if received != expected:
         raise HTTPException(
