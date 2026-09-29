@@ -1,7 +1,7 @@
 # Project state and evidence register
 
-**Evidence snapshot:** 2026-09-29 (repository branch); deployed and physical
-observations below remain dated 2026-09-22 unless stated otherwise.
+**Evidence snapshot:** 2026-09-30 (repository branch and read-only Pi check);
+physical observations remain unverified unless stated otherwise.
 
 This is the canonical index of what is implemented, what has actually been
 observed, and what remains unknown. Repository content, deployed Raspberry Pi
@@ -40,11 +40,12 @@ classes. Never promote one class into another without a new observation.
 | Evidence class | Verified evidence | Limits / unresolved state |
 | --- | --- | --- |
 | Git repository | GitHub `main` and the Pi checkout were both observed at `432ff9e007bad2efc423a96862d0a5d230034c3b` on 2026-09-22 before this reconciliation. The reconciled checkout passed 178 Python tests, Ruff, shell syntax, Node-RED JSON/JavaScript syntax, relative-link validation and `git diff --check`. | A matching commit does not prove matching installed packages, unit files, secrets, processes, GPIO, or hardware. PlatformIO is unavailable in the reconciliation environment, so no current firmware build is claimed. This reconciliation is not deployed until separately installed and observed. |
-| Manual timed Pi source branch (2026-09-29) | At source revision `bab9e588357dfeda75cf345477bbddfb2f80be1c` plus this documentation/test change, simulated service and API tests cover mode selection, fixed 600-second timing, expiry, drain, failure handling, authorization, and paired daemon lease. The complete Python suite passed: 222 tests, 1 dependency deprecation warning. The focused Node-RED/Nginx/commissioning asset set passed: 118 tests. Ruff passed. The example selects `manual_timed` and names distinct admin, display, and Node-RED token placeholders; the source Nginx allowlist has exactly the three display routes. | These are repository checks with simulated adapters. This branch has not been shown deployed on the Pi. Installed mode, rotated token, retired CrowPanel copy, active Nginx/Node-RED configuration, GPIO levels, relay state, 24 V status, and physical valve behavior remain **NOT_VERIFIED**. No Pi/GPIO/relay/24 V action was performed for this change. |
-| Raspberry Pi inventory | Restricted `inventory` succeeded. A later restricted `status` returned `active` for `node-red.service`, then `activating` for `freeze-protect-pair-gpio.service` and exit code 3 before checking the Hub or GPIO. The Pi previously reported DietPi, kernel `6.18.39+rpt-rpi-v8`, `aarch64`, service account UID `999` and GID `984`, and commit `432ff9e007bad2efc423a96862d0a5d230034c3b`. | The cause of the paired-GPIO `activating` state, installed unit/helper contents, Hub state, GPIO levels, SPI transactions, Node-RED flow and sensor state remain **UNKNOWN**. Repository diagnostics are not deployed until separately installed and observed. |
+| Manual timed Pi source branch (2026-09-29) | At source revision `5ae3c3ea53feae37147b72782308770605113fde`, simulated service and API tests cover mode selection, fixed 600-second timing, expiry, drain, failure handling, authorization, and paired daemon lease. The complete Python suite passed: 223 tests, 1 dependency deprecation warning. The focused Node-RED/Nginx/commissioning asset set previously passed: 118 tests. Ruff passed. The example selects `manual_timed` and names distinct admin, display, and Node-RED token placeholders; the source Nginx allowlist has exactly the three display routes. | These are repository checks with simulated adapters. This branch has not been shown deployed on the Pi. Installed mode, rotated token, retired CrowPanel copy, active Nginx/Node-RED configuration, relay state, 24 V status, and physical valve behavior remain **NOT_VERIFIED**. No Pi deployment or actuator command was performed for this source change. |
+| Raspberry Pi inventory (2026-09-22) | Restricted `inventory` succeeded. A later restricted `status` returned `active` for `node-red.service`, then `activating` for `freeze-protect-pair-gpio.service` and exit code 3 before checking the Hub or GPIO. The Pi reported DietPi, kernel `6.18.39+rpt-rpi-v8`, `aarch64`, service account UID `999` and GID `984`, and commit `432ff9e007bad2efc423a96862d0a5d230034c3b`. | This is historical evidence; the later read-only check below supersedes its service and GPIO observations. Installed unit/helper contents, SPI transactions, Node-RED flow, and sensor state remain **UNKNOWN**. |
+| Raspberry Pi read-only check (2026-09-30) | With the dedicated `freezeprotect-commission` key and strict host-key checking, `inventory` again reported installed commit `432ff9e007bad2efc423a96862d0a5d230034c3b`. Restricted `status` exited zero: `node-red.service`, `freeze-protect-pair-gpio.service`, and `freeze-protect.service` all reported `active`; `pinctrl get` reported GPIO 26 and 20 both output/low. | Low/low is the software `SUPPLY` signal, not the required high/high `DRAIN` readback for commissioning. The installed commit predates this source branch. The cause, effective mode, 24 V supply state, relay contacts, and valve positions are **UNKNOWN**. The check stopped at this readback; no actuator command, service change, deployment, or further Pi command was issued. A trusted-console operator must establish the physical/electrical state before commissioning continues. |
 | SSH boundary | A restricted `freezeprotect-commission` inventory call succeeded with the dedicated key. | This proves that one allowed command worked at that time, not that every installed commissioning asset matches this source tree. |
 | Windows / CrowPanel | On 2026-09-22 the operator stated the CrowPanel was attached to the PC as `COM6` and firmware had previously been uploaded many times. | This is historical context. Current connection, installed revision, token removal, and retirement are **NOT_VERIFIED**. The boot message contains no commit/version identifier. Do not infer revision from prior upload count. |
-| Physical installation | No actuator command or 24 V operation was performed during this reconciliation. | Current 24 V connection, water isolation, valve position, paired physical movement, return-capacitor behavior and PT100 terminal mapping are **UNKNOWN / NOT_VERIFIED**. GPIO readback would still not prove valve position. |
+| Physical installation | No actuator command or 24 V operation was performed during this reconciliation or the 2026-09-30 read-only check. | Current 24 V connection, water isolation, valve position, paired physical movement, return-capacitor behavior and PT100 terminal mapping are **UNKNOWN / NOT_VERIFIED**. GPIO readback does not prove valve position. |
 
 The failed remote `usb` call on 2026-09-22 returned
 `find: '/dev/serial/by-id': No such file or directory`. That result is explained
@@ -77,11 +78,11 @@ marked and may describe superseded hardware or access arrangements.
 
 ## Next safe observation
 
-After the reconciled helper is separately reviewed and installed by the
-trusted-console operator, the next remote action remains the restricted
-`diagnose-pair-gpio` command using the dedicated key. It is read-only and does
-not prove GPIO levels or physical valve position. The 24 V disconnected
-software/GPIO validation requires its own explicit same-conversation approval
-under `AGENTS.md`; a later live valve test requires separate bounded approval.
-Do not run `SUPPLY`, connect 24 V, restart services, or reflash firmware merely
-to complete this register.
+The 2026-09-30 read-only check found GPIO 26/20 output/low. Stop commissioning
+and have the trusted-console operator establish the present 24 V, relay, and
+valve state and the reason for the low/low command. Do not infer physical
+position from GPIO readback. Do not issue another Pi command, deploy the new
+mode, restart services, or flash firmware to resolve this observation. Once the
+cause and safe state are established, plan a bounded 24 V disconnected
+software/GPIO validation with explicit same-conversation approval under
+`AGENTS.md`; a live valve test requires separate approval.
