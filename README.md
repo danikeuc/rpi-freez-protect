@@ -61,7 +61,12 @@ In a separate terminal, the safe startup status is available only with the admin
 curl -H 'X-Admin-Token: local-admin-token' http://127.0.0.1:8000/api/v1/status
 ```
 
-The status is `FROST_PROTECTION` with reason `sensor_pending` until the
+With `FREEZE_PROTECT_CONTROL_MODE` unset, the Hub starts in `SAFE_DRAIN` with
+reason `safe_drain` and does not allow `SUPPLY`. Set
+`FREEZE_PROTECT_CONTROL_MODE=manual_timed` explicitly to start in
+`MANUAL_DRAIN` and enable the authenticated, ten-minute dial action. The
+legacy `automatic` mode remains available only when explicitly selected;
+it can report `FROST_PROTECTION` with reason `sensor_pending` until the
 PT100/MAX31865 is installed and commissioned. A development-only simulation
 route exists only when `FREEZE_PROTECT_DEVELOPMENT_MODE=true`.
 

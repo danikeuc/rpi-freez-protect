@@ -636,3 +636,27 @@ def test_safe_mode_refusal_preserves_a_failed_drain_receipt_fault() -> None:
     assert decision.state is ControllerState.FAULT
     assert decision.command is ActuatorCommand.DRAIN
     assert decision.reason == "relay_driver_error"
+
+
+def test_restart_from_active_manual_supply_drains_and_clears_both_deadlines() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    active = service.start_timed_shower()
+    assert active.command is ActuatorCommand.SUPPLY
+    assert service.status().timed_shower_deadline is not None
+    assert service.seconds_until_timed_shower_expiry() == 600
+
+    restarted = service.startup()
+
+    assert restarted.state is ControllerState.MANUAL_DRAIN
+    assert restarted.command is ActuatorCommand.DRAIN
+    assert service.status().timed_shower_deadline is None
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+    ]
