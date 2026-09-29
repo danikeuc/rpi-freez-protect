@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 FLOW_PATH = (
@@ -98,6 +99,50 @@ def test_display_gateway_rejects_methods_outside_its_device_contract() -> None:
 
     assert nginx.count("if ($request_method != GET) { return 405; }") == 1
     assert nginx.count("if ($request_method != POST) { return 405; }") == 2
+
+
+def test_display_gateway_exposes_exactly_three_device_routes() -> None:
+    nginx = (FLOW_PATH.parents[1] / "nginx" / "freeze-protect-display.conf").read_text(
+        encoding="utf-8"
+    )
+    locations = re.findall(r"^\s*location\s+([^\n{]+)\s*{", nginx, re.MULTILINE)
+
+    assert [location.strip() for location in locations] == [
+        "= /api/v1/display/status",
+        "= /api/v1/display/actions/timed-shower",
+        "= /api/v1/display/actions/drain",
+        "/",
+    ]
+    assert re.findall(
+        r"location = ([^\s{]+) {\s*if \(\$request_method != (GET|POST)\)",
+        nginx,
+    ) == [
+        ("/api/v1/display/status", "GET"),
+        ("/api/v1/display/actions/timed-shower", "POST"),
+        ("/api/v1/display/actions/drain", "POST"),
+    ]
+    assert "location / {\n        return 404;" in nginx
+
+
+def test_deployment_example_selects_manual_mode_and_distinct_tokens() -> None:
+    example = (FLOW_PATH.parents[1] / "freeze-protect.env.example").read_text(
+        encoding="utf-8"
+    )
+    settings = dict(
+        line.split("=", 1)
+        for line in example.splitlines()
+        if line and not line.startswith("#")
+    )
+
+    assert settings["FREEZE_PROTECT_CONTROL_MODE"] == "manual_timed"
+    token_keys = (
+        "FREEZE_PROTECT_ADMIN_TOKEN",
+        "FREEZE_PROTECT_DISPLAY_TOKEN",
+        "FREEZE_PROTECT_NODE_RED_TOKEN",
+    )
+    assert all(settings[key].startswith("replace-with-") for key in token_keys)
+    assert len({settings[key] for key in token_keys}) == len(token_keys)
+    assert "rotate" in example.lower()
 
 
 def test_crowpanel_enables_fonts_and_renders_the_dedicated_forecast_page() -> None:
