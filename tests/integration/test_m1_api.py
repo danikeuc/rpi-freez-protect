@@ -1,6 +1,8 @@
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +11,7 @@ from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.simulation import SimulatedTemperatureSource
 from freeze_protect.api.app import create_app
 from freeze_protect.domain.models import (
+    ActuatorCommand,
     ControlMode,
     SafetySettings,
     SensorHealth,
@@ -151,6 +154,36 @@ def test_display_actions_reject_request_body_without_actuation(
 
     assert response.status_code == 400
     assert relay.commands == before
+
+
+def test_unrelated_request_completes_while_supply_bridge_is_blocked(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    relay = client.app.state.relay_driver
+    original_command = relay.command
+    entered = Event()
+    release = Event()
+
+    def blocking_command(command: ActuatorCommand) -> object:
+        if command is ActuatorCommand.SUPPLY:
+            entered.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("test did not release the simulated bridge")
+        return original_command(command)
+
+    monkeypatch.setattr(relay, "command", blocking_command)
+    with ThreadPoolExecutor(max_workers=2) as requests:
+        action = requests.submit(
+            client.post, "/api/v1/display/actions/timed-shower", headers=DISPLAY
+        )
+        assert entered.wait(timeout=2)
+        unrelated = requests.submit(client.get, "/api/v1/settings", headers=ADMIN)
+        try:
+            response = unrelated.result(timeout=1)
+        finally:
+            release.set()
+        assert response.status_code == 200
+        assert action.result(timeout=2).status_code == 200
 
 
 def test_manual_start_conflicts_when_configured_max_is_under_ten_minutes(

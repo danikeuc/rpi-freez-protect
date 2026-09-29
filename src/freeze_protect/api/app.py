@@ -9,6 +9,7 @@ from typing import Annotated, NoReturn, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
 
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.node_red import NodeRedActuatorDriver
@@ -231,7 +232,7 @@ def create_app(
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
         await _require_empty_display_body(request)
-        decision = service.start_timed_shower()
+        decision = await run_in_threadpool(service.start_timed_shower)
         if decision.command is not ActuatorCommand.SUPPLY:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=decision.reason
@@ -245,7 +246,7 @@ def create_app(
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
         await _require_empty_display_body(request)
-        decision = service.drain("display_drain_requested")
+        decision = await run_in_threadpool(service.drain, "display_drain_requested")
         control_loop.wake()
         return _decision_or_conflict(decision)
 
