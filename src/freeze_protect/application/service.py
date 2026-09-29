@@ -44,6 +44,8 @@ class ControlStatus:
 class ControlService:
     """Coordinates safety policy, persistent weather, and one paired actuator."""
 
+    MANUAL_TIMED_DURATION_S = 600
+
     def __init__(
         self,
         *,
@@ -98,6 +100,8 @@ class ControlService:
                 self._timed_shower_deadline is not None
                 and self._mode is ControlMode.MANUAL_TIMED
             ):
+                if settings.timed_shower_max_s < self.MANUAL_TIMED_DURATION_S:
+                    return self.drain("manual_duration_exceeds_settings_limit")
                 return self._last_decision
             return self._run_idle()
 
@@ -149,8 +153,23 @@ class ControlService:
             if self._state is ControllerState.FAULT:
                 return self._last_decision
             if self._mode is ControlMode.SAFE_DRAIN:
-                return self._run_idle()
+                self._run_idle()
+                if self._state is ControllerState.FAULT:
+                    return self._last_decision
+                return self._set_decision(
+                    Decision(
+                        ControllerState.SAFE_DRAIN,
+                        ActuatorCommand.DRAIN,
+                        "operating_mode_not_configured",
+                    )
+                )
             if self._timed_shower_deadline is not None:
+                if (
+                    self._timed_shower_monotonic_deadline is None
+                    or self._monotonic_clock()
+                    >= self._timed_shower_monotonic_deadline
+                ):
+                    return self._finish_timed_shower()
                 return self._set_decision(
                     Decision(
                         ControllerState.TIMED_SHOWER,
@@ -158,10 +177,21 @@ class ControlService:
                         "timed_shower_active",
                     )
                 )
-            duration_s = min(
-                self._settings.timed_shower_default_s,
-                self._settings.timed_shower_max_s,
-            )
+            if self._mode is ControlMode.MANUAL_TIMED:
+                if self._settings.timed_shower_max_s < self.MANUAL_TIMED_DURATION_S:
+                    return self._set_decision(
+                        Decision(
+                            ControllerState.MANUAL_DRAIN,
+                            ActuatorCommand.DRAIN,
+                            "manual_duration_exceeds_settings_limit",
+                        )
+                    )
+                duration_s = self.MANUAL_TIMED_DURATION_S
+            else:
+                duration_s = min(
+                    self._settings.timed_shower_default_s,
+                    self._settings.timed_shower_max_s,
+                )
             deadline = self._clock() + timedelta(seconds=duration_s)
             if not self._send(ActuatorCommand.SUPPLY):
                 self._best_effort_drain()

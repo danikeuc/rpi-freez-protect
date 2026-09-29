@@ -405,3 +405,234 @@ def test_refresh_forecast_persists_only_a_valid_snapshot() -> None:
     service.refresh_forecast()
 
     assert cache.load() == snapshot
+
+
+def test_manual_interval_is_fixed_at_600_seconds_despite_admin_default() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        settings=SafetySettings(timed_shower_default_s=120, timed_shower_max_s=900),
+        monotonic_clock=elapsed,
+        mode=ControlMode.MANUAL_TIMED,
+    )
+    assert service.startup().state is ControllerState.MANUAL_DRAIN
+
+    started = service.start_timed_shower()
+    elapsed.advance(500)
+
+    assert started.command is ActuatorCommand.SUPPLY
+    assert service.seconds_until_timed_shower_expiry() == 100
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+def test_manual_interval_refuses_supply_when_settings_maximum_is_below_600() -> None:
+    service, relay, _ = build_service(
+        settings=SafetySettings(timed_shower_default_s=120, timed_shower_max_s=500),
+        mode=ControlMode.MANUAL_TIMED,
+    )
+    service.startup()
+
+    decision = service.start_timed_shower()
+
+    assert decision.state is ControllerState.MANUAL_DRAIN
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "manual_duration_exceeds_settings_limit"
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.commands == [ActuatorCommand.DRAIN]
+
+
+def test_safe_mode_refuses_timed_supply_as_unconfigured() -> None:
+    service, relay, _ = build_service()
+    service.startup()
+
+    decision = service.start_timed_shower()
+
+    assert decision.state is ControllerState.SAFE_DRAIN
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "operating_mode_not_configured"
+    assert ActuatorCommand.SUPPLY not in relay.commands
+
+
+def test_duplicate_manual_press_at_500_seconds_keeps_original_deadline() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(500)
+
+    repeated = service.start_timed_shower()
+
+    assert repeated.reason == "timed_shower_active"
+    assert service.seconds_until_timed_shower_expiry() == 100
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+def test_manual_cycle_renews_before_expiry_and_drains_at_exact_deadline() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(599)
+    active = service.run_cycle()
+    elapsed.advance(1)
+    expired = service.run_cycle()
+
+    assert active.command is ActuatorCommand.SUPPLY
+    assert expired.state is ControllerState.MANUAL_DRAIN
+    assert expired.command is ActuatorCommand.DRAIN
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+    ]
+
+
+def test_expired_boundary_press_drains_before_a_later_press_can_restart() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(600)
+
+    boundary = service.start_timed_shower()
+    later = service.start_timed_shower()
+
+    assert boundary.state is ControllerState.MANUAL_DRAIN
+    assert boundary.reason == "timed_shower_expired"
+    assert later.reason == "timed_shower_started"
+    assert service.seconds_until_timed_shower_expiry() == 600
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+    ]
+
+
+def test_settings_update_preserves_active_manual_deadline() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(200)
+
+    updated = service.update_settings(
+        SafetySettings(
+            timed_shower_default_s=300,
+            timed_shower_max_s=900,
+            settings_version=2,
+        )
+    )
+
+    assert updated.command is ActuatorCommand.SUPPLY
+    assert service.seconds_until_timed_shower_expiry() == 400
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+def test_lowering_settings_maximum_below_600_drains_active_manual_interval() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+    elapsed.advance(200)
+
+    decision = service.update_settings(
+        SafetySettings(
+            timed_shower_default_s=300,
+            timed_shower_max_s=500,
+            settings_version=2,
+        )
+    )
+
+    assert decision.state is ControllerState.MANUAL_DRAIN
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "manual_duration_exceeds_settings_limit"
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+    ]
+
+
+def test_manual_drain_cancels_interval_and_restart_stays_drained() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    service.startup()
+    service.start_timed_shower()
+
+    drained = service.drain()
+    restarted = service.startup()
+
+    assert drained.state is ControllerState.MANUAL_DRAIN
+    assert restarted.state is ControllerState.MANUAL_DRAIN
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.DRAIN,
+    ]
+
+
+def test_failed_supply_receipt_and_event_persistence_clear_manual_deadlines() -> None:
+    supply_failure, failed_relay, _ = build_service(
+        relay=SimulatedActuatorDriver(fail_for={ActuatorCommand.SUPPLY}),
+        mode=ControlMode.MANUAL_TIMED,
+    )
+    supply_failure.startup()
+    failed = supply_failure.start_timed_shower()
+
+    class FailStartEventStore(InMemoryEventStore):
+        def append(self, event: object) -> None:
+            if event.event_type == "timed_shower_started":  # type: ignore[attr-defined]
+                raise OSError("disk is read-only")
+            super().append(event)  # type: ignore[arg-type]
+
+    persistence_failure, persisted_relay, _ = build_service(
+        event_store=FailStartEventStore(), mode=ControlMode.MANUAL_TIMED
+    )
+    persistence_failure.startup()
+    faulted = persistence_failure.start_timed_shower()
+
+    assert failed.state is ControllerState.FAULT
+    assert supply_failure.seconds_until_timed_shower_expiry() is None
+    assert failed_relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.DRAIN]
+    assert faulted.reason == "persistence_error"
+    assert persistence_failure.seconds_until_timed_shower_expiry() is None
+    assert persisted_relay.commands == [
+        ActuatorCommand.DRAIN,
+        ActuatorCommand.SUPPLY,
+        ActuatorCommand.DRAIN,
+    ]
+
+
+def test_safe_mode_refusal_preserves_a_failed_drain_receipt_fault() -> None:
+    class FailAfterStartupDriver(SimulatedActuatorDriver):
+        def command(self, command: ActuatorCommand):  # type: ignore[no-untyped-def]
+            if self.commands:
+                raise AdapterError("drain receipt unavailable")
+            return super().command(command)
+
+    relay = FailAfterStartupDriver()
+    service, _, _ = build_service(relay=relay)
+    service.startup()
+
+    decision = service.start_timed_shower()
+
+    assert decision.state is ControllerState.FAULT
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "relay_driver_error"

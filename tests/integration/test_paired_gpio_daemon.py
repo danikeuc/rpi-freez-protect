@@ -103,12 +103,13 @@ def test_supply_lease_drains_pair_when_hub_stops_renewing() -> None:
 
     gpio.write_and_verify("SUPPLY")
     lease.arm(daemon.SUPPLY_LEASE_S)
-    now[0] = 10.0 + daemon.SUPPLY_LEASE_S - 5.0
+    assert daemon.SUPPLY_LEASE_S == 60.0
+    now[0] = 10.0 + 55.0
 
     assert lease.enforce() is False
     assert registers.level & daemon.PAIR_MASK == 0
 
-    now[0] = 10.0 + daemon.SUPPLY_LEASE_S + 0.1
+    now[0] = 70.1
 
     assert lease.enforce() is True
     assert registers.level & daemon.PAIR_MASK == daemon.PAIR_MASK
