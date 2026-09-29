@@ -12,10 +12,12 @@ from freeze_protect.application.service import ControlService
 from freeze_protect.domain.models import (
     ActuatorCommand,
     ControllerState,
+    ControlMode,
     ForecastSnapshot,
     SafetySettings,
     SensorHealth,
     TemperatureReading,
+    parse_control_mode,
 )
 
 
@@ -68,14 +70,14 @@ def build_service(
     settings: SafetySettings | None = None,
     event_store: InMemoryEventStore | FailingEventStore | None = None,
     monotonic_clock: FakeMonotonic | None = None,
+    mode: ControlMode = ControlMode.SAFE_DRAIN,
 ) -> tuple[ControlService, SimulatedActuatorDriver, FakeClock]:
     clock = FakeClock(NOW)
     elapsed = monotonic_clock or FakeMonotonic()
     driver = relay or SimulatedActuatorDriver()
     service = ControlService(
         temperature_source=SimulatedTemperatureSource(
-            sensor
-            or TemperatureReading(None, NOW, SensorHealth.CALIBRATION_REQUIRED)
+            sensor or TemperatureReading(None, NOW, SensorHealth.CALIBRATION_REQUIRED)
         ),
         forecast_store=SimulatedForecastStore(),
         forecast_client=SimulatedForecastClient(),
@@ -84,6 +86,7 @@ def build_service(
         settings=settings or SafetySettings(),
         clock=clock,
         monotonic_clock=elapsed,
+        mode=mode,
     )
     return service, driver, clock
 
@@ -94,14 +97,89 @@ def test_startup_always_issues_drain_before_status_becomes_available() -> None:
     decision = service.startup()
 
     assert relay.commands == [ActuatorCommand.DRAIN]
-    assert decision.state is ControllerState.FROST_PROTECTION
-    assert service.status().state is ControllerState.FROST_PROTECTION
-    assert service.status().reason == "sensor_pending"
+    assert decision.state is ControllerState.SAFE_DRAIN
+    assert service.status().state is ControllerState.SAFE_DRAIN
+
+
+def test_mode_parser_fails_closed() -> None:
+    assert parse_control_mode(None) is ControlMode.SAFE_DRAIN
+    assert parse_control_mode("invalid") is ControlMode.SAFE_DRAIN
+    assert parse_control_mode("manual_timed") is ControlMode.MANUAL_TIMED
+    assert parse_control_mode("automatic") is ControlMode.AUTOMATIC
+
+
+def test_manual_startup_and_idle_cycle_never_read_inputs_or_supply() -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+
+    def forbidden() -> None:
+        raise AssertionError("input port was read")
+
+    service._temperature_source.read = forbidden  # type: ignore[method-assign]
+    service._forecast_store.load = forbidden  # type: ignore[method-assign]
+    service._forecast_client.fetch = forbidden  # type: ignore[method-assign]
+
+    assert service.startup().state is ControllerState.MANUAL_DRAIN
+    assert service.run_cycle().state is ControllerState.MANUAL_DRAIN
+    assert service.status().state is ControllerState.MANUAL_DRAIN
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.DRAIN]
+
+
+def test_safe_startup_and_idle_cycle_never_read_inputs_or_supply() -> None:
+    service, relay, _ = build_service()
+
+    def forbidden() -> None:
+        raise AssertionError("input port was read")
+
+    service._temperature_source.read = forbidden  # type: ignore[method-assign]
+    service._forecast_store.load = forbidden  # type: ignore[method-assign]
+    service._forecast_client.fetch = forbidden  # type: ignore[method-assign]
+
+    assert service.startup().state is ControllerState.SAFE_DRAIN
+    assert service.run_cycle().state is ControllerState.SAFE_DRAIN
+    assert service.status().state is ControllerState.SAFE_DRAIN
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.DRAIN]
+
+
+def test_warm_forecast_cannot_supply_in_manual_mode() -> None:
+    forecast = ForecastSnapshot(
+        dates=tuple(date(2026, 9, 11) + timedelta(days=index) for index in range(7)),
+        daily_minima_c=(10.0,) * 7,
+        source_generated_at=None,
+        fetched_at=NOW,
+        latitude=46.5547,
+        longitude=15.6459,
+    )
+    relay = SimulatedActuatorDriver()
+    service = ControlService(
+        temperature_source=SimulatedTemperatureSource(
+            TemperatureReading(10.0, NOW, SensorHealth.HEALTHY)
+        ),
+        forecast_store=SimulatedForecastStore(forecast),
+        forecast_client=SimulatedForecastClient(forecast),
+        actuator_driver=relay,
+        event_store=InMemoryEventStore(),
+        settings=SafetySettings(
+            latitude=46.5547, longitude=15.6459, sensor_commissioned=True
+        ),
+        clock=FakeClock(NOW),
+        mode=ControlMode.MANUAL_TIMED,
+    )
+
+    assert service.startup().state is ControllerState.MANUAL_DRAIN
+    assert service.run_cycle().state is ControllerState.MANUAL_DRAIN
+    assert (
+        service.update_settings(service.settings).state is ControllerState.MANUAL_DRAIN
+    )
+    assert service.refresh_forecast() is None
+    assert service.status().forecast is None
+    assert ActuatorCommand.SUPPLY not in relay.commands
 
 
 def test_timed_shower_expires_to_drain_and_never_exceeds_maximum() -> None:
     elapsed = FakeMonotonic()
-    service, relay, clock = build_service(monotonic_clock=elapsed)
+    service, relay, clock = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
     service.startup()
 
     started = service.start_timed_shower()
@@ -110,7 +188,7 @@ def test_timed_shower_expires_to_drain_and_never_exceeds_maximum() -> None:
     expired = service.run_cycle()
 
     assert started.state is ControllerState.TIMED_SHOWER
-    assert expired.state is ControllerState.FROST_PROTECTION
+    assert expired.state is ControllerState.MANUAL_DRAIN
     assert expired.command is ActuatorCommand.DRAIN
     assert relay.commands == [
         ActuatorCommand.DRAIN,
@@ -134,10 +212,12 @@ def test_repeated_timed_shower_requests_do_not_extend_the_hard_deadline() -> Non
         settings=SafetySettings(timed_shower_default_s=600, timed_shower_max_s=1800),
         clock=clock,
         monotonic_clock=elapsed,
+        mode=ControlMode.MANUAL_TIMED,
     )
     service.startup()
 
     service.start_timed_shower()
+    assert service.mode is ControlMode.MANUAL_TIMED
     clock.advance(500)
     elapsed.advance(500)
     repeated = service.start_timed_shower()
@@ -156,7 +236,9 @@ def test_repeated_timed_shower_requests_do_not_extend_the_hard_deadline() -> Non
 
 def test_timed_shower_reports_its_exact_monotonic_wake_deadline() -> None:
     elapsed = FakeMonotonic()
-    service, _, _ = build_service(monotonic_clock=elapsed)
+    service, _, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
     service.startup()
     service.start_timed_shower()
 
@@ -171,7 +253,9 @@ def test_timed_shower_reports_its_exact_monotonic_wake_deadline() -> None:
 
 def test_active_timed_shower_renews_the_supply_lease_each_cycle() -> None:
     elapsed = FakeMonotonic()
-    service, relay, _ = build_service(monotonic_clock=elapsed)
+    service, relay, _ = build_service(
+        monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
     service.startup()
     service.start_timed_shower()
     elapsed.advance(30)
@@ -212,6 +296,7 @@ def test_decommissioning_sensor_immediately_drains_an_active_normal_state() -> N
         event_store=InMemoryEventStore(),
         settings=commissioned,
         clock=clock,
+        mode=ControlMode.AUTOMATIC,
     )
     service.startup()
 
@@ -254,7 +339,9 @@ def test_audit_persistence_failure_latches_fault_and_reasserts_drain() -> None:
     assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.DRAIN]
 
 
-def test_persistence_fault_reason_is_not_overwritten_by_a_following_relay_fault() -> None:
+def test_persistence_fault_reason_is_not_overwritten_by_a_following_relay_fault() -> (
+    None
+):
     service, _, _ = build_service(
         relay=SimulatedActuatorDriver(fail_for={ActuatorCommand.DRAIN}),
         event_store=FailingEventStore(),
@@ -272,14 +359,15 @@ def test_drain_retries_exactly_once_before_continuing() -> None:
 
     decision = service.startup()
 
-    assert decision.state is ControllerState.FROST_PROTECTION
+    assert decision.state is ControllerState.SAFE_DRAIN
     assert relay.attempts == [ActuatorCommand.DRAIN, ActuatorCommand.DRAIN]
     assert relay.commands == [ActuatorCommand.DRAIN]
 
 
 def test_supply_failure_attempts_drain_then_latches_fault() -> None:
     service, relay, _ = build_service(
-        relay=SimulatedActuatorDriver(fail_for={ActuatorCommand.SUPPLY})
+        relay=SimulatedActuatorDriver(fail_for={ActuatorCommand.SUPPLY}),
+        mode=ControlMode.MANUAL_TIMED,
     )
     service.startup()
 
@@ -311,6 +399,7 @@ def test_refresh_forecast_persists_only_a_valid_snapshot() -> None:
         event_store=InMemoryEventStore(),
         settings=SafetySettings(latitude=46.5547, longitude=15.6459),
         clock=clock,
+        mode=ControlMode.AUTOMATIC,
     )
 
     service.refresh_forecast()

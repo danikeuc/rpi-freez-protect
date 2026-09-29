@@ -20,6 +20,7 @@ from freeze_protect.domain.models import (
     ActuatorReceipt,
     AuditEvent,
     ControllerState,
+    ControlMode,
     Decision,
     ForecastSnapshot,
     SafetySettings,
@@ -31,6 +32,7 @@ from freeze_protect.domain.policy import evaluate_automatic
 
 @dataclass(frozen=True, slots=True)
 class ControlStatus:
+    mode: ControlMode
     state: ControllerState
     reason: str
     last_reading: TemperatureReading | None
@@ -53,6 +55,7 @@ class ControlService:
         settings: SafetySettings,
         clock: Callable[[], datetime],
         monotonic_clock: Callable[[], float] = monotonic,
+        mode: ControlMode = ControlMode.SAFE_DRAIN,
     ) -> None:
         self._temperature_source = temperature_source
         self._forecast_store = forecast_store
@@ -60,6 +63,7 @@ class ControlService:
         self._actuator_driver = actuator_driver
         self._event_store = event_store
         self._settings = settings
+        self._mode = mode
         self._clock = clock
         self._monotonic_clock = monotonic_clock
         self._lock = RLock()
@@ -78,6 +82,10 @@ class ControlService:
     def settings(self) -> SafetySettings:
         return self._settings
 
+    @property
+    def mode(self) -> ControlMode:
+        return self._mode
+
     def update_settings(self, settings: SafetySettings) -> Decision:
         with self._lock:
             self._settings = settings
@@ -86,7 +94,12 @@ class ControlService:
                 {"settings_version": settings.settings_version},
             ):
                 return self._last_decision
-            return self._run_automatic()
+            if (
+                self._timed_shower_deadline is not None
+                and self._mode is ControlMode.MANUAL_TIMED
+            ):
+                return self._last_decision
+            return self._run_idle()
 
     def startup(self) -> Decision:
         """Force physical drain after every process start before evaluating inputs."""
@@ -97,7 +110,17 @@ class ControlService:
                 return self._fault("startup_drain_failed")
             if not self._append_event("startup_drain", {"command": "DRAIN"}):
                 return self._last_decision
-            return self._run_automatic()
+            if self._mode is not ControlMode.AUTOMATIC:
+                return self._set_decision(
+                    Decision(
+                        self._idle_state(),
+                        ActuatorCommand.DRAIN,
+                        "manual_idle"
+                        if self._mode is ControlMode.MANUAL_TIMED
+                        else "safe_drain",
+                    )
+                )
+            return self._run_idle()
 
     def run_cycle(self) -> Decision:
         with self._lock:
@@ -119,12 +142,14 @@ class ControlService:
                         )
                     )
                 return self._finish_timed_shower()
-            return self._run_automatic()
+            return self._run_idle()
 
     def start_timed_shower(self) -> Decision:
         with self._lock:
             if self._state is ControllerState.FAULT:
                 return self._last_decision
+            if self._mode is ControlMode.SAFE_DRAIN:
+                return self._run_idle()
             if self._timed_shower_deadline is not None:
                 return self._set_decision(
                     Decision(
@@ -165,7 +190,7 @@ class ControlService:
                 return self._fault("relay_driver_error")
             decision = self._set_decision(
                 Decision(
-                    ControllerState.FROST_PROTECTION,
+                    self._idle_state(),
                     ActuatorCommand.DRAIN,
                     reason,
                 )
@@ -183,13 +208,15 @@ class ControlService:
                 return self._last_decision
             if not self._send(ActuatorCommand.DRAIN, force=True):
                 return self._last_decision
-            self._state = ControllerState.FROST_PROTECTION
+            self._state = self._idle_state()
             if not self._append_event("fault_cleared", {"command": "DRAIN"}):
                 return self._last_decision
-            return self._run_automatic()
+            return self._run_idle()
 
     def refresh_forecast(self) -> ForecastSnapshot | None:
         with self._lock:
+            if self._mode is not ControlMode.AUTOMATIC:
+                return None
             if self._settings.latitude is None or self._settings.longitude is None:
                 self._append_event(
                     "forecast_refresh_skipped", {"reason": "location_missing"}
@@ -213,8 +240,11 @@ class ControlService:
 
     def status(self) -> ControlStatus:
         with self._lock:
-            forecast = self._load_forecast()
+            forecast = (
+                self._load_forecast() if self._mode is ControlMode.AUTOMATIC else None
+            )
             return ControlStatus(
+                mode=self._mode,
                 state=self._state,
                 reason=self._last_decision.reason,
                 last_reading=self._last_reading,
@@ -239,7 +269,7 @@ class ControlService:
             return self._fault("relay_driver_error")
         decision = self._set_decision(
             Decision(
-                ControllerState.FROST_PROTECTION,
+                self._idle_state(),
                 ActuatorCommand.DRAIN,
                 "timed_shower_expired",
             )
@@ -247,6 +277,30 @@ class ControlService:
         if not self._append_event("timed_shower_expired", {"command": "DRAIN"}):
             return self._last_decision
         return decision
+
+    def _idle_state(self) -> ControllerState:
+        if self._mode is ControlMode.MANUAL_TIMED:
+            return ControllerState.MANUAL_DRAIN
+        if self._mode is ControlMode.SAFE_DRAIN:
+            return ControllerState.SAFE_DRAIN
+        return ControllerState.FROST_PROTECTION
+
+    def _run_idle(self) -> Decision:
+        if self._mode is ControlMode.AUTOMATIC:
+            return self._run_automatic()
+        if self._is_faulted():
+            return self._last_decision
+        if not self._send(ActuatorCommand.DRAIN, force=True):
+            return self._fault("relay_driver_error")
+        return self._set_decision(
+            Decision(
+                self._idle_state(),
+                ActuatorCommand.DRAIN,
+                "manual_idle"
+                if self._mode is ControlMode.MANUAL_TIMED
+                else "safe_drain",
+            )
+        )
 
     def _run_automatic(self) -> Decision:
         if self._is_faulted():
@@ -409,7 +463,9 @@ class PeriodicControlLoop:
     def start(self) -> None:
         if self._thread is not None:
             return
-        self._thread = Thread(target=self._run, name="freeze-protect-cycle", daemon=True)
+        self._thread = Thread(
+            target=self._run, name="freeze-protect-cycle", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
