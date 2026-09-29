@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import ceil
 from threading import Event, RLock, Thread
 from time import monotonic
 from uuid import uuid4
@@ -33,6 +34,8 @@ from freeze_protect.domain.policy import evaluate_automatic
 @dataclass(frozen=True, slots=True)
 class ControlStatus:
     mode: ControlMode
+    command: ActuatorCommand
+    remaining_seconds: int
     state: ControllerState
     reason: str
     last_reading: TemperatureReading | None
@@ -270,11 +273,24 @@ class ControlService:
 
     def status(self) -> ControlStatus:
         with self._lock:
+            remaining_seconds = 0
+            if self._timed_shower_monotonic_deadline is not None:
+                remaining = self._timed_shower_monotonic_deadline - self._monotonic_clock()
+                if remaining <= 0:
+                    self._finish_timed_shower()
+                else:
+                    remaining_seconds = ceil(remaining)
+                    if self._mode is ControlMode.MANUAL_TIMED:
+                        remaining_seconds = min(
+                            remaining_seconds, self.MANUAL_TIMED_DURATION_S
+                        )
             forecast = (
                 self._load_forecast() if self._mode is ControlMode.AUTOMATIC else None
             )
             return ControlStatus(
                 mode=self._mode,
+                command=self._last_decision.command,
+                remaining_seconds=remaining_seconds,
                 state=self._state,
                 reason=self._last_decision.reason,
                 last_reading=self._last_reading,

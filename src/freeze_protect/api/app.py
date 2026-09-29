@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, NoReturn, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
 
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
@@ -226,22 +226,25 @@ def create_app(
         return _display_status_payload(service.status(), service.settings)
 
     @app.post("/api/v1/display/actions/timed-shower")
-    def display_timed_shower(
+    async def display_timed_shower(
+        request: Request,
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
-        if service.mode is ControlMode.SAFE_DRAIN:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="timed shower is disabled in safe_drain mode",
-            )
+        await _require_empty_display_body(request)
         decision = service.start_timed_shower()
+        if decision.command is not ActuatorCommand.SUPPLY:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=decision.reason
+            )
         control_loop.wake()
         return _decision_or_conflict(decision)
 
     @app.post("/api/v1/display/actions/drain")
-    def display_drain(
+    async def display_drain(
+        request: Request,
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
+        await _require_empty_display_body(request)
         decision = service.drain("display_drain_requested")
         control_loop.wake()
         return _decision_or_conflict(decision)
@@ -264,6 +267,14 @@ def create_app(
             return _decision_or_conflict(service.run_cycle())
 
     return app
+
+
+async def _require_empty_display_body(request: Request) -> None:
+    if await request.body():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="display actions do not accept a request body",
+        )
 
 
 def _production_actuator(
@@ -314,6 +325,8 @@ def _display_status_payload(
     forecast = _forecast_payload(control.forecast, settings)
     return {
         "mode": control.mode.value,
+        "command": control.command.value,
+        "remaining_seconds": control.remaining_seconds,
         "state": control.state.value,
         "reason": control.reason,
         "forecast": forecast,
