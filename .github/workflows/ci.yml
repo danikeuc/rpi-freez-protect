@@ -57,7 +57,8 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
           elif [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
-            git log --check --format= "$GITHUB_SHA"
+            EMPTY_TREE_SHA="$(git hash-object -t tree /dev/null)"
+            git diff --check "$EMPTY_TREE_SHA" "$GITHUB_SHA"
           else
-            git log --check --format= "$PUSH_BEFORE_SHA..$GITHUB_SHA"
+            git diff --check "$PUSH_BEFORE_SHA" "$GITHUB_SHA"
           fi
