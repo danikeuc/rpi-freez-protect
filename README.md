@@ -1,43 +1,98 @@
 # RPi Freeze Protect
 
-RPi Freeze Protect is a local safety controller for the outdoor shower. It runs on the DietPi Raspberry Pi, keeps two 24 V motorized valves paired, uses Node-RED only as the authenticated HTTP bridge, and uses a local atomic paired-GPIO daemon for the relay outputs.
+RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
+It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
+allows a fixed ten-minute `SUPPLY` interval from the Waveshare dial when the
+explicit `manual_timed` mode is selected.
 
-For the reconciled distinction between repository state, deployed observations
-and still-unverified physical behavior, start with
-[`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+Start with the dated [project evidence register](docs/PROJECT_STATE.md). It
+separates repository results, deployed observations, device behavior and facts
+that still require physical confirmation.
 
-## Safe physical model
+## Safety contract
 
-| Logical state | BCM GPIO 26 / V1 | BCM GPIO 20 / V2 | Plumbing result |
+| Logical state | BCM GPIO 26 / V1 | BCM GPIO 20 / V2 | Intended plumbing result |
 | --- | --- | --- | --- |
-| `DRAIN` | high / relay released | high / relay released | `Tuš` ↔ `Izpust` |
-| `SUPPLY` | low / relay energized | low / relay energized | `Dovod` ↔ `Tuš` |
+| `DRAIN` (`0` on the dial) | high / relay released | high / relay released | `Tuš` to `Izpust` |
+| `SUPPLY` (`1` on the dial) | low / relay energized | low / relay energized | `Dovod` to `Tuš` |
 
-`DRAIN` is the safe state. On Hub or Node-RED restart, a failed bridge request,
-configuration error, missing sensor, stale sensor, or unsafe forecast, the
-controller requests `DRAIN`. Every accepted `SUPPLY` also has a 60-second
-daemon-side lease that the Hub must renew; loss of the Hub therefore returns
-both outputs to `DRAIN` without relying on another request. It never commands a
-single valve.
+`DRAIN` is the requested safe state. The paired GPIO daemon is the only GPIO
+writer and gives every accepted `SUPPLY` a 60-second lease that the Hub must
+renew. Loss of renewal requests paired `DRAIN`. Mixed GPIO states and
+single-valve commands are illegal.
 
-## M1 capabilities
+A GPIO receipt or readback proves output levels only. It does not prove relay
+contacts, valve movement or the plumbing path.
 
-- Strict seven-day Open-Meteo minimum-temperature cache; all minima must be strictly above the configured threshold.
-- Production three-wire PT100/MAX31865 reader on SPI0 CE0, disabled for
-  automatic operation until an administrator commissions the installed probe.
-  The DS18B20 adapter remains only as rollback code.
-- Server-controlled `TIMED_SHOWER`: 10 minutes by default, with a hard 30-minute maximum. The display cannot submit a duration.
-- Authenticated local APIs: administrator settings/status and a separate minimal display API.
-- Loopback-only, token-protected Node-RED paired-valve bridge at `POST /internal/freeze-protect/actuator`, backed by a serialized `/dev/gpiomem` daemon that atomically writes and reads back GPIO 26+20.
-- CrowPanel firmware source and flash procedure under `firmware/crowpanel`.
+## Active installation
 
-## Local development verification
+The active display is a Waveshare ESP32-S3 Knob 1.8-inch dial. It switches
+between two independent functions:
 
-Python 3.12 and the development dependencies are required:
+- **Valve:** trusted-LAN display API to this Pi controller.
+- **Roon:** separate integration in
+  [`roon-knob`](https://github.com/danikeuc/roon-knob) and
+  [`roon-control`](https://github.com/danikeuc/roon-control).
+
+The Pi path is:
+
+`Waveshare -> Nginx :8081 -> Hub 127.0.0.1:8000 -> Node-RED 127.0.0.1:1880 -> paired GPIO daemon -> BCM 26+20`
+
+The source under `firmware/crowpanel` is historical/rollback material. The
+CrowPanel is retired from this installation and must not receive the active
+display token.
+
+## Operating modes
+
+- `safe_drain` is the default for an absent or invalid setting. It refuses
+  `SUPPLY`.
+- `manual_timed` is the active installation mode. Only an authenticated
+  deliberate display action starts a fixed 600-second interval. Weather and
+  temperature cannot start it.
+- `automatic` is a separately commissioned legacy/future mode. Missing, stale,
+  invalid or unsafe sensor/forecast inputs keep that mode at `DRAIN`.
+
+The PT100/MAX31865 reader on SPI0 CE0 and the seven-day Open-Meteo policy remain
+implemented for `automatic`. DS18B20 support is rollback code only.
+
+## Display API
+
+Nginx exposes exactly three token-protected paths on the trusted LAN:
+
+```text
+GET  /api/v1/display/status
+POST /api/v1/display/actions/timed-shower
+POST /api/v1/display/actions/drain
+```
+
+The action requests have no body and cannot submit a duration. In idle
+`manual_timed` mode, status is shaped like:
+
+```json
+{
+  "mode": "manual_timed",
+  "state": "MANUAL_DRAIN",
+  "command": "DRAIN",
+  "remaining_seconds": 0,
+  "reason": "manual_idle",
+  "forecast": {"available": false, "fresh": false, "dates": [], "minima_c": []},
+  "timed_shower_deadline": null,
+  "action": "TIMED_SHOWER",
+  "action_enabled": true
+}
+```
+
+`command` is the accepted logical command, not physical position. The Hub and
+Node-RED control route stay loopback-only.
+
+## Development
+
+Python 3.12 is required:
 
 ```bash
 python3.12 -m venv .venv
 . .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 python -m pytest -q
 python -m ruff check .
@@ -45,7 +100,11 @@ python -m mypy src
 python -m build
 ```
 
-The M1 deployment never uses the development simulation. For a local software-only demonstration, set distinct temporary tokens and enable it explicitly:
+The complete local and CI gates, including deployment-asset syntax, are in
+[docs/VERIFICATION.md](docs/VERIFICATION.md).
+
+For a software-only demonstration, use distinct placeholder secrets and enable
+simulation explicitly. Never reuse deployed tokens:
 
 ```bash
 export FREEZE_PROTECT_ADMIN_TOKEN='local-admin-token'
@@ -55,65 +114,26 @@ export FREEZE_PROTECT_DB_PATH='./data/freeze-protect.db'
 uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
 ```
 
-In a separate terminal, the safe startup status is available only with the administrator token:
+## Documentation map
 
-```bash
-curl -H 'X-Admin-Token: local-admin-token' http://127.0.0.1:8000/api/v1/status
-```
+| Document | Purpose |
+| --- | --- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Active components, authority and failure boundaries |
+| [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) | Canonical dated evidence and unresolved gaps |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | Reproducible repository checks and their limits |
+| [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) | Pi, Node-RED, GPIO, PT100 and physical commissioning |
+| [deployment/DISPLAY_COMMISSIONING.md](deployment/DISPLAY_COMMISSIONING.md) | Active Waveshare/Roon/valve display acceptance |
+| [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) | Restricted workstation-to-Pi access and handoff |
+| [deployment/CROWPANEL_COMMISSIONING.md](deployment/CROWPANEL_COMMISSIONING.md) | Superseded CrowPanel procedure retained for history |
 
-With `FREEZE_PROTECT_CONTROL_MODE` unset, the Hub starts in `SAFE_DRAIN` with
-reason `safe_drain` and does not allow `SUPPLY`. Set
-`FREEZE_PROTECT_CONTROL_MODE=manual_timed` explicitly to start in
-`MANUAL_DRAIN` and enable the authenticated, ten-minute dial action. The
-legacy `automatic` mode remains available only when explicitly selected;
-it can report `FROST_PROTECTION` with reason `sensor_pending` until the
-PT100/MAX31865 is installed and commissioned. A development-only simulation
-route exists only when `FREEZE_PROTECT_DEVELOPMENT_MODE=true`.
+Files below `docs/superpowers/specs/` and `docs/superpowers/plans/` record design
+and implementation history. They are not current runbooks.
 
-## Display API example
+## Secret and network boundary
 
-With the Hub explicitly configured for `manual_timed`, the dial reads the Pi's
-server-owned countdown and sends bodyless actions with its separate display
-token. These examples use placeholder credentials:
-
-```http
-GET /api/v1/display/status HTTP/1.1
-X-Display-Token: <display-token>
-
-HTTP/1.1 200 OK
-{"mode":"manual_timed","state":"MANUAL_DRAIN","command":"DRAIN","remaining_seconds":0,"reason":"manual_idle","forecast":{"available":false,"fresh":false,"dates":[],"minima_c":[]},"timed_shower_deadline":null,"action":"TIMED_SHOWER","action_enabled":true}
-```
-
-```http
-POST /api/v1/display/actions/timed-shower HTTP/1.1
-X-Display-Token: <display-token>
-Content-Length: 0
-
-HTTP/1.1 200 OK
-{"state":"TIMED_SHOWER","command":"SUPPLY","reason":"timed_shower_started"}
-```
-
-The dial then refreshes status for `remaining_seconds` (at most 600). It sends
-`POST /api/v1/display/actions/drain` with no body to stop immediately. A
-refused start returns HTTP 409, and either action rejects a request body with
-HTTP 400. The reported command is the controller's logical command, not proof
-of physical valve movement.
-
-## DietPi and hardware commissioning
-
-Follow [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) in order. It
-contains the Node-RED import, systemd environment boundary, GPIO-only test, SPI
-enablement, PT100/MAX31865 commissioning, and isolated-water valve test.
-
-For the CrowPanel, use [firmware/crowpanel/README.md](firmware/crowpanel/README.md) and [deployment/CROWPANEL_COMMISSIONING.md](deployment/CROWPANEL_COMMISSIONING.md). The first display test must be run with the 24 V valve supply disconnected.
-
-## Workstation Codex commissioning
-
-Follow [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) for the workstation-led procedure. It supersedes the proposed runner approach.
-
-## Security boundary
-
-- The Hub and Node-RED bridge are bound to loopback; do not reverse-proxy their control routes to the internet.
-- Set `FREEZE_PROTECT_ADMIN_TOKEN`, `FREEZE_PROTECT_DISPLAY_TOKEN`, and `FREEZE_PROTECT_NODE_RED_TOKEN` to independent secrets stored outside Git.
-- The display never receives a Node-RED address, relay pin, weather credential, or automatic safety policy.
-- Never use the legacy unauthenticated Node-RED timer/GET trigger flow after cutover.
+- Keep admin, display and Node-RED tokens independent and outside Git.
+- Never commit `firmware/crowpanel/include/secrets.h`.
+- Do not expose ports 8000, 1880 or 8081 to the internet.
+- Do not restore the legacy unauthenticated Node-RED trigger flow.
+- Keep 24 V disconnected until the applicable commissioning gate explicitly
+  authorizes a bounded physical test.

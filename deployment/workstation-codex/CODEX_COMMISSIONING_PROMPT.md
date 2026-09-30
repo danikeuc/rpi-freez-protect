@@ -49,19 +49,12 @@ Keep the 24 V valve supply disconnected. Do not run SUPPLY. Stop and ask Danijel
 for explicit approval in the current conversation before beginning the 24 V
 stage or any physical valve test.
 
-The CrowPanel USB cable for this installation is on the Windows workstation.
-The operator-confirmed port is COM6. A COM number is not stable device identity:
-compare `pio device list --serial --json-output` with the panel disconnected
-and reconnected, record the newly appeared exact `hwid`, and require both that
-`hwid` and COM6 before proceeding. Set `$CrowPanelPort = 'COM6'` and use that
-exact variable for both
-`pio run -e crowpanel --target upload --upload-port $CrowPanelPort` and
-`pio device monitor --baud 115200 --port $CrowPanelPort`. Never ask the Pi
-helper to inventory workstation USB and never allow automatic port selection.
-Do not reflash merely to diagnose connectivity: when firmware sources have not
-changed, prefer serial observation and preserve the installed image. After the
-monitor opens, tap **RESET** once without holding **BOOT** and require a fresh
-`Freeze Protect CrowPanel boot` line. If the cable is ever moved to the Pi,
-that documented branch is trusted-local-console only; do not read or provision
-`secrets.h` over SSH.
+The active display is the Waveshare dial from the separate `roon-knob`
+repository; the CrowPanel is retired. Follow `deployment/DISPLAY_COMMISSIONING.md`
+for exact revision evidence, credential rotation and the Roon/valve acceptance
+boundary. Build, flash and provision only from the reviewed workstation clone
+of `roon-knob`; never add firmware or USB commands to the Pi helper. Do not flash
+merely to diagnose connectivity, and never put the display token in a Codex
+prompt, terminal capture, serial log or Git. The disconnected GPIO acceptance
+still requires explicit current-conversation approval before any timed action.
 ```

@@ -7,13 +7,13 @@ This procedure replaces the old Node-RED relay control with a constrained actuat
 - Raspberry Pi GPIO 26 / header 37 controls valve V1; GPIO 20 / header 38 controls valve V2.
 - Both relay inputs are active-low. `DRAIN` is high/high (both relays released), connecting `Tuš` to `Izpust`. `SUPPLY` is low/low (both relays energized), connecting `Dovod` to `Tuš`.
 - The valves are separate 24 V two-wire loads, wired through their own relay contacts. Do not power a valve from a Pi GPIO pin.
-- Use the existing 24 V supply only after confirming its label is at least 1 A continuous. Keep the 24 V valve supply disconnected during steps 1–5.
+- Use the existing 24 V supply only after confirming its label is at least 1 A continuous. Keep the 24 V valve supply disconnected through steps 1–4a and until step 5 receives explicit current-session approval.
 
 ## 1. Make the Pi service files
 
 For the workstation-led route, create the non-login `freezeprotect` service
 account below, then follow the separate commissioning-login bootstrap in
-[`WORKSTATION_CODEX_COMMISSIONING.md`](WORKSTATION_CODEX_COMMISSIONING.md#2-pi-bootstrap).
+[`WORKSTATION_CODEX_COMMISSIONING.md`](WORKSTATION_CODEX_COMMISSIONING.md#2-pi-bootstrap-over-openssh).
 The service account is deliberately not SSH-compatible; bootstrap creates and
 validates `freezeprotect-commission` separately, without migrating service
 data or ownership. Existing installations need an explicit trusted-console
@@ -117,9 +117,9 @@ sudo -u nodered node /opt/rpi-freez-protect/deployment/node-red/preflight-no-leg
 
 It must print `Preflight passed` and exit with code zero. If it reports a legacy GPIO 26/20 node, `/trigger` route, or a missing/duplicate bridge route, keep valve power disconnected, correct the tabs in the editor, deploy, and run the command again. The exported legacy file is only a rollback record; it must not be imported as an active relay flow.
 
-## 3. Expose only the display API to the local Wi-Fi
+## 3. Expose only the display API to the trusted local Wi-Fi
 
-The Hub itself stays on `127.0.0.1:8000`. Install the supplied narrow Nginx gateway so the CrowPanel can reach only its three device-token-protected endpoints:
+The Hub itself stays on `127.0.0.1:8000`. Install the supplied narrow Nginx gateway so the active Waveshare dial can reach only its three device-token-protected endpoints:
 
 ```bash
 sudo apt update
@@ -130,7 +130,7 @@ sudo nginx -t
 sudo systemctl enable --now nginx
 ```
 
-The CrowPanel receives `http://<Pi-LAN-IP>:8081` as `HUB_BASE_URL`. Verify `curl http://<Pi-LAN-IP>:8081/api/v1/status` returns `404`; that route must never leave loopback. Do not forward port 8081 on the internet router.
+Provision the active dial with `http://<Pi-LAN-IP>:8081` as its Pi base URL by following [`DISPLAY_COMMISSIONING.md`](DISPLAY_COMMISSIONING.md). Verify `curl http://<Pi-LAN-IP>:8081/api/v1/status` returns `404`; that administrative route must never leave loopback. Do not forward port 8081 on the internet router.
 
 ## 4. Prove the bridge with valve power still disconnected
 
@@ -143,9 +143,11 @@ sudo pinctrl get 26
 sudo pinctrl get 20
 ```
 
-The Hub startup state must be `FROST_PROTECTION` with reason `sensor_pending`; both pins must be high. Use the authenticated display API or later CrowPanel only to request a timed shower. With valve power disconnected, start the request and confirm both pins go low; use immediate drain and confirm both return high. No single-channel action exists.
+For the active `manual_timed` configuration, Hub startup and idle status must be `MANUAL_DRAIN` with reason `manual_idle`, command `DRAIN`, and zero remaining seconds; both pins must be high. (`FROST_PROTECTION` / `sensor_pending` is expected only in separately selected `automatic` mode before sensor commissioning.) Follow [`DISPLAY_COMMISSIONING.md`](DISPLAY_COMMISSIONING.md) for the authenticated disconnected-output test. No single-channel action exists.
 
-## 4a. Commission the PT100/MAX31865 with valve power disconnected
+## 4a. Optional future automatic mode: commission PT100/MAX31865
+
+This stage is not required by the active `manual_timed` installation and must not be used to switch the deployed mode casually. It is a separate future `automatic`-mode commissioning change with its own review and rollback plan. Keep the 24 V valve supply disconnected.
 
 The production temperature source is a three-wire PT100 through MAX31865 on
 SPI0 CE0. The Raspberry Pi header-side contract is fixed below. Do not connect
@@ -204,11 +206,14 @@ The service must show `SupplementaryGroups=spi`. Production startup binds the
 approval to `MAX31865_PT100_SPI0_CE0` and the exact settings version that
 created it. It clears any commissioning inherited from the replaced sensor and
 also rejects an approval written by rollback software that cannot maintain that
-binding. Confirm `sensor_commissioned=false`; the
-authenticated administrator status must show a finite `last_reading.value_c`
-with `HEALTHY`, while controller state remains `FROST_PROTECTION` with reason
-`sensor_pending` and both relay pins remain high. The CrowPanel intentionally
-receives no sensor value or MAX31865 diagnostic.
+binding. Before any temporary `automatic`-mode validation, record the current
+mode and rollback command, confirm `sensor_commissioned=false`, keep 24 V
+disconnected and verify both relay pins high. In `automatic`, administrator
+status must show a finite `last_reading.value_c` with `HEALTHY`, while controller
+state remains `FROST_PROTECTION` with reason `sensor_pending`. Return to the
+reviewed mode after the diagnostic unless the separately approved automatic
+commissioning plan says otherwise. The display API intentionally receives no
+sensor value or MAX31865 diagnostic.
 
 Record three stable readings against an independent room thermometer, then test
 near the safety range using a controlled reference around 0 °C and another
@@ -229,10 +234,10 @@ stability check. A failed read must never display or reuse an earlier value.
 4. Repeat once by stopping `freeze-protect.service`; without Hub renewal, the
    daemon must release both relays high within 60 seconds. The Node-RED startup
    and Hub restart paths must also leave the relays released/high.
-5. Only after the PT100/MAX31865 checks in step 4a are recorded as passed may `sensor_commissioned` be changed to `true` in the administrator settings.
+5. This manual valve test does not commission the PT100. Keep `sensor_commissioned=false` unless the separate automatic-mode checks in step 4a are completed and approved.
 
 ## Troubleshooting boundary
 
 - If `freeze-protect.service` reports `FAULT`, do not retry `SUPPLY`; inspect the Node-RED receipt and use an administrator fault-clear only after the pins have been confirmed high.
-- If Node-RED fails to start, leave its GPIO outputs high. Do not fall back to the old unauthenticated GET trigger routes.
-- A missing weather location or an uncommissioned/unhealthy PT100 is expected to remain safe `DRAIN`; it is not a reason to bypass the Hub.
+- If Node-RED fails to start, require paired `DRAIN` through the daemon recovery path and verify both outputs high before continuing. Do not fall back to the old unauthenticated GET trigger routes.
+- In `automatic`, a missing weather location or an uncommissioned/unhealthy PT100 is expected to remain at `DRAIN`; it is not a reason to bypass the Hub. In `manual_timed`, weather and PT100 state cannot start `SUPPLY`.

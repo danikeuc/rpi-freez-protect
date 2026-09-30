@@ -1,5 +1,10 @@
 # CrowPanel firmware
 
+> **Historical/rollback source:** The active installation uses the Waveshare
+> dial from the separate `roon-knob` repository. Do not provision this firmware
+> with the active display token. See
+> [`../../deployment/DISPLAY_COMMISSIONING.md`](../../deployment/DISPLAY_COMMISSIONING.md).
+
 This PlatformIO project targets the Elecrow CrowPanel 1.28-inch ESP32-S3 rotary display. It obtains status and action permissions only from the RPi Freeze Protect Hub; it does not know GPIO pins, Node-RED, weather-provider credentials, or frost policy.
 
 ## Provision and build

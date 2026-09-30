@@ -156,9 +156,9 @@ class ControlService:
             if self._state is ControllerState.FAULT:
                 return self._last_decision
             if self._mode is ControlMode.SAFE_DRAIN:
-                self._run_idle()
-                if self._state is ControllerState.FAULT:
-                    return self._last_decision
+                idle_decision = self._run_idle()
+                if idle_decision.state is ControllerState.FAULT:
+                    return idle_decision
                 return self._set_decision(
                     Decision(
                         ControllerState.SAFE_DRAIN,

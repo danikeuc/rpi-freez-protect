@@ -762,6 +762,18 @@ def extract_shell_function(source: str, name: str) -> str:
     return header + body + "\n}"
 
 
+def adapt_privileged_shell_function_for_current_user(function: str) -> str:
+    """Run ownership-sensitive snippets without weakening production code."""
+    root_uid_check = '"$(stat -c %u "$path")" -ne 0'
+    root_install = "install -o root -g root -m 0600"
+    replacements = int(root_uid_check in function) + int(root_install in function)
+    assert replacements > 0, "privileged production contract was not found"
+    current_uid_check = f'"$(stat -c %u "$path")" -ne {os.getuid()}'
+    return function.replace(root_uid_check, current_uid_check).replace(
+        root_install, "install -m 0600"
+    )
+
+
 def run_commission_user_service_state_check(
     tmp_path: Path,
 ) -> subprocess.CompletedProcess[str]:
@@ -1198,6 +1210,7 @@ def test_bootstrap_exit_cleanup_restores_ssh_policy_files(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     assert "restore_pending_ssh_policy" in cleanup
     final_target = tmp_path / "70-freezeprotect-commission.conf"
@@ -1251,10 +1264,13 @@ def test_bootstrap_exit_trap_recovers_a_preexisting_invalid_final_policy(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1329,10 +1345,13 @@ def test_bootstrap_exit_trap_removes_a_new_failed_final_policy(tmp_path: Path) -
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1387,10 +1406,13 @@ def test_bootstrap_failed_preparation_preserves_preexisting_disabled_quarantine(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1442,9 +1464,11 @@ def test_bootstrap_rejects_a_malformed_disabled_quarantine_target(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
     disabled_quarantine = Path(str(quarantine_target) + ".disabled")
@@ -1484,6 +1508,7 @@ def test_bootstrap_cleanup_reports_rollback_failure_and_preserves_backup(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     failing_mv = tmp_path / "mv"
     failing_mv.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
@@ -1541,6 +1566,7 @@ def test_bootstrap_preserves_backup_when_post_restore_validation_fails(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1912,39 +1938,27 @@ def test_helper_execution_path_excludes_unvalidated_usr_local_bin() -> None:
     assert "require_root_protected /usr/sbin" in bootstrap
 
 
-def test_guide_uses_operator_confirmed_windows_com_port() -> None:
-    """Catch a workstation upload path that probes the Pi or guesses a port."""
+def test_active_guide_separates_waveshare_from_historical_crowpanel() -> None:
     guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
         encoding="utf-8"
     )
-
-    assert "freezeprotect-commission@<Pi-LAN-IP>" in guide
-    workstation_usb = guide.split("### USB cable on the workstation", 1)[1].split(
-        "### USB cable on the Pi", 1
-    )[0]
-    assert "$CrowPanelPort = 'COM6'" in workstation_usb
-    assert "pio device list --serial --json-output" in workstation_usb
-    assert "Where-Object { $_.port -eq $CrowPanelPort }" in workstation_usb
-    assert "$_.hwid -eq $CrowPanelExpectedHwid" in workstation_usb
-    assert "Read-Host" in workstation_usb
-    assert "disconnect/reconnect" in workstation_usb
-    assert "$CrowPanelMatches.Count -ne 1" in workstation_usb
-    assert "Copy-Item include/secrets.example.h include/secrets.h" in workstation_usb
-    assert "--upload-port $CrowPanelPort" in workstation_usb
-    assert "--port $CrowPanelPort" in workstation_usb
-    assert "After the monitor opens, tap **RESET**" in workstation_usb
-    assert "Freeze Protect CrowPanel boot" in workstation_usb
-    assert "/dev/serial/by-id" not in workstation_usb
-    pi_usb = guide.split("### USB cable on the Pi", 1)[1]
-    assert "trusted-console-only" in pi_usb
-    assert "freezeprotect-commission@<Pi-LAN-IP>" not in pi_usb
-    assert (
-        "if [ ! -e /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h ]; then"
-        in pi_usb
+    prompt = (
+        ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
+    ).read_text(encoding="utf-8")
+    historical = (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
+        encoding="utf-8"
     )
-    assert "install -o root -g root -m 0600" in pi_usb
-    assert "umask 077" in pi_usb
-    assert "rm -rf .pio" in pi_usb
+
+    for active in (guide, prompt):
+        assert "DISPLAY_COMMISSIONING.md" in active
+        assert "active Waveshare" in active or "active display is the Waveshare" in active
+        assert "pio run -e crowpanel" not in active
+        assert "$CrowPanelPort" not in active
+    assert "Superseded" in historical
+    assert "$CrowPanelPort = 'COM6'" in historical
+    assert "pio device list --serial --json-output" in historical
+    assert "--upload-port $CrowPanelPort" in historical
+    assert "Freeze Protect CrowPanel boot" in historical
 
 
 def test_crowpanel_example_targets_display_gateway() -> None:
@@ -1956,21 +1970,20 @@ def test_crowpanel_example_targets_display_gateway() -> None:
     assert 'HUB_BASE_URL "http://192.0.2.10:8000"' not in secrets
 
 
-def test_crowpanel_commissioning_requires_stable_usb_identity_and_reset() -> None:
-    documents = [
-        (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
-            encoding="utf-8"
-        ),
-        (
-            ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
-        ).read_text(encoding="utf-8"),
-    ]
+def test_historical_crowpanel_commissioning_keeps_recovery_evidence() -> None:
+    document = (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
 
-    for document in documents:
-        assert "hwid" in document
-        assert "COM6" in document
-        assert "RESET" in document
-        assert "Freeze Protect CrowPanel boot" in document
+    assert "Historical CrowPanel" in document
+    assert "hwid" in document
+    assert "COM6" in document
+    assert "RESET" in document
+    assert "Freeze Protect CrowPanel boot" in document
+    assert "DISPLAY_COMMISSIONING.md" in document
+    assert "dedicated temporary recovery token" in document
+    assert "Never use the active Waveshare token" in document
+    assert "exactly the value of `FREEZE_PROTECT_DISPLAY_TOKEN`" not in document
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'
