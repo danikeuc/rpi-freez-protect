@@ -590,6 +590,126 @@ def test_temperature_telemetry_lifespan_order(
     ]
 
 
+@pytest.mark.parametrize("failing_start", ["sampler", "loop"])
+def test_temperature_telemetry_start_failure_still_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_start: str
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{failing_start}-startup.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
+        run_background=True,
+    )
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    calls: list[str] = []
+    original_startup = service.startup
+    original_drain = service.drain
+
+    def record_startup() -> object:
+        calls.append("service.startup")
+        return original_startup()
+
+    def record_drain(reason: str) -> object:
+        calls.append(f"service.drain:{reason}")
+        return original_drain(reason)
+
+    def start_sampler(_sampler: object) -> None:
+        calls.append("sampler.start")
+        if failing_start == "sampler":
+            raise RuntimeError("sampler startup failed")
+
+    def start_loop(_loop: object) -> None:
+        calls.append("loop.start")
+        if failing_start == "loop":
+            raise RuntimeError("loop startup failed")
+
+    monkeypatch.setattr(service, "startup", record_startup)
+    monkeypatch.setattr(service, "drain", record_drain)
+    monkeypatch.setattr(TemperatureTelemetrySampler, "start", start_sampler)
+    monkeypatch.setattr(
+        TemperatureTelemetrySampler,
+        "stop",
+        lambda _sampler: calls.append("sampler.stop"),
+    )
+    monkeypatch.setattr("freeze_protect.api.app.PeriodicControlLoop.start", start_loop)
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.stop",
+        lambda _loop: calls.append("loop.stop"),
+    )
+
+    with pytest.raises(RuntimeError, match=f"{failing_start} startup failed"), TestClient(app):
+        pytest.fail("request serving must not begin after startup failure")
+
+    expected_start = ["sampler.start"]
+    if failing_start == "loop":
+        expected_start.append("loop.start")
+    assert calls == [
+        "service.startup",
+        *expected_start,
+        "sampler.stop",
+        "loop.stop",
+        "service.drain:shutdown_drain",
+    ]
+    assert [command.value for command in relay.commands] == ["DRAIN", "DRAIN"]
+
+
+def test_temperature_telemetry_stop_failure_still_stops_loop_and_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / "stop-failure.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
+        run_background=True,
+    )
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    calls: list[str] = []
+    original_drain = service.drain
+
+    def record_drain(reason: str) -> object:
+        calls.append(f"service.drain:{reason}")
+        return original_drain(reason)
+
+    def fail_sampler_stop(_sampler: object) -> None:
+        calls.append("sampler.stop")
+        raise RuntimeError("sampler stop failed")
+
+    monkeypatch.setattr(service, "drain", record_drain)
+    monkeypatch.setattr(
+        TemperatureTelemetrySampler,
+        "start",
+        lambda _sampler: calls.append("sampler.start"),
+    )
+    monkeypatch.setattr(TemperatureTelemetrySampler, "stop", fail_sampler_stop)
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.start",
+        lambda _loop: calls.append("loop.start"),
+    )
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.stop",
+        lambda _loop: calls.append("loop.stop"),
+    )
+
+    with pytest.raises(RuntimeError, match="sampler stop failed"), TestClient(app):
+        calls.append("request.served")
+
+    assert calls == [
+        "sampler.start",
+        "loop.start",
+        "request.served",
+        "sampler.stop",
+        "loop.stop",
+        "service.drain:shutdown_drain",
+    ]
+    assert [command.value for command in relay.commands] == ["DRAIN", "DRAIN"]
+
+
 @pytest.mark.parametrize("failing", [False, True])
 def test_temperature_telemetry_sample_cannot_change_manual_valve_state(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, failing: bool

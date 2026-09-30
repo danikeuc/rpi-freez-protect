@@ -147,18 +147,22 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        service.startup()
-        if run_background:
-            if temperature_telemetry_sampler is not None:
-                temperature_telemetry_sampler.start()
-            control_loop.start()
         try:
+            service.startup()
+            if run_background:
+                if temperature_telemetry_sampler is not None:
+                    temperature_telemetry_sampler.start()
+                control_loop.start()
             yield
         finally:
-            if temperature_telemetry_sampler is not None:
-                temperature_telemetry_sampler.stop()
-            control_loop.stop()
-            service.drain("shutdown_drain")
+            try:
+                if temperature_telemetry_sampler is not None:
+                    temperature_telemetry_sampler.stop()
+            finally:
+                try:
+                    control_loop.stop()
+                finally:
+                    service.drain("shutdown_drain")
 
     app = FastAPI(title="RPi Freeze Protect", version="0.2.0", lifespan=lifespan)
     app.state.control_service = service
