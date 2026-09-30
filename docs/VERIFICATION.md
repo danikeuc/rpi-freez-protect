@@ -36,7 +36,8 @@ git diff --check "$(git merge-base origin/main HEAD)" HEAD
 assertions for the Node-RED/Nginx/systemd/commissioning assets. The local Git
 command checks the complete branch delta against `origin/main`; substitute the
 actual base branch when needed. CI fetches full history and checks the PR range
-or pushed commit rather than the clean checkout's empty working-tree diff.
+or every commit in the pushed range rather than the clean checkout's empty
+working-tree diff.
 
 ## Firmware checks
 

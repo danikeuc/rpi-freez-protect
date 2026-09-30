@@ -52,9 +52,12 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
             git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
+          elif [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
+            git log --check --format= "$GITHUB_SHA"
           else
-            git show --check --format= "$GITHUB_SHA"
+            git log --check --format= "$PUSH_BEFORE_SHA..$GITHUB_SHA"
           fi

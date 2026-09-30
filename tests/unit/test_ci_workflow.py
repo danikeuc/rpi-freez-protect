@@ -8,5 +8,7 @@ def test_ci_checks_committed_range_instead_of_clean_worktree() -> None:
 
     assert "fetch-depth: 0" in workflow
     assert 'git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"' in workflow
-    assert 'git show --check --format= "$GITHUB_SHA"' in workflow
+    assert 'git log --check --format= "$PUSH_BEFORE_SHA..$GITHUB_SHA"' in workflow
+    assert 'git log --check --format= "$GITHUB_SHA"' in workflow
+    assert 'PUSH_BEFORE_SHA: ${{ github.event.before }}' in workflow
     assert "run: git diff --check\n" not in workflow
