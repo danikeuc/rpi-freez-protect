@@ -39,6 +39,13 @@ actual base branch when needed. CI fetches full history and checks the PR range
 or every commit in the pushed range rather than the clean checkout's empty
 working-tree diff.
 
+Display telemetry contract checks cover the two display fields, mode-specific
+single-reader ownership, five-second sampler cadence, 15-second freshness,
+unavailable readings, and exclusion of administrator diagnostics. Passing
+repository checks validates the implementation in this checkout only; it does
+not verify a deployed Pi, SPI wiring, sensor accuracy, dial presentation, relays,
+valves, or water routing.
+
 ## Firmware checks
 
 The retired CrowPanel source has separate PlatformIO environments:

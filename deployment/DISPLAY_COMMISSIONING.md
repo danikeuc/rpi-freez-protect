@@ -63,7 +63,31 @@ Roon acceptance does not touch the valve path:
 Record displayed state and the independently observed Roon zone result. A UI
 animation alone is not end-to-end proof.
 
-## 4. Disconnected valve acceptance
+## 4. Display-only PT100 telemetry acceptance
+
+This check does not exercise the valve action. Keep the 24 V valve supply
+disconnected, `FREEZE_PROTECT_CONTROL_MODE=manual_timed`, and
+`sensor_commissioned=false`. Complete the sensor wiring and calibration checks
+in [`COMMISSIONING.md` step 4a](COMMISSIONING.md#4a-display-only-pt100max31865-verification)
+only after identifying and verifying the exact MAX31865 breakout. Do not switch
+to `automatic` for this display feature.
+
+Using authenticated display status, confirm the valve fields remain
+`manual_timed`, `MANUAL_DRAIN`, `DRAIN`, zero remaining seconds, and action
+enabled. Confirm a fresh sensor returns numeric `pipe_temperature_c` and
+`sensor_health=HEALTHY`. Non-automatic modes sample every five seconds; values
+at least 15 seconds old are unavailable. Failed or unhealthy readings return a
+null temperature with uppercase `STALE`, `INVALID`, or `CALIBRATION_REQUIRED`;
+a failed sample clears an earlier numeric value. The display status must not
+contain MAX31865 diagnostics, sensor identity, or administrator fields.
+
+Record the repository and installed Pi revisions separately, together with
+sample timestamps, sensor health, reference measurements and display
+observation. Repository tests and an API response do not prove sensor wiring,
+calibration, dial appearance, relay contacts, valve movement or water routing.
+Telemetry remains informational and does not change `sensor_commissioned`.
+
+## 5. Disconnected valve acceptance
 
 This step issues an actuator request and requires Danijel's explicit approval in
 the same conversation even though 24 V remains disconnected.
@@ -83,7 +107,7 @@ Stop on any failed service check, receipt, preflight or readback. Leave the
 requested state at `DRAIN`, keep 24 V disconnected and do not retry `SUPPLY`.
 GPIO readback is not proof of relay or valve position.
 
-## 5. Live valve gate
+## 6. Live valve gate
 
 A live 24 V test is separate. This document grants no approval to connect valve
 power. Only after explicit current-conversation approval and all disconnected
