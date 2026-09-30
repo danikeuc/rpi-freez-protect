@@ -2,8 +2,8 @@
 
 **Goal:** Reconcile current evidence and organize `rpi-freez-protect` so the active architecture, historical material, quality gates and remaining physical gaps are unambiguous.
 
-**Base:** `origin/main` at `b861c0a67dd484264dc810aa5b7525c18731736c`  
-**Branch:** `codex/project-evidence-reconciliation`  
+**Base:** `origin/main` at `b861c0a67dd484264dc810aa5b7525c18731736c`
+**Branch:** `codex/project-evidence-reconciliation`
 **Safety:** repository-only work; no Pi mutation, GPIO command, service restart, 24 V action or firmware flash.
 
 ## Task 1: Repair the portable repository test baseline

@@ -1,6 +1,6 @@
 # Project reconciliation design
 
-**Date:** 2026-09-30  
+**Date:** 2026-09-30
 **Scope:** repository structure, current documentation, repeatable verification and evidence reconciliation for `rpi-freez-protect`.
 
 ## Objective
