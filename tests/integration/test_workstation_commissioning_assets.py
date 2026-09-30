@@ -762,6 +762,16 @@ def extract_shell_function(source: str, name: str) -> str:
     return header + body + "\n}"
 
 
+def adapt_privileged_shell_function_for_current_user(function: str) -> str:
+    """Run ownership-sensitive snippets without weakening production code."""
+    current_uid_check = f'"$(stat -c %u "$path")" -ne {os.getuid()}'
+    return function.replace(
+        '"$(stat -c %u "$path")" -ne 0', current_uid_check
+    ).replace(
+        "install -o root -g root -m 0600", "install -m 0600"
+    )
+
+
 def run_commission_user_service_state_check(
     tmp_path: Path,
 ) -> subprocess.CompletedProcess[str]:
@@ -1198,6 +1208,7 @@ def test_bootstrap_exit_cleanup_restores_ssh_policy_files(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     assert "restore_pending_ssh_policy" in cleanup
     final_target = tmp_path / "70-freezeprotect-commission.conf"
@@ -1251,10 +1262,13 @@ def test_bootstrap_exit_trap_recovers_a_preexisting_invalid_final_policy(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1329,10 +1343,13 @@ def test_bootstrap_exit_trap_removes_a_new_failed_final_policy(tmp_path: Path) -
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1387,10 +1404,13 @@ def test_bootstrap_failed_preparation_preserves_preexisting_disabled_quarantine(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
@@ -1442,9 +1462,11 @@ def test_bootstrap_rejects_a_malformed_disabled_quarantine_target(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     require_file = extract_shell_function(bootstrap, "require_root_owned_file")
+    require_file = adapt_privileged_shell_function_for_current_user(require_file)
     prepare = extract_shell_function(
         bootstrap, "prepare_final_ssh_policy_transaction"
     )
+    prepare = adapt_privileged_shell_function_for_current_user(prepare)
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
     disabled_quarantine = Path(str(quarantine_target) + ".disabled")
@@ -1484,6 +1506,7 @@ def test_bootstrap_cleanup_reports_rollback_failure_and_preserves_backup(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     failing_mv = tmp_path / "mv"
     failing_mv.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
@@ -1541,6 +1564,7 @@ def test_bootstrap_preserves_backup_when_post_restore_validation_fails(
         ROOT / "deployment/workstation-codex/bootstrap-freezeprotect-access.sh"
     ).read_text(encoding="utf-8")
     restore = extract_shell_function(bootstrap, "restore_pending_ssh_policy")
+    restore = adapt_privileged_shell_function_for_current_user(restore)
     cleanup = extract_shell_function(bootstrap, "cleanup_key_snapshot")
     final_target = tmp_path / "70-freezeprotect-commission.conf"
     quarantine_target = tmp_path / "60-freezeprotect-commission-quarantine.conf"
