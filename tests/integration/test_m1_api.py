@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
 
@@ -227,6 +227,11 @@ def test_display_status_has_no_admin_or_secret_values(client: TestClient) -> Non
     assert "last_reading" not in payload
     assert "sensor_diagnostics" not in payload
     assert "bridge_flow_revision" not in payload
+    assert "observed_at" not in str(payload)
+    assert "source_id" not in str(payload)
+    assert "/dev/spidev" not in str(payload)
+    assert "fault_register" not in str(payload)
+    assert "fault_names" not in str(payload)
     assert "admin-token" not in str(payload)
     assert "display-token" not in str(payload)
 
@@ -279,14 +284,153 @@ def test_missing_or_admin_token_on_display_endpoint_is_rejected(
     assert client.get("/api/v1/display/status", headers=DISPLAY).status_code == 200
 
 
-def test_display_status_does_not_expose_sensor_diagnostics(client: TestClient) -> None:
+def test_display_status_preserves_legacy_valve_fields_with_unavailable_sensor(
+    client: TestClient,
+) -> None:
     payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
 
-    assert "pipe_temperature_c" not in payload
-    assert "sensor_health" not in payload
+    assert payload == {
+        "mode": "manual_timed",
+        "command": "DRAIN",
+        "remaining_seconds": 0,
+        "state": "MANUAL_DRAIN",
+        "reason": "manual_idle",
+        "forecast": {"available": False, "fresh": False, "dates": [], "minima_c": []},
+        "timed_shower_deadline": None,
+        "action": "TIMED_SHOWER",
+        "action_enabled": True,
+        "pipe_temperature_c": None,
+        "sensor_health": "STALE",
+    }
 
 
-def test_uncommissioned_healthy_temperature_is_visible_only_to_administrator(
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+@pytest.mark.parametrize(
+    ("health", "expected_value"),
+    [
+        (SensorHealth.HEALTHY, 6.4),
+        (SensorHealth.STALE, None),
+        (SensorHealth.INVALID, None),
+        (SensorHealth.CALIBRATION_REQUIRED, None),
+    ],
+)
+def test_nonautomatic_display_uses_sampler_health_snapshot(
+    tmp_path: Path, mode: ControlMode, health: SensorHealth, expected_value: float | None
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}-{health.value}.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        clock=lambda: observed_at,
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        source = app.state.temperature_source
+        source.set(TemperatureReading(6.4, observed_at, health))
+        sampler = app.state.temperature_telemetry_sampler
+        assert sampler is not None
+        sampler.sample_once()
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] == expected_value
+    assert payload["sensor_health"] == health.value
+
+
+def test_manual_display_discards_previous_value_after_source_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = client.app.state.temperature_source
+    sampler = client.app.state.temperature_telemetry_sampler
+    assert sampler is not None
+    source.set(
+        TemperatureReading(
+            6.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+        )
+    )
+    sampler.sample_once()
+    assert client.get("/api/v1/display/status", headers=DISPLAY).json()[
+        "pipe_temperature_c"
+    ] == 6.4
+
+    def fail_read() -> TemperatureReading:
+        raise OSError("sensor unavailable")
+
+    monkeypatch.setattr(source, "read", fail_read)
+    sampler.sample_once()
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] is None
+    assert payload["sensor_health"] == "STALE"
+
+
+@pytest.mark.parametrize(
+    ("age_seconds", "expected_value", "expected_health"),
+    [
+        (14.999, 6.4, "HEALTHY"),
+        (15.0, None, "STALE"),
+        (-0.001, None, "STALE"),
+    ],
+)
+def test_automatic_display_uses_injected_clock_for_freshness(
+    tmp_path: Path,
+    age_seconds: float,
+    expected_value: float | None,
+    expected_health: str,
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    current_time = [observed_at]
+    app = create_app(
+        database_path=tmp_path / "automatic-freshness.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: current_time[0],
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        assert app.state.temperature_telemetry_sampler is None
+        app.state.temperature_source.set(
+            TemperatureReading(6.4, observed_at, SensorHealth.HEALTHY)
+        )
+        app.state.control_service.run_cycle()
+        current_time[0] = observed_at + timedelta(seconds=age_seconds)
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] == expected_value
+    assert payload["sensor_health"] == expected_health
+
+
+@pytest.mark.parametrize(
+    "health",
+    [SensorHealth.STALE, SensorHealth.INVALID, SensorHealth.CALIBRATION_REQUIRED],
+)
+def test_automatic_display_hides_unhealthy_numeric_reading(
+    tmp_path: Path, health: SensorHealth
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    app = create_app(
+        database_path=tmp_path / f"automatic-{health.value}.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: observed_at,
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        app.state.temperature_source.set(TemperatureReading(6.4, observed_at, health))
+        app.state.control_service.run_cycle()
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] is None
+    assert payload["sensor_health"] == health.value
+
+
+def test_uncommissioned_healthy_temperature_is_visible_to_display(
     tmp_path: Path,
 ) -> None:
     app = create_app(
@@ -318,7 +462,8 @@ def _assert_uncommissioned_temperature_visibility(client: TestClient) -> None:
     assert admin_status["state"] == "FROST_PROTECTION"
     assert admin_status["last_reading"]["value_c"] == 8.4
     assert admin_status["last_reading"]["health"] == "HEALTHY"
-    assert "pipe_temperature_c" not in display_status
+    assert display_status["pipe_temperature_c"] == 8.4
+    assert display_status["sensor_health"] == "HEALTHY"
 
 
 def test_status_and_settings_are_administrator_only(client: TestClient) -> None:
