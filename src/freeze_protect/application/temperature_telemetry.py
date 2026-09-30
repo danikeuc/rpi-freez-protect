@@ -11,6 +11,7 @@ from freeze_protect.domain.models import SensorHealth, TemperatureReading
 
 DISPLAY_TEMPERATURE_SAMPLE_INTERVAL_S = 5.0
 DISPLAY_TEMPERATURE_STALE_AFTER_S = 15.0
+DISPLAY_TEMPERATURE_STOP_TIMEOUT_S = 1.0
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class TemperatureTelemetrySampler:
         self._sample_interval_s = sample_interval_s
         self._stale_after_s = stale_after_s
         self._lock = threading.Lock()
+        self._read_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._snapshot = TemperatureReading(None, clock(), SensorHealth.STALE)
         self._thread: threading.Thread | None = None
@@ -58,49 +60,49 @@ class TemperatureTelemetrySampler:
             self._stop_event.set()
             thread = self._thread
         if thread is not None:
-            thread.join()
+            # A stuck sensor must not prevent the caller's final DRAIN cleanup.
+            thread.join(timeout=DISPLAY_TEMPERATURE_STOP_TIMEOUT_S)
+            if thread.is_alive():
+                _LOGGER.warning("temperature sampler stop timed out")
 
     def sample_once(self) -> TemperatureReading:
-        with self._lock:
+        # Serialize source reads without holding up cache access or stop signals.
+        with self._read_lock:
+            if self._stop_event.is_set():
+                return self.snapshot()
             try:
                 reading = self._source.read()
             except AdapterError:
                 _LOGGER.warning("temperature sample failed: adapter error")
-                self._snapshot = TemperatureReading(
-                    None, self._clock(), SensorHealth.STALE
-                )
+                reading = TemperatureReading(None, self._clock(), SensorHealth.STALE)
             except Exception:  # noqa: BLE001 - keep the display sampler alive.
                 _LOGGER.warning("temperature sample failed: unexpected error")
-                self._snapshot = TemperatureReading(
-                    None, self._clock(), SensorHealth.STALE
-                )
+                reading = TemperatureReading(None, self._clock(), SensorHealth.STALE)
             else:
                 now = self._clock()
                 if reading.observed_at > now:
-                    self._snapshot = TemperatureReading(
+                    reading = TemperatureReading(
                         None, reading.observed_at, SensorHealth.STALE
                     )
                 elif reading.health is not SensorHealth.HEALTHY:
-                    self._snapshot = TemperatureReading(
+                    reading = TemperatureReading(
                         None, reading.observed_at, reading.health
                     )
-                else:
-                    self._snapshot = reading
-            return self._snapshot
+            with self._lock:
+                self._snapshot = reading
+            return reading
 
     def snapshot(self) -> TemperatureReading:
         with self._lock:
             reading = self._snapshot
-            if reading.health is not SensorHealth.HEALTHY:
-                return reading
-
-            now = self._clock()
-            age_s = (now - reading.observed_at).total_seconds()
-            if age_s < 0 or age_s >= self._stale_after_s:
-                return TemperatureReading(
-                    None, reading.observed_at, SensorHealth.STALE
-                )
+        if reading.health is not SensorHealth.HEALTHY:
             return reading
+
+        now = self._clock()
+        age_s = (now - reading.observed_at).total_seconds()
+        if age_s < 0 or age_s >= self._stale_after_s:
+            return TemperatureReading(None, reading.observed_at, SensorHealth.STALE)
+        return reading
 
     def _run(self) -> None:
         while not self._stop_event.is_set():

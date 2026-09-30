@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 from freeze_protect.application.ports import AdapterError, TemperatureSource
@@ -33,6 +34,8 @@ class FakeTemperatureSource:
         self.max_active_reads = 0
         self.read_delay_s = 0.0
         self.read_started = threading.Event()
+        self.second_read_started = threading.Event()
+        self.read_release: threading.Event | None = None
 
     def read(self) -> TemperatureReading:
         with self._lock:
@@ -41,8 +44,12 @@ class FakeTemperatureSource:
             self.max_active_reads = max(self.max_active_reads, self.active_reads)
             index = min(self.calls - 1, len(self.results) - 1)
             result = self.results[index]
+            if self.calls == 2:
+                self.second_read_started.set()
         self.read_started.set()
         try:
+            if self.read_release is not None:
+                self.read_release.wait()
             if self.read_delay_s:
                 time.sleep(self.read_delay_s)
             if isinstance(result, Exception):
@@ -206,3 +213,108 @@ def test_stop_is_repeatable_and_restart_after_stop_is_unsupported() -> None:
 def test_default_intervals_match_display_contract() -> None:
     assert DISPLAY_TEMPERATURE_SAMPLE_INTERVAL_S == 5.0
     assert DISPLAY_TEMPERATURE_STALE_AFTER_S == 15.0
+
+
+def test_blocked_read_does_not_block_stale_snapshot() -> None:
+    clock = MutableClock()
+    source = FakeTemperatureSource(reading(7.0))
+    sampler = make_sampler(source, clock)
+    assert sampler.sample_once() == reading(7.0)
+    source.read_started.clear()
+    source.read_release = threading.Event()
+    sampler.start()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            assert source.read_started.wait(timeout=0.5)
+            clock.value = NOW + timedelta(seconds=15)
+
+            snapshot = executor.submit(sampler.snapshot).result(timeout=0.5)
+
+            assert snapshot == reading(None, SensorHealth.STALE)
+            assert not source.read_release.is_set()
+        finally:
+            source.read_release.set()
+            sampler.stop()
+
+
+def test_stop_signals_and_returns_while_source_read_is_blocked() -> None:
+    source = FakeTemperatureSource(reading(7.0))
+    source.read_release = threading.Event()
+    sampler = TemperatureTelemetrySampler(
+        source, clock=MutableClock(), sample_interval_s=0.01
+    )
+    sampler.start()
+    worker = sampler._thread
+    assert worker is not None
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            assert source.read_started.wait(timeout=0.5)
+            stopped = executor.submit(sampler.stop)
+
+            assert sampler._stop_event.wait(timeout=0.5)
+            stopped.result(timeout=1.5)
+            assert worker.is_alive()
+            assert worker.daemon
+            assert not source.read_release.is_set()
+            sampler.start()
+            assert sampler._thread is worker
+        finally:
+            source.read_release.set()
+            sampler.stop()
+            worker.join(timeout=0.5)
+
+    assert not worker.is_alive()
+    assert source.calls == 1
+    sampler.stop()
+    sampler.start()
+    assert sampler._thread is worker
+    assert not worker.is_alive()
+
+
+def test_concurrent_sample_once_calls_keep_source_reads_exclusive() -> None:
+    source = FakeTemperatureSource(reading(7.0))
+    source.read_release = threading.Event()
+    sampler = make_sampler(source)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(sampler.sample_once)
+        try:
+            assert source.read_started.wait(timeout=0.5)
+            second = executor.submit(sampler.sample_once)
+            assert not source.second_read_started.wait(timeout=0.1)
+        finally:
+            source.read_release.set()
+        assert first.result(timeout=0.5) == reading(7.0)
+        assert second.result(timeout=0.5) == reading(7.0)
+
+    assert source.calls == 2
+    assert source.max_active_reads == 1
+
+
+def test_queued_sample_does_not_read_source_after_stop() -> None:
+    source = FakeTemperatureSource(reading(7.0))
+    source.read_release = threading.Event()
+    sampler = make_sampler(source)
+    second_started = threading.Event()
+
+    def queued_sample() -> TemperatureReading:
+        second_started.set()
+        return sampler.sample_once()
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        first = executor.submit(sampler.sample_once)
+        try:
+            assert source.read_started.wait(timeout=0.5)
+            second = executor.submit(queued_sample)
+            assert second_started.wait(timeout=0.5)
+
+            executor.submit(sampler.stop).result(timeout=0.5)
+            assert not source.second_read_started.is_set()
+        finally:
+            source.read_release.set()
+        assert first.result(timeout=0.5) == reading(7.0)
+        assert second.result(timeout=0.5) == reading(7.0)
+
+    assert source.calls == 1

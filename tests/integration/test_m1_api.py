@@ -276,11 +276,18 @@ def test_hub_shutdown_reasserts_drain_after_an_active_timed_shower(
     ]
 
 
-def test_missing_or_admin_token_on_display_endpoint_is_rejected(
+def test_display_status_rejects_missing_admin_or_wrong_token_without_actuation(
     client: TestClient,
 ) -> None:
+    relay = client.app.state.relay_driver
+    before = list(relay.commands)
+
     assert client.get("/api/v1/display/status").status_code == 401
     assert client.get("/api/v1/display/status", headers=ADMIN).status_code == 401
+    assert client.get(
+        "/api/v1/display/status", headers={"X-Display-Token": "arbitrary-wrong-token"}
+    ).status_code == 401
+    assert relay.commands == before
     assert client.get("/api/v1/display/status", headers=DISPLAY).status_code == 200
 
 
@@ -885,3 +892,55 @@ def test_temperature_telemetry_sample_cannot_change_manual_valve_state(
     assert sampler.snapshot().health is (
         SensorHealth.STALE if failing else SensorHealth.HEALTHY
     )
+
+
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+def test_lifespan_drains_while_temperature_source_read_remains_blocked(
+    tmp_path: Path, mode: ControlMode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}-blocked-telemetry.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        run_background=True,
+    )
+    source = app.state.temperature_source
+    sampler = app.state.temperature_telemetry_sampler
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    read_started = Event()
+    read_release = Event()
+    reads: list[object] = []
+    original_read = source.read
+
+    def blocked_read() -> TemperatureReading:
+        reads.append(source)
+        read_started.set()
+        read_release.wait()
+        return original_read()
+
+    def run_lifespan() -> None:
+        with TestClient(app):
+            assert read_started.wait(timeout=0.5)
+
+    monkeypatch.setattr(source, "read", blocked_read)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        lifespan = executor.submit(run_lifespan)
+        try:
+            assert read_started.wait(timeout=0.5)
+            lifespan.result(timeout=2.0)
+
+            assert not read_release.is_set()
+            assert sampler._thread.is_alive()
+            assert service.status().reason == "shutdown_drain"
+            assert relay.commands[-1] is ActuatorCommand.DRAIN
+            assert all(command is ActuatorCommand.DRAIN for command in relay.commands)
+        finally:
+            read_release.set()
+            lifespan.result(timeout=2.0)
+            sampler.stop()
+
+    assert not sampler._thread.is_alive()
+    assert reads == [source]
