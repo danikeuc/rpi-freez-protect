@@ -31,7 +31,9 @@ Edit the new, ignored `include/secrets.h`:
 
 - `WIFI_SSID` and `WIFI_PASSWORD`: the local 2.4 GHz Wi-Fi network.
 - `HUB_BASE_URL`: `http://<Pi-LAN-IP>:8081`, never the Node-RED address or port 8000.
-- `DISPLAY_TOKEN`: exactly the value of `FREEZE_PROTECT_DISPLAY_TOKEN` on the Pi.
+- `DISPLAY_TOKEN`: a dedicated temporary recovery token created for this
+  isolated historical procedure. Never use the active Waveshare token. Keep
+  24 V disconnected and revoke the recovery token immediately afterward.
 
 Run the pure UI tests and the embedded build:
 

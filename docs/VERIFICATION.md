@@ -29,12 +29,14 @@ node --check deployment/node-red/preflight-no-legacy-gpio.js
 sh -n deployment/workstation-codex/bootstrap-freezeprotect-access.sh
 sh -n deployment/workstation-codex/freeze-protect-commission
 sh -n deployment/workstation-codex/freeze-protect-commission-ssh-dispatch
-git diff --check
+git diff --check "$(git merge-base origin/main HEAD)" HEAD
 ```
 
 `pytest` includes an internal Markdown file/anchor check and structural
-assertions for the Node-RED/Nginx/systemd/commissioning assets. CI runs the same
-checks on pull requests and pushes to `main`.
+assertions for the Node-RED/Nginx/systemd/commissioning assets. The local Git
+command checks the complete branch delta against `origin/main`; substitute the
+actual base branch when needed. CI fetches full history and checks the PR range
+or pushed commit rather than the clean checkout's empty working-tree diff.
 
 ## Firmware checks
 

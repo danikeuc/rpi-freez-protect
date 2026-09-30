@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -47,4 +49,12 @@ jobs:
             sh -n "$file"
           done
       - name: Patch hygiene
-        run: git diff --check
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
+          else
+            git show --check --format= "$GITHUB_SHA"
+          fi

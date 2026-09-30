@@ -764,11 +764,13 @@ def extract_shell_function(source: str, name: str) -> str:
 
 def adapt_privileged_shell_function_for_current_user(function: str) -> str:
     """Run ownership-sensitive snippets without weakening production code."""
+    root_uid_check = '"$(stat -c %u "$path")" -ne 0'
+    root_install = "install -o root -g root -m 0600"
+    replacements = int(root_uid_check in function) + int(root_install in function)
+    assert replacements > 0, "privileged production contract was not found"
     current_uid_check = f'"$(stat -c %u "$path")" -ne {os.getuid()}'
-    return function.replace(
-        '"$(stat -c %u "$path")" -ne 0', current_uid_check
-    ).replace(
-        "install -o root -g root -m 0600", "install -m 0600"
+    return function.replace(root_uid_check, current_uid_check).replace(
+        root_install, "install -m 0600"
     )
 
 
@@ -1979,6 +1981,9 @@ def test_historical_crowpanel_commissioning_keeps_recovery_evidence() -> None:
     assert "RESET" in document
     assert "Freeze Protect CrowPanel boot" in document
     assert "DISPLAY_COMMISSIONING.md" in document
+    assert "dedicated temporary recovery token" in document
+    assert "Never use the active Waveshare token" in document
+    assert "exactly the value of `FREEZE_PROTECT_DISPLAY_TOKEN`" not in document
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'
