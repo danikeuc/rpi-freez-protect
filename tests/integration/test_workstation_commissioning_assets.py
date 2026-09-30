@@ -1936,39 +1936,27 @@ def test_helper_execution_path_excludes_unvalidated_usr_local_bin() -> None:
     assert "require_root_protected /usr/sbin" in bootstrap
 
 
-def test_guide_uses_operator_confirmed_windows_com_port() -> None:
-    """Catch a workstation upload path that probes the Pi or guesses a port."""
+def test_active_guide_separates_waveshare_from_historical_crowpanel() -> None:
     guide = (ROOT / "deployment/WORKSTATION_CODEX_COMMISSIONING.md").read_text(
         encoding="utf-8"
     )
-
-    assert "freezeprotect-commission@<Pi-LAN-IP>" in guide
-    workstation_usb = guide.split("### USB cable on the workstation", 1)[1].split(
-        "### USB cable on the Pi", 1
-    )[0]
-    assert "$CrowPanelPort = 'COM6'" in workstation_usb
-    assert "pio device list --serial --json-output" in workstation_usb
-    assert "Where-Object { $_.port -eq $CrowPanelPort }" in workstation_usb
-    assert "$_.hwid -eq $CrowPanelExpectedHwid" in workstation_usb
-    assert "Read-Host" in workstation_usb
-    assert "disconnect/reconnect" in workstation_usb
-    assert "$CrowPanelMatches.Count -ne 1" in workstation_usb
-    assert "Copy-Item include/secrets.example.h include/secrets.h" in workstation_usb
-    assert "--upload-port $CrowPanelPort" in workstation_usb
-    assert "--port $CrowPanelPort" in workstation_usb
-    assert "After the monitor opens, tap **RESET**" in workstation_usb
-    assert "Freeze Protect CrowPanel boot" in workstation_usb
-    assert "/dev/serial/by-id" not in workstation_usb
-    pi_usb = guide.split("### USB cable on the Pi", 1)[1]
-    assert "trusted-console-only" in pi_usb
-    assert "freezeprotect-commission@<Pi-LAN-IP>" not in pi_usb
-    assert (
-        "if [ ! -e /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h ]; then"
-        in pi_usb
+    prompt = (
+        ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
+    ).read_text(encoding="utf-8")
+    historical = (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
+        encoding="utf-8"
     )
-    assert "install -o root -g root -m 0600" in pi_usb
-    assert "umask 077" in pi_usb
-    assert "rm -rf .pio" in pi_usb
+
+    for active in (guide, prompt):
+        assert "DISPLAY_COMMISSIONING.md" in active
+        assert "active Waveshare" in active or "active display is the Waveshare" in active
+        assert "pio run -e crowpanel" not in active
+        assert "$CrowPanelPort" not in active
+    assert "Superseded" in historical
+    assert "$CrowPanelPort = 'COM6'" in historical
+    assert "pio device list --serial --json-output" in historical
+    assert "--upload-port $CrowPanelPort" in historical
+    assert "Freeze Protect CrowPanel boot" in historical
 
 
 def test_crowpanel_example_targets_display_gateway() -> None:
@@ -1980,21 +1968,17 @@ def test_crowpanel_example_targets_display_gateway() -> None:
     assert 'HUB_BASE_URL "http://192.0.2.10:8000"' not in secrets
 
 
-def test_crowpanel_commissioning_requires_stable_usb_identity_and_reset() -> None:
-    documents = [
-        (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
-            encoding="utf-8"
-        ),
-        (
-            ROOT / "deployment/workstation-codex/CODEX_COMMISSIONING_PROMPT.md"
-        ).read_text(encoding="utf-8"),
-    ]
+def test_historical_crowpanel_commissioning_keeps_recovery_evidence() -> None:
+    document = (ROOT / "deployment/CROWPANEL_COMMISSIONING.md").read_text(
+        encoding="utf-8"
+    )
 
-    for document in documents:
-        assert "hwid" in document
-        assert "COM6" in document
-        assert "RESET" in document
-        assert "Freeze Protect CrowPanel boot" in document
+    assert "Historical CrowPanel" in document
+    assert "hwid" in document
+    assert "COM6" in document
+    assert "RESET" in document
+    assert "Freeze Protect CrowPanel boot" in document
+    assert "DISPLAY_COMMISSIONING.md" in document
 
 
 SUCCESS = '{"ok": true, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}'

@@ -1,65 +1,17 @@
-# Waveshare cutover and historical CrowPanel procedure
+# Historical CrowPanel commissioning
 
-## Current Waveshare dial cutover
+> **Superseded:** The active installation uses the Waveshare dial. Do not flash,
+> provision or reconnect this CrowPanel to the valve-control network as part of
+> current commissioning. Use [`DISPLAY_COMMISSIONING.md`](DISPLAY_COMMISSIONING.md)
+> for the active procedure. This file retains the earlier `COM6` recovery and
+> acceptance record only.
 
-**The CrowPanel acceptance procedure below is historical and superseded for
-the manual timed Waveshare installation.** It documents the earlier display
-and its `COM6` recovery context; it does not authorize a new CrowPanel flash,
-provisioning, or valve test. In particular, its old step 4 actions and step 5
-reference are not the release gate for the Waveshare dial.
+The procedure below does not grant approval for GPIO commands, 24 V connection
+or a live valve test. Any deliberate historical recovery must be planned and
+approved separately, with the retired display token remaining invalid.
 
-Before deployment, pass the repository Python test suite, Ruff, the Nginx
-allowlist assertion, and the dial firmware's own build and interaction tests.
-These are source checks; record the exact revisions and results. Review
-`deployment/COMMISSIONING.md` and
-`deployment/WORKSTATION_CODEX_COMMISSIONING.md` for the Pi and restricted
-access boundaries. A trusted local-console operator must separately inspect
-the installed files and active Node-RED flow; source checks do not establish
-the deployed state.
+## Historical procedure
 
-1. Keep the 24 V valve supply disconnected. At the trusted Pi console,
-   generate a new independent display token, rotate
-   `FREEZE_PROTECT_DISPLAY_TOKEN` in the protected environment file, and set
-   `FREEZE_PROTECT_CONTROL_MODE=manual_timed` explicitly. Keep the admin and
-   Node-RED tokens distinct and outside firmware, screenshots, logs, and Git.
-   Install and restart the Hub through the reviewed commissioning procedure.
-   Verify its reported mode is `manual_timed`; absent or invalid mode is
-   `safe_drain` and refuses `SUPPLY`.
-2. Remove the former display token from the CrowPanel's ignored
-   `firmware/crowpanel/include/secrets.h` copy and any other provisioned
-   CrowPanel copy. Keep the CrowPanel retired from this valve control network;
-   do not provision it with the rotated token. Provision only the Waveshare
-   dial with the new token using its own controlled firmware/configuration
-   procedure. Verify the retired token receives HTTP 401 on all three display
-   routes before enabling the new dial. Do not expose a token in test output.
-3. Confirm the installed Nginx gateway exposes exactly `GET
-   /api/v1/display/status`, `POST
-   /api/v1/display/actions/timed-shower`, and `POST
-   /api/v1/display/actions/drain` on the trusted LAN. The Hub stays on
-   loopback, as does Node-RED; no relay or administrative route is exposed
-   through this gateway. Check the deployed active Node-RED flow for legacy
-   GPIO nodes and trigger routes using the documented preflight.
-4. Obtain Danijel's explicit approval in the same conversation for the
-   bounded **24 V disconnected** software/GPIO validation before issuing any
-   timed action. With 24 V still disconnected, verify startup and idle report
-   `DRAIN`, `mode=manual_timed`, and zero remaining seconds. Through the
-   authenticated dial path, confirm one deliberate two-second hold yields one
-   accepted 600-second interval, while a duplicate press does not extend it.
-   Verify the paired command receipt and read back **both** BCM 26 and BCM 20:
-   low/low only during accepted `SUPPLY`, high/high after immediate `DRAIN`,
-   expiry, and restart. Confirm weather/sensor activity and dial reconnection
-   do not start `SUPPLY`. Readback proves output levels only, never valve
-   position. On any failed receipt, readback, service check, or preflight,
-   stop, leave 24 V disconnected and the requested state at `DRAIN`, and do
-   not retry `SUPPLY`.
-5. A live valve test is a **separate** gate. Stop after the disconnected
-   validation and request Danijel's explicit approval for a bounded physical
-   test in that conversation. Only then use the reviewed water-isolated
-   procedure, verify both valves and return capacitors, and record physical
-   observations separately from software status and GPIO readback. This
-   document grants no approval to connect 24 V or run a live test.
-
-## Historical CrowPanel procedure — superseded for this installation
 
 Use this only after the Hub, Node-RED bridge and display-only Nginx gateway from `deployment/COMMISSIONING.md` are installed. The entire first test is performed with the 24 V valve supply disconnected.
 

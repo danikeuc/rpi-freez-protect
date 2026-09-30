@@ -202,9 +202,10 @@ Before acceptance or any timed-shower request, record all these gates:
 3. Verify `node-red.service`, the paired GPIO daemon and Hub are active; Node-RED
    is loopback-only and the old `nodered.service` is not active. Confirm startup
    `DRAIN` and BCM 26 and 20 each report output/high (`op` and `hi`) after restart.
-   The Hub starts in `FROST_PROTECTION` / `sensor_pending`; the bridge must no
-   longer be in its unverified startup/503 state. No flashing or physical test
-   is a substitute for these startup checks.
+   In the active `manual_timed` mode, require `MANUAL_DRAIN` / `manual_idle`,
+   command `DRAIN` and zero remaining seconds. The bridge must no longer be in
+   its unverified startup/503 state. No firmware or physical test substitutes
+   for these startup checks.
 
 Stop on any failed preflight, service result, receipt, or GPIO readback. Keep
 24 V disconnected and the requested state at `DRAIN`; a failed readback is not
@@ -228,110 +229,18 @@ installed artifacts. It deliberately omits journal messages because arbitrary
 service output cannot be proven free of credentials. It accepts no additional
 arguments and does not restart services or read or write GPIO.
 
-The Pi helper deliberately has no `usb` command. CrowPanel USB discovery and
-firmware work happen on the computer to which the cable is physically attached.
-For this installation that is the Windows workstation and the operator-confirmed
-port is `COM6`.
+The Pi helper deliberately has no `usb`, firmware or provisioning command. The
+active Waveshare dial is built and configured from the separate `roon-knob`
+repository on the workstation. Follow
+[`DISPLAY_COMMISSIONING.md`](DISPLAY_COMMISSIONING.md) for the exact revision,
+credential rotation, Roon-only acceptance and the separately approved 24 V
+disconnected GPIO test. Do not copy the display token into this repository,
+Codex prompts, logs or screenshots.
 
-### USB cable on the workstation
-
-Before any build, create `include/secrets.h` locally from
-[`CROWPANEL_COMMISSIONING.md` step 1](CROWPANEL_COMMISSIONING.md#1-prepare-the-build-workstation).
-Enter Wi-Fi and display-token values only in that ignored local file; never put
-them in this guide, a Codex prompt, terminal capture, or Git.
-
-The operator has identified this CrowPanel as `COM6`. Verify that the port is
-still listed and that its stable `hwid` belongs to the CrowPanel. Establish the
-identity once by comparing the JSON inventory with the panel disconnected and
-then reconnected; record the exact newly appeared `hwid` in the commissioning
-evidence. A COM number alone is not device identity. Bind the verified port and
-`hwid` explicitly and use the same port for upload and monitor. Do not
-substitute automatic port selection. Reflashing is not a diagnostic step: if
-firmware sources have not changed and the installed revision is not otherwise
-in doubt, collect serial output without uploading again.
-
-```powershell
-Set-Location 'C:\Users\danik\Projects\rpi-freez-protect\firmware\crowpanel'
-if (-not (Test-Path include\secrets.h)) {
-    Copy-Item include/secrets.example.h include/secrets.h
-}
-$CrowPanelPort = 'COM6'
-$SerialInventory = @(pio device list --serial --json-output | ConvertFrom-Json)
-$PortMatches = @($SerialInventory | Where-Object { $_.port -eq $CrowPanelPort })
-$CrowPanelExpectedHwid = Read-Host 'Paste the exact CrowPanel hwid recorded by disconnect/reconnect verification'
-if ([string]::IsNullOrWhiteSpace($CrowPanelExpectedHwid)) {
-    throw 'A verified CrowPanel hwid is required; stop.'
-}
-$CrowPanelMatches = @($PortMatches | Where-Object { $_.hwid -eq $CrowPanelExpectedHwid })
-if ($CrowPanelMatches.Count -ne 1) {
-    throw "COM port or hwid does not match the verified CrowPanel identity; stop."
-}
-$CrowPanelMatches | ConvertTo-Json -Depth 4
-
-# Run only when a firmware change or an explicitly approved recovery requires it:
-pio run -e crowpanel --target upload --upload-port $CrowPanelPort
-
-# Serial evidence does not require another upload:
-pio device monitor --baud 115200 --port $CrowPanelPort
-```
-
-After the monitor opens, tap **RESET** once without holding **BOOT**. Require a
-fresh `Freeze Protect CrowPanel boot` line; merely attaching to an already
-running panel cannot recover that one-time boot message. Stop if `COM6` or its
-`hwid` differs from the recorded identity. Do not guess another port and do not
-move the USB check to the Pi.
-
-### USB cable on the Pi — trusted-console-only
-
-The `freezeprotect-commission` SSH account must never read the display token
-or run a Pi-side firmware build. If the CrowPanel USB cable is attached to the
-Pi, a trusted local-console operator performs this step with the 24 V valve
-supply still disconnected. The root-owned secret stays local to that console:
-
-```bash
-sudo apt install -y python3-venv
-sudo python3 -m venv /opt/freezeprotect-local-flash-tools
-sudo /opt/freezeprotect-local-flash-tools/bin/pip install --upgrade pip platformio
-if [ ! -e /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h ]; then
-  sudo install -o root -g root -m 0600 \
-    /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.example.h \
-    /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
-fi
-sudoedit /opt/rpi-freez-protect/firmware/crowpanel/include/secrets.h
-sudo /bin/sh -c '
-set -eu
-cd /opt/rpi-freez-protect/firmware/crowpanel
-umask 077
-rm -rf .pio
-serial_device=$(find /dev/serial/by-id -maxdepth 1 -type l -print)
-serial_count=$(printf "%s\\n" "$serial_device" | sed "/^$/d" | wc -l)
-[ "$serial_count" -eq 1 ] || { echo "expected exactly one serial device" >&2; exit 1; }
-/opt/freezeprotect-local-flash-tools/bin/pio run --target upload --upload-port "$serial_device"
-chown -R root:root .pio
-chmod -R go-rwx .pio
-unsafe_artifact=$(find .pio \( ! -user root -o -perm /077 \) -print -quit)
-[ -z "$unsafe_artifact" ] || { echo "unsafe firmware artifact: $unsafe_artifact" >&2; exit 1; }
-exec /opt/freezeprotect-local-flash-tools/bin/pio device monitor --baud 115200 --port "$serial_device"
-'
-```
-
-Edit `secrets.h` only with the Wi-Fi credentials, `http://<Pi-LAN-IP>:8081`,
-and display token. Do not place these values in SSH commands, terminal logs,
-or Git. The local-console operator collects the boot output directly.
-
-Collect the boot output from the monitor.
-
-After a successful upload and boot capture, require `drain` to exit zero with
-one successful JSON DRAIN receipt (`ok` boolean true) and both BCM 26 and 20
-output/high (`op` and `hi`). Then follow the
-[disconnected display test](CROWPANEL_COMMISSIONING.md#4-functional-test-with-valve-power-disconnected):
-an authenticated timed-shower request must move both GPIOs low together and
-immediate drain must restore both output/high. Do not run `SUPPLY` directly.
-Stop on any failed receipt/readback; leave 24 V disconnected and do not proceed
-to a physical test. This disconnected test does not approve connecting power.
-
-Keep the 24 V valve supply disconnected through every stage before the final,
-explicitly approved test.
+The former CrowPanel on workstation port `COM6` is retired from this
+installation. Its USB identity, recovery and flash procedure is retained only in
+[`CROWPANEL_COMMISSIONING.md`](CROWPANEL_COMMISSIONING.md). Do not provision it
+with the rotated display token or use it as a current acceptance gate.
 
 ### Final physical test — blocked until explicit current-session approval
 
@@ -347,5 +256,6 @@ plumbing paths plus both output/high readbacks. No `SUPPLY` helper or additional
 sudo permission is introduced. Any failed receipt/readback stops the test:
 request DRAIN, have the local operator safely disconnect valve power, and
 investigate without repeating SUPPLY or assuming safe physical position.
-PT100/MAX31865 commissioning remains a separate required stage and must pass
-before `sensor_commissioned` can be enabled. DS18B20 is rollback code only.
+PT100/MAX31865 commissioning is a separate requirement for `automatic` mode and
+must pass before `sensor_commissioned` can be enabled. DS18B20 is rollback code
+only.
