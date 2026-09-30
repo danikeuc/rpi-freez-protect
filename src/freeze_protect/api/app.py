@@ -37,6 +37,7 @@ from freeze_protect.application.service import (
     ControlStatus,
     PeriodicControlLoop,
 )
+from freeze_protect.application.temperature_telemetry import TemperatureTelemetrySampler
 from freeze_protect.domain.models import (
     ActuatorCommand,
     AuditEvent,
@@ -135,6 +136,11 @@ def create_app(
         clock=clock_fn,
         mode=control_mode,
     )
+    temperature_telemetry_sampler = (
+        TemperatureTelemetrySampler(temperature_source, clock=clock_fn)
+        if control_mode is not ControlMode.AUTOMATIC
+        else None
+    )
     control_loop = PeriodicControlLoop(service)
     require_admin = build_admin_guard(admin_token)
     require_display = build_display_guard(display_token)
@@ -143,10 +149,14 @@ def create_app(
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         service.startup()
         if run_background:
+            if temperature_telemetry_sampler is not None:
+                temperature_telemetry_sampler.start()
             control_loop.start()
         try:
             yield
         finally:
+            if temperature_telemetry_sampler is not None:
+                temperature_telemetry_sampler.stop()
             control_loop.stop()
             service.drain("shutdown_drain")
 
@@ -154,6 +164,7 @@ def create_app(
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
+    app.state.temperature_telemetry_sampler = temperature_telemetry_sampler
 
     @app.get("/health")
     def health() -> dict[str, str]:
