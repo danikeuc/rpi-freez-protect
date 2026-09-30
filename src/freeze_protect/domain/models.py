@@ -10,10 +10,25 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 class ControllerState(str, Enum):
     STARTING = "STARTING"
+    SAFE_DRAIN = "SAFE_DRAIN"
+    MANUAL_DRAIN = "MANUAL_DRAIN"
     FROST_PROTECTION = "FROST_PROTECTION"
     NORMAL = "NORMAL"
     TIMED_SHOWER = "TIMED_SHOWER"
     FAULT = "FAULT"
+
+
+class ControlMode(str, Enum):
+    SAFE_DRAIN = "safe_drain"
+    MANUAL_TIMED = "manual_timed"
+    AUTOMATIC = "automatic"
+
+
+def parse_control_mode(value: str | None) -> ControlMode:
+    try:
+        return ControlMode(value)
+    except ValueError:
+        return ControlMode.SAFE_DRAIN
 
 
 class ActuatorCommand(str, Enum):

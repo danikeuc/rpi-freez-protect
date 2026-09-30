@@ -61,9 +61,43 @@ In a separate terminal, the safe startup status is available only with the admin
 curl -H 'X-Admin-Token: local-admin-token' http://127.0.0.1:8000/api/v1/status
 ```
 
-The status is `FROST_PROTECTION` with reason `sensor_pending` until the
+With `FREEZE_PROTECT_CONTROL_MODE` unset, the Hub starts in `SAFE_DRAIN` with
+reason `safe_drain` and does not allow `SUPPLY`. Set
+`FREEZE_PROTECT_CONTROL_MODE=manual_timed` explicitly to start in
+`MANUAL_DRAIN` and enable the authenticated, ten-minute dial action. The
+legacy `automatic` mode remains available only when explicitly selected;
+it can report `FROST_PROTECTION` with reason `sensor_pending` until the
 PT100/MAX31865 is installed and commissioned. A development-only simulation
 route exists only when `FREEZE_PROTECT_DEVELOPMENT_MODE=true`.
+
+## Display API example
+
+With the Hub explicitly configured for `manual_timed`, the dial reads the Pi's
+server-owned countdown and sends bodyless actions with its separate display
+token. These examples use placeholder credentials:
+
+```http
+GET /api/v1/display/status HTTP/1.1
+X-Display-Token: <display-token>
+
+HTTP/1.1 200 OK
+{"mode":"manual_timed","state":"MANUAL_DRAIN","command":"DRAIN","remaining_seconds":0,"reason":"manual_idle","forecast":{"available":false,"fresh":false,"dates":[],"minima_c":[]},"timed_shower_deadline":null,"action":"TIMED_SHOWER","action_enabled":true}
+```
+
+```http
+POST /api/v1/display/actions/timed-shower HTTP/1.1
+X-Display-Token: <display-token>
+Content-Length: 0
+
+HTTP/1.1 200 OK
+{"state":"TIMED_SHOWER","command":"SUPPLY","reason":"timed_shower_started"}
+```
+
+The dial then refreshes status for `remaining_seconds` (at most 600). It sends
+`POST /api/v1/display/actions/drain` with no body to stop immediately. A
+refused start returns HTTP 409, and either action rejects a request body with
+HTTP 400. The reported command is the controller's logical command, not proof
+of physical valve movement.
 
 ## DietPi and hardware commissioning
 

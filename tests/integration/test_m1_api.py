@@ -1,6 +1,8 @@
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +11,8 @@ from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.simulation import SimulatedTemperatureSource
 from freeze_protect.api.app import create_app
 from freeze_protect.domain.models import (
+    ActuatorCommand,
+    ControlMode,
     SafetySettings,
     SensorHealth,
     TemperatureReading,
@@ -31,6 +35,7 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         admin_token="admin-token",
         display_token="display-token",
         development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
         clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
         run_background=False,
     )
@@ -48,8 +53,181 @@ def test_display_token_can_start_and_stop_only_a_server_timed_shower(
     assert started.status_code == 200
     assert status.json()["state"] == "TIMED_SHOWER"
     assert status.json()["action"] == "CLOSE_NOW"
+    assert status.json()["command"] == "SUPPLY"
+    assert 0 < status.json()["remaining_seconds"] <= 600
     assert stopped.status_code == 200
-    assert stopped.json()["state"] == "FROST_PROTECTION"
+    assert stopped.json()["state"] == "MANUAL_DRAIN"
+
+
+def test_default_api_mode_refuses_supply_and_reports_safe_drain(tmp_path: Path) -> None:
+    app = create_app(
+        database_path=tmp_path / "safe.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        run_background=False,
+    )
+    relay = app.state.relay_driver
+
+    with TestClient(app) as client:
+        status = client.get("/api/v1/display/status", headers=DISPLAY)
+        attempted = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
+        assert status.json()["mode"] == "safe_drain"
+        assert status.json()["state"] == "SAFE_DRAIN"
+        assert status.json()["command"] == "DRAIN"
+        assert status.json()["remaining_seconds"] == 0
+        assert status.json()["action_enabled"] is False
+        assert attempted.status_code == 409
+
+    assert all(command.value == "DRAIN" for command in relay.commands)
+
+
+def test_manual_status_starts_idle_with_no_remaining_time(client: TestClient) -> None:
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["mode"] == "manual_timed"
+    assert payload["command"] == "DRAIN"
+    assert payload["remaining_seconds"] == 0
+    assert payload["action_enabled"] is True
+
+
+def test_duplicate_start_does_not_extend_display_countdown(client: TestClient) -> None:
+    service = client.app.state.control_service
+    ticks = [100.0]
+    service._monotonic_clock = lambda: ticks[0]
+
+    first = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
+    ticks[0] = 101.25
+    second = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert payload["command"] == "SUPPLY"
+    assert payload["remaining_seconds"] == 599
+
+
+def test_display_status_drains_at_exact_expiry(client: TestClient) -> None:
+    service = client.app.state.control_service
+    ticks = [100.0]
+    service._monotonic_clock = lambda: ticks[0]
+    relay = client.app.state.relay_driver
+    assert client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY).status_code == 200
+
+    ticks[0] = 700.0
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["state"] == "MANUAL_DRAIN"
+    assert payload["command"] == "DRAIN"
+    assert payload["remaining_seconds"] == 0
+    assert relay.commands[-1].value == "DRAIN"
+
+
+@pytest.mark.parametrize("route,method", [
+    ("/api/v1/display/status", "get"),
+    ("/api/v1/display/actions/timed-shower", "post"),
+    ("/api/v1/display/actions/drain", "post"),
+])
+@pytest.mark.parametrize("headers", [{}, ADMIN, {"X-Display-Token": "wrong-token"}])
+def test_all_display_routes_reject_invalid_tokens(
+    client: TestClient, route: str, method: str, headers: dict[str, str]
+) -> None:
+    relay = client.app.state.relay_driver
+    before = list(relay.commands)
+    response = getattr(client, method)(route, headers=headers)
+
+    assert response.status_code == 401
+    assert relay.commands == before
+
+
+@pytest.mark.parametrize("route", [
+    "/api/v1/display/actions/timed-shower",
+    "/api/v1/display/actions/drain",
+])
+def test_display_actions_reject_request_body_without_actuation(
+    client: TestClient, route: str
+) -> None:
+    relay = client.app.state.relay_driver
+    before = list(relay.commands)
+
+    response = client.post(route, headers=DISPLAY, json={"duration_s": 30})
+
+    assert response.status_code == 400
+    assert relay.commands == before
+
+
+def test_unrelated_request_completes_while_supply_bridge_is_blocked(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    relay = client.app.state.relay_driver
+    original_command = relay.command
+    entered = Event()
+    release = Event()
+
+    def blocking_command(command: ActuatorCommand) -> object:
+        if command is ActuatorCommand.SUPPLY:
+            entered.set()
+            if not release.wait(timeout=5):
+                raise AssertionError("test did not release the simulated bridge")
+        return original_command(command)
+
+    monkeypatch.setattr(relay, "command", blocking_command)
+    with ThreadPoolExecutor(max_workers=2) as requests:
+        action = requests.submit(
+            client.post, "/api/v1/display/actions/timed-shower", headers=DISPLAY
+        )
+        assert entered.wait(timeout=2)
+        unrelated = requests.submit(client.get, "/api/v1/settings", headers=ADMIN)
+        try:
+            response = unrelated.result(timeout=1)
+        finally:
+            release.set()
+        assert response.status_code == 200
+        assert action.result(timeout=2).status_code == 200
+
+
+def test_manual_start_conflicts_when_configured_max_is_under_ten_minutes(
+    client: TestClient,
+) -> None:
+    settings = client.get("/api/v1/settings", headers=ADMIN).json()
+    settings["settings_version"] += 1
+    settings["timed_shower_max_s"] = 599
+    settings["timed_shower_default_s"] = 599
+    assert client.put("/api/v1/settings", headers=ADMIN, json=settings).status_code == 200
+    relay = client.app.state.relay_driver
+    before = list(relay.commands)
+
+    response = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
+
+    assert response.status_code == 409
+    assert relay.commands == before
+    assert client.get("/api/v1/display/status", headers=DISPLAY).json()["command"] == "DRAIN"
+
+
+def test_start_at_expired_boundary_conflicts_without_new_supply(
+    client: TestClient,
+) -> None:
+    service = client.app.state.control_service
+    ticks = [100.0]
+    service._monotonic_clock = lambda: ticks[0]
+    relay = client.app.state.relay_driver
+    assert client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY).status_code == 200
+
+    ticks[0] = 700.0
+    response = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
+
+    assert response.status_code == 409
+    assert [command.value for command in relay.commands] == ["DRAIN", "SUPPLY", "DRAIN"]
+
+
+def test_display_status_has_no_admin_or_secret_values(client: TestClient) -> None:
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert "last_reading" not in payload
+    assert "sensor_diagnostics" not in payload
+    assert "bridge_flow_revision" not in payload
+    assert "admin-token" not in str(payload)
+    assert "display-token" not in str(payload)
 
 
 def test_timed_shower_request_wakes_the_control_loop(
@@ -67,12 +245,15 @@ def test_timed_shower_request_wakes_the_control_loop(
     assert len(calls) == 1
 
 
-def test_hub_shutdown_reasserts_drain_after_an_active_timed_shower(tmp_path: Path) -> None:
+def test_hub_shutdown_reasserts_drain_after_an_active_timed_shower(
+    tmp_path: Path,
+) -> None:
     app = create_app(
         database_path=tmp_path / "freeze-protect.db",
         admin_token="admin-token",
         display_token="display-token",
         development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
         clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
         run_background=False,
     )
@@ -105,11 +286,27 @@ def test_display_status_does_not_expose_sensor_diagnostics(client: TestClient) -
 
 
 def test_uncommissioned_healthy_temperature_is_visible_only_to_administrator(
-    client: TestClient,
+    tmp_path: Path,
 ) -> None:
+    app = create_app(
+        database_path=tmp_path / "automatic.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        _assert_uncommissioned_temperature_visibility(client)
+
+
+def _assert_uncommissioned_temperature_visibility(client: TestClient) -> None:
     service = client.app.state.control_service
     service._temperature_source = SimulatedTemperatureSource(
-        TemperatureReading(8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY)
+        TemperatureReading(
+            8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+        )
     )
 
     decision = service.run_cycle()
@@ -125,7 +322,7 @@ def test_uncommissioned_healthy_temperature_is_visible_only_to_administrator(
 
 def test_status_and_settings_are_administrator_only(client: TestClient) -> None:
     assert client.get("/api/v1/status").status_code == 401
-    assert client.get("/api/v1/status", headers=ADMIN).json()["state"] == "FROST_PROTECTION"
+    assert client.get("/api/v1/status", headers=ADMIN).json()["state"] == "MANUAL_DRAIN"
     settings = client.get("/api/v1/settings", headers=ADMIN)
 
     assert settings.status_code == 200
@@ -160,6 +357,7 @@ def test_settings_update_fails_closed_when_sensor_configuration_read_fails(
         admin_token="admin-token",
         display_token="display-token",
         development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
         clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
         run_background=False,
     )
@@ -185,7 +383,10 @@ def test_production_mode_does_not_expose_simulation_route(tmp_path: Path) -> Non
     )
 
     with TestClient(app) as client:
-        assert client.post("/api/v1/simulation/temperature", headers=ADMIN).status_code == 404
+        assert (
+            client.post("/api/v1/simulation/temperature", headers=ADMIN).status_code
+            == 404
+        )
 
 
 def test_production_app_selects_max31865_without_accessing_spi(

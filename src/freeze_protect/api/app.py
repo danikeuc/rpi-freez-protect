@@ -7,8 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, NoReturn, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict
+from starlette.concurrency import run_in_threadpool
 
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.node_red import NodeRedActuatorDriver
@@ -40,6 +41,7 @@ from freeze_protect.domain.models import (
     ActuatorCommand,
     AuditEvent,
     ControllerState,
+    ControlMode,
     Decision,
     ForecastSnapshot,
     SafetySettings,
@@ -96,6 +98,7 @@ def create_app(
     display_token: str | None,
     development_mode: bool,
     *,
+    control_mode: ControlMode = ControlMode.SAFE_DRAIN,
     node_red_url: str | None = None,
     node_red_token: str | None = None,
     clock: Callable[[], datetime] | None = None,
@@ -130,6 +133,7 @@ def create_app(
         event_store=event_store,
         settings=settings,
         clock=clock_fn,
+        mode=control_mode,
     )
     control_loop = PeriodicControlLoop(service)
     require_admin = build_admin_guard(admin_token)
@@ -168,7 +172,9 @@ def create_app(
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, object]:
         return {
-            "items": [_event_payload(event) for event in event_store.list(limit, offset)],
+            "items": [
+                _event_payload(event) for event in event_store.list(limit, offset)
+            ],
             "limit": limit,
             "offset": offset,
         }
@@ -221,18 +227,26 @@ def create_app(
         return _display_status_payload(service.status(), service.settings)
 
     @app.post("/api/v1/display/actions/timed-shower")
-    def display_timed_shower(
+    async def display_timed_shower(
+        request: Request,
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
-        decision = service.start_timed_shower()
+        await _require_empty_display_body(request)
+        decision = await run_in_threadpool(service.start_timed_shower)
+        if decision.command is not ActuatorCommand.SUPPLY:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=decision.reason
+            )
         control_loop.wake()
         return _decision_or_conflict(decision)
 
     @app.post("/api/v1/display/actions/drain")
-    def display_drain(
+    async def display_drain(
+        request: Request,
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
-        decision = service.drain("display_drain_requested")
+        await _require_empty_display_body(request)
+        decision = await run_in_threadpool(service.drain, "display_drain_requested")
         control_loop.wake()
         return _decision_or_conflict(decision)
 
@@ -256,6 +270,14 @@ def create_app(
     return app
 
 
+async def _require_empty_display_body(request: Request) -> None:
+    if await request.body():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="display actions do not accept a request body",
+        )
+
+
 def _production_actuator(
     node_red_url: str | None, node_red_token: str | None
 ) -> ActuatorDriver:
@@ -266,7 +288,9 @@ def _production_actuator(
 
 def _decision_or_conflict(decision: Decision) -> dict[str, object]:
     if decision.state is ControllerState.FAULT:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=decision.reason)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=decision.reason
+        )
     return {
         "state": decision.state.value,
         "command": decision.command.value,
@@ -280,6 +304,7 @@ def _admin_status_payload(
     sensor_diagnostics: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
+        "mode": control.mode.value,
         "state": control.state.value,
         "reason": control.reason,
         "last_reading": _reading_payload(control.last_reading),
@@ -287,7 +312,9 @@ def _admin_status_payload(
         "forecast": _forecast_payload(control.forecast, settings),
         "timed_shower_deadline": _iso(control.timed_shower_deadline),
         "bridge_flow_revision": (
-            control.last_receipt.flow_revision if control.last_receipt is not None else None
+            control.last_receipt.flow_revision
+            if control.last_receipt is not None
+            else None
         ),
         "settings_version": settings.settings_version,
     }
@@ -298,6 +325,9 @@ def _display_status_payload(
 ) -> dict[str, object]:
     forecast = _forecast_payload(control.forecast, settings)
     return {
+        "mode": control.mode.value,
+        "command": control.command.value,
+        "remaining_seconds": control.remaining_seconds,
         "state": control.state.value,
         "reason": control.reason,
         "forecast": forecast,
@@ -307,7 +337,8 @@ def _display_status_payload(
             if control.state is ControllerState.TIMED_SHOWER
             else "TIMED_SHOWER"
         ),
-        "action_enabled": control.state is not ControllerState.FAULT,
+        "action_enabled": control.state is not ControllerState.FAULT
+        and control.mode is not ControlMode.SAFE_DRAIN,
     }
 
 

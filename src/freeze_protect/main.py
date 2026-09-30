@@ -6,6 +6,7 @@ from pathlib import Path
 import uvicorn
 
 from freeze_protect.api.app import create_app
+from freeze_protect.domain.models import parse_control_mode
 
 
 def _development_mode(value: str | None) -> bool:
@@ -19,6 +20,7 @@ app = create_app(
     development_mode=_development_mode(os.environ.get("FREEZE_PROTECT_DEVELOPMENT_MODE")),
     node_red_url=os.environ.get("FREEZE_PROTECT_NODE_RED_URL"),
     node_red_token=os.environ.get("FREEZE_PROTECT_NODE_RED_TOKEN"),
+    control_mode=parse_control_mode(os.environ.get("FREEZE_PROTECT_CONTROL_MODE")),
 )
 
 
