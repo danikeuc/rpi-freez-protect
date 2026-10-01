@@ -14,6 +14,18 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
+## PT100 commissioning update — 2026-10-01
+
+The [partial commissioning record](evidence/2026-10-01-pt100-display-commissioning.md)
+supersedes the older rows below for the installed Pi revision, display API and
+current Waveshare candidate. The historical rows retain their original scope.
+
+- Operator console evidence records Pi deployment of `7a24387efbbe0772ae88646d1d98182feca43369`, active services, `manual_timed` and high/high outputs.
+- Authenticated display JSON reports `24.212243310943986` degrees C / `HEALTHY`, while remaining in `MANUAL_DRAIN`. This is not a calibration result.
+- The dial application from source `385979069a20c2a9f11ab7d02ef656563cd7855e`, SHA-256 `c2abd6d1168cac05d3eeb1581fd11d7c64c6e91a43644878584f148c8f4e4b00`, has been flashed to the recorded ESP32-S3. All four flash regions passed digest verification.
+- A 50-second boot observation found no selected fault markers, reported `5896/12288` free stack bytes, and was followed by HTTP 200. The operator subsequently confirmed `24,3` on the shower page and no temperature on Roon. A subsequent reference thermometer report of `24,4` gives approximately 0.1 degree C difference for this one comparison. Repeated/cold-point comparisons, sensor-fault fallback and remaining interaction checks are pending.
+- The operator confirmed 24 V disconnected; no SUPPLY action was issued. Neither PR has been merged or released.
+
 ## Current contract
 
 - The Raspberry Pi Hub is the valve safety authority. In the deployed
@@ -50,7 +62,7 @@ was transcribed from operator-supplied output and is not a live-host attestation
 | Roon interaction | The [Waveshare/Roon record](evidence/2026-09-30-commissioning-observations.md#waveshare-and-roon-observations), dated 2026-09-30, records that the operator observed volume changes and play/pause transitions (`playing` → `paused` → `playing`) from the Waveshare dial and reported that it worked. | This is operator-observed end-to-end behavior without a retained protocol trace. Exact current firmware identity on the dial remains separate evidence. |
 | Waveshare firmware | The [Waveshare/Roon record](evidence/2026-09-30-commissioning-observations.md#waveshare-and-roon-observations) ties `roon-control` commit `f0e5138d57f07899b307d75778ad7da14ab1b274` and `roon-knob` commit `8acbd418b599886d7c3442c2f674c1ee084359a5` to release `v2.7.0-alpha.6`. Recorded SHA-256: application image `0bfc90c60c8aa5a19cb772452be03451a2d5200dddacfd9056fd9586b36a574a`; merged image `cd00abed1b967cb0d46766d4aa959f70397d1e06bddf1f1f77e5dd27d244d766`. The hardware-tested development image had SHA-256 `66624aa234280d68ffc0192b73b42ed317ba963836bab5456d6dfecbc3fbb6ad` on ESP32-S3 MAC `d0:cf:13:1e:15:44`. | The release image has **not been verified as flashed**. The user-observed behavior applies to the hardware-tested development image, not automatically to the release artifact. |
 | Physical installation | The [commissioning record](evidence/2026-09-30-commissioning-observations.md#disconnected-gpio-sequence) records no energized valve movement or plumbing-path observation during this reconciliation. | Relay contacts, both valve positions, return-capacitor behavior, water isolation, supply rating and safe plumbing outcome remain **UNKNOWN / NOT_VERIFIED**. |
-| PT100/MAX31865 | The source adapter, storage binding, display sampler and tests exist for `MAX31865_PT100_SPI0_CE0`. Non-automatic display sampling and automatic `ControlService.last_reading` have mutually exclusive ownership in the repository implementation. | These are repository facts only. Installed breakout revision, SPI operation, sensor wiring, fault behavior, calibration, dial presentation and commissioning status remain **UNKNOWN / NOT_VERIFIED**. `sensor_commissioned` remains false for this display-only feature. |
+| PT100/MAX31865 | The [2026-10-01 partial commissioning record](evidence/2026-10-01-pt100-display-commissioning.md) records installed Pi source `7a24387`, SPI device/service permissions, a live authenticated `HEALTHY` reading, verified flash and bounded boot of the exact dial candidate, operator-observed `24,3` on shower only, and one independent thermometer report of `24,4`. | Exact breakout safeguards, calibration, repeated/cold-point comparisons, individual lead faults and stale/recovery behavior remain unverified. This session did not change `sensor_commissioned`; its persisted value was not independently read back and must not be treated as automatic-policy approval. |
 
 ## Gap reconciliation
 
@@ -65,7 +77,7 @@ was transcribed from operator-supplied output and is not a live-host attestation
 | Hub crash/hang returns to `DRAIN` | Renewal stops by design and in tests | No deployed process-failure timestamps or valve observation | Partial | Approved disconnected service-stop test and later physical confirmation | Pi operator |
 | Controller restart starts at `DRAIN` | Code, unit ordering and high/high observations support it | No retained end-to-end restart trace for this revision | Partial | Capture service restart timeline and both-pin readback with 24 V disconnected | Pi operator |
 | Power loss/restoration is physically safe | Conservative startup is implemented | Electrical relay/GPIO behavior and valves were not observed | Pending | Planned power-cycle test with water isolated and explicit live approval | Hardware operator |
-| PT100 is ready for `automatic` | Repository source/tests and the display-only procedure; no new physical verification is recorded | Installed sensor chain and automatic-policy acceptance are unverified | Pending | Complete display-only sensor checks, then execute a separately reviewed automatic-policy commissioning plan | Hardware operator + policy reviewer |
+| PT100 is ready for `automatic` | Display-only live telemetry and shower-page presentation observed; one sequential room-temperature reference comparison | [Partial commissioning record](evidence/2026-10-01-pt100-display-commissioning.md); not calibration or automatic-policy acceptance | Pending | Finish disconnected display-only fault/reference/recovery checks, then conduct separately reviewed automatic-policy commissioning | Hardware operator + policy reviewer |
 | Release artifact equals running Waveshare firmware | Release hashes and device MAC recorded separately | No flash/readback identity tying them together | Pending | Flash exact release or add signed runtime build identity and record it | Firmware maintainer |
 
 ## Failure-response proof levels
@@ -96,9 +108,13 @@ operational runbooks.
 
 ## Next safe work
 
-Repository reconciliation and CI can proceed without touching the Pi. The next
-hardware step, if desired, is a separately approved water-isolated physical
-valve test. Until that gate is explicitly approved, keep 24 V disconnected and
-do not describe GPIO status as valve position. Firmware provenance can be closed
-independently by flashing or otherwise identifying the exact `roon-knob` release
-and repeating the compact Roon/display acceptance.
+Continue disconnected PT100 display acceptance: stabilized reference comparisons,
+cold-point checks, sensor-lead fault/recovery, stale-data and connection-loss
+behavior, and the remaining Roon interaction checks on the flashed candidate.
+Keep `manual_timed` and 24 V valve power disconnected. The single reference
+comparison and observed ordinary shower value do not close those gates.
+
+Record each new result against the installed Pi source and exact firmware hash.
+Both PRs remain draft. Energized valve tests and automatic-policy commissioning
+require their separately defined approval and test boundaries; GPIO readback
+must not be described as valve-position evidence.
