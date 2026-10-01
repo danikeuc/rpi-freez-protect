@@ -69,6 +69,14 @@ Signed/extreme values, the degree glyph in isolation, `---` during a real sensor
 
 Asked for the independent thermometer reading near PT100, the operator reported `24,4` degrees C, following the dial observation of `24,3`. The reported difference is approximately 0.1 degree C (dial lower). This is consistent with the room-temperature acceptance tolerance of 1.0 degree C for this pair, but the readings were reported sequentially. Reference instrument identity, uncertainty, stabilization duration and three settled pairs were not captured. This does not establish calibration, cold-point accuracy or sensor fault detection.
 
+## Hub service interruption and recovery — operator observation
+
+For the installed Pi source and flashed dial artifact recorded above, the operator was given a trusted-console sequence to stop `freeze-protect.service`, wait 20 seconds and restart it, with an EXIT trap to restore the service. With 24 V valve power disconnected and the shower page visible, the expected presentation was `---` with `FAULT / Status unavailable` during the interruption, followed by temperature and normal DRAIN presentation after restart.
+
+The operator replied `ja vse je delalo tako kot mora` (yes, everything worked as expected), confirming those expected transitions. No console transcript or measured transition latency was supplied for this test; 20 seconds is the prescribed interruption, not an independently measured duration. A subsequent restricted SSH status check independently reported Node-RED, the paired GPIO daemon and Hub active, with GPIO26 and GPIO20 output/high.
+
+This establishes operator-observed Hub/API unavailability and display recovery for this candidate. Sensor-fault or stale telemetry while the API remains reachable, Wi-Fi interruption, process crash/hang and physical valve fault outcomes remain unverified.
+
 ## Rollback readiness
 
 Pi rollback source is the previous installed SHA above. Published `v2.5.3-valve.1` firmware files were present under `/tmp/v2.5.3-valve.1-published` and were preserved. Their hashes were read before completing this session:
@@ -83,8 +91,8 @@ Rollback was not performed.
 
 ## Remaining acceptance
 
-- Visual fallback and signed/extreme-value legibility; operator confirmed the ordinary decimal-comma value and shower-only placement.
+- Sensor-fault/stale-data visual fallback and signed/extreme-value legibility; ordinary decimal-comma placement and Hub-unavailability fallback/recovery are operator-confirmed above.
 - Three settled reading pairs, reference instrument identity/uncertainty and cold-point comparisons; one room-temperature comparison is recorded above.
 - Exact breakout/safeguard inspection and individual sensor-lead fault/recovery observations.
-- Wi-Fi/Pi connection loss and recovery, stale fallback and non-actuating Roon regression on this exact candidate.
+- Deliberate Wi-Fi loss and recovery, stale telemetry while the API remains reachable, and non-actuating Roon regression on this exact candidate.
 - No new energized valve test has been performed. Communication loss, process crash/hang, controller reboot and power loss/restoration remain unverified as physical fault outcomes for this candidate.
