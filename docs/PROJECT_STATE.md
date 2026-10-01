@@ -122,3 +122,11 @@ Record each new result against the installed Pi source and exact firmware hash.
 Both PRs remain draft. Energized valve tests and automatic-policy commissioning
 require their separately defined approval and test boundaries; GPIO readback
 must not be described as valve-position evidence.
+
+## v1.0.0 release authorization
+
+The operator requested release v1.0.0 after accepting the informational display
+scope and the recorded skipped/deferred tests. [Release scope and component
+identities](releases/v1.0.0.md) distinguish the tested dial binary, Pi package
+metadata update and remaining evidence limits. Earlier draft statuses describe
+their historical checkpoints; current publication state is on GitHub.
