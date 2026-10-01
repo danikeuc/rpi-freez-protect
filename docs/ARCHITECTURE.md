@@ -45,6 +45,23 @@ The active installation uses `manual_timed`. Weather and temperature do not
 start `SUPPLY` in this mode. The `automatic` mode remains implemented for a
 future separately commissioned configuration.
 
+## Display temperature telemetry
+
+The authenticated display status includes only `pipe_temperature_c` and
+`sensor_health` for temperature. The numeric value is present only when the
+reading is healthy and fresh; otherwise it is JSON `null`. Health is reported
+as `HEALTHY`, `STALE`, `INVALID`, or `CALIBRATION_REQUIRED`. Non-automatic
+modes use `TemperatureTelemetrySampler` at a five-second cadence. Automatic
+mode uses `ControlService.last_reading`; the sampler is absent in that mode, so
+the temperature source has one reader at a time. A reading at least 15 seconds
+old is `STALE`, and a failed sample clears the numeric value rather than
+reusing an earlier reading. MAX31865 diagnostics remain administrator-only.
+
+This display telemetry has no control authority. In `manual_timed`, temperature
+does not start, extend, stop, or authorize `SUPPLY`; showing a reading does not
+set `sensor_commissioned`. Automatic-policy use still requires its separate
+sensor commissioning.
+
 ## Paired output contract
 
 | Logical command | BCM 26 | BCM 20 | Intended plumbing path |

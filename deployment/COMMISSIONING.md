@@ -145,9 +145,12 @@ sudo pinctrl get 20
 
 For the active `manual_timed` configuration, Hub startup and idle status must be `MANUAL_DRAIN` with reason `manual_idle`, command `DRAIN`, and zero remaining seconds; both pins must be high. (`FROST_PROTECTION` / `sensor_pending` is expected only in separately selected `automatic` mode before sensor commissioning.) Follow [`DISPLAY_COMMISSIONING.md`](DISPLAY_COMMISSIONING.md) for the authenticated disconnected-output test. No single-channel action exists.
 
-## 4a. Optional future automatic mode: commission PT100/MAX31865
+## 4a. Display-only PT100/MAX31865 verification
 
-This stage is not required by the active `manual_timed` installation and must not be used to switch the deployed mode casually. It is a separate future `automatic`-mode commissioning change with its own review and rollback plan. Keep the 24 V valve supply disconnected.
+This stage verifies informational telemetry while retaining the active
+`FREEZE_PROTECT_CONTROL_MODE=manual_timed`. It does not commission the sensor
+for automatic policy, change controller authority, or authorize a valve test.
+Keep the 24 V valve supply disconnected and `sensor_commissioned=false`.
 
 The production temperature source is a three-wire PT100 through MAX31865 on
 SPI0 CE0. The Raspberry Pi header-side contract is fixed below. Do not connect
@@ -202,18 +205,25 @@ systemctl show freeze-protect.service -p User -p Group -p SupplementaryGroups
 journalctl -u freeze-protect.service -n 50 --no-pager
 ```
 
-The service must show `SupplementaryGroups=spi`. Production startup binds the
-approval to `MAX31865_PT100_SPI0_CE0` and the exact settings version that
-created it. It clears any commissioning inherited from the replaced sensor and
-also rejects an approval written by rollback software that cannot maintain that
-binding. Before any temporary `automatic`-mode validation, record the current
-mode and rollback command, confirm `sensor_commissioned=false`, keep 24 V
-disconnected and verify both relay pins high. In `automatic`, administrator
-status must show a finite `last_reading.value_c` with `HEALTHY`, while controller
-state remains `FROST_PROTECTION` with reason `sensor_pending`. Return to the
-reviewed mode after the diagnostic unless the separately approved automatic
-commissioning plan says otherwise. The display API intentionally receives no
-sensor value or MAX31865 diagnostic.
+The service must show `SupplementaryGroups=spi`. Production startup binds any
+automatic-mode commissioning approval to `MAX31865_PT100_SPI0_CE0` and the
+settings version that created it. A display-only check does not set
+`sensor_commissioned` and must leave `FREEZE_PROTECT_CONTROL_MODE=manual_timed`.
+Before continuing, confirm Hub status is `MANUAL_DRAIN` / `manual_idle`, command
+`DRAIN`, zero remaining seconds, and both relay outputs read high. This logical
+status and GPIO readback do not prove valve position.
+
+The authenticated display status reports `pipe_temperature_c` and
+`sensor_health`. In `manual_timed` and `safe_drain`, a single display sampler
+reads every five seconds; `automatic` instead uses `ControlService.last_reading`,
+with no concurrent sampler. A fresh healthy reading has a numeric value and
+`HEALTHY`. Failed, invalid, calibration-required, future-dated or stale readings
+have a `null` numeric value and uppercase health `STALE`, `INVALID`, or
+`CALIBRATION_REQUIRED` as applicable. Readings at least 15 seconds old are
+`STALE`; a failed read clears the prior numeric value. Only these two telemetry
+fields are public to the display; MAX31865 diagnostics are administrator-only.
+Temperature remains informational in `manual_timed` and cannot start, extend,
+stop or authorize `SUPPLY`.
 
 Record three stable readings against an independent room thermometer, then test
 near the safety range using a controlled reference around 0 °C and another
@@ -224,7 +234,22 @@ breakout instructions. Every individual case must return a non-healthy reading,
 record the applicable MAX31865 fault, and leave the controller in `DRAIN`; a
 plausible temperature is a failed test. Mount the probe with good thermal
 contact directly on the cold-water pipe below the insulation and repeat the
-stability check. A failed read must never display or reuse an earlier value.
+stability check. Confirm display status changes with new samples and that a
+failed read never displays or reuses an earlier value. Record the repository
+revision, installed Pi revision, sensor identity, reference instrument,
+observed readings and times separately; a repository test does not prove
+installed or physical sensor behavior.
+
+## 4b. Future automatic-policy commissioning
+
+Display-only sensor verification is not sufficient to enable automatic valve
+policy. A future automatic-mode change requires its own reviewed commissioning
+and rollback plan. Keep the 24 V valve supply disconnected throughout its
+software and sensor checks. Confirm the source binding, `sensor_commissioned`
+approval, policy behavior for healthy/unhealthy and stale readings, forecast
+gates, and return to `manual_timed`. Until that separate work is completed and
+approved, keep `FREEZE_PROTECT_CONTROL_MODE=manual_timed` and
+`sensor_commissioned=false`.
 
 ## 5. Connect and test the valves with water isolated
 
@@ -234,7 +259,7 @@ stability check. A failed read must never display or reuse an earlier value.
 4. Repeat once by stopping `freeze-protect.service`; without Hub renewal, the
    daemon must release both relays high within 60 seconds. The Node-RED startup
    and Hub restart paths must also leave the relays released/high.
-5. This manual valve test does not commission the PT100. Keep `sensor_commissioned=false` unless the separate automatic-mode checks in step 4a are completed and approved.
+5. This manual valve test does not commission the PT100. Keep `sensor_commissioned=false` unless the separate automatic-mode checks in step 4b are completed and approved.
 
 ## Troubleshooting boundary
 

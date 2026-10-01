@@ -55,6 +55,14 @@ display token.
 The PT100/MAX31865 reader on SPI0 CE0 and the seven-day Open-Meteo policy remain
 implemented for `automatic`. DS18B20 support is rollback code only.
 
+The authenticated display status also reports informational pipe telemetry in
+every mode. In `manual_timed` and `safe_drain`, a single display sampler reads
+the sensor every five seconds; in `automatic`, the display uses the reading
+already owned by `ControlService`. These readers never run together. Telemetry
+does not control valves or the timed shower, and this feature does not commission
+the sensor: keep `sensor_commissioned=false` until the separate
+automatic-mode commissioning is complete.
+
 ## Display API
 
 Nginx exposes exactly three token-protected paths on the trusted LAN:
@@ -78,9 +86,18 @@ The action requests have no body and cannot submit a duration. In idle
   "forecast": {"available": false, "fresh": false, "dates": [], "minima_c": []},
   "timed_shower_deadline": null,
   "action": "TIMED_SHOWER",
-  "action_enabled": true
+  "action_enabled": true,
+  "pipe_temperature_c": null,
+  "sensor_health": "STALE"
 }
 ```
+
+`pipe_temperature_c` is a number only for a fresh healthy reading. Otherwise it
+is `null`; `sensor_health` is one of `HEALTHY`, `STALE`, `INVALID`, or
+`CALIBRATION_REQUIRED`. Samples are taken every five seconds in non-automatic
+modes, and a reading is considered stale after 15 seconds. Failed reads clear
+the displayed value instead of reusing an earlier temperature. SPI/MAX31865
+diagnostics remain administrator-only and are not part of display status.
 
 `command` is the accepted logical command, not physical position. The Hub and
 Node-RED control route stay loopback-only.

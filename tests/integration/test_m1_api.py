@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
 
@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.simulation import SimulatedTemperatureSource
 from freeze_protect.api.app import create_app
+from freeze_protect.application.temperature_telemetry import TemperatureTelemetrySampler
 from freeze_protect.domain.models import (
     ActuatorCommand,
     ControlMode,
@@ -226,6 +227,11 @@ def test_display_status_has_no_admin_or_secret_values(client: TestClient) -> Non
     assert "last_reading" not in payload
     assert "sensor_diagnostics" not in payload
     assert "bridge_flow_revision" not in payload
+    assert "observed_at" not in str(payload)
+    assert "source_id" not in str(payload)
+    assert "/dev/spidev" not in str(payload)
+    assert "fault_register" not in str(payload)
+    assert "fault_names" not in str(payload)
     assert "admin-token" not in str(payload)
     assert "display-token" not in str(payload)
 
@@ -270,22 +276,168 @@ def test_hub_shutdown_reasserts_drain_after_an_active_timed_shower(
     ]
 
 
-def test_missing_or_admin_token_on_display_endpoint_is_rejected(
+def test_display_status_rejects_missing_admin_or_wrong_token_without_actuation(
     client: TestClient,
 ) -> None:
+    relay = client.app.state.relay_driver
+    before = list(relay.commands)
+
     assert client.get("/api/v1/display/status").status_code == 401
     assert client.get("/api/v1/display/status", headers=ADMIN).status_code == 401
+    assert client.get(
+        "/api/v1/display/status", headers={"X-Display-Token": "arbitrary-wrong-token"}
+    ).status_code == 401
+    assert relay.commands == before
     assert client.get("/api/v1/display/status", headers=DISPLAY).status_code == 200
 
 
-def test_display_status_does_not_expose_sensor_diagnostics(client: TestClient) -> None:
+def test_display_status_preserves_legacy_valve_fields_with_unavailable_sensor(
+    client: TestClient,
+) -> None:
     payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
 
-    assert "pipe_temperature_c" not in payload
-    assert "sensor_health" not in payload
+    assert payload == {
+        "mode": "manual_timed",
+        "command": "DRAIN",
+        "remaining_seconds": 0,
+        "state": "MANUAL_DRAIN",
+        "reason": "manual_idle",
+        "forecast": {"available": False, "fresh": False, "dates": [], "minima_c": []},
+        "timed_shower_deadline": None,
+        "action": "TIMED_SHOWER",
+        "action_enabled": True,
+        "pipe_temperature_c": None,
+        "sensor_health": "STALE",
+    }
 
 
-def test_uncommissioned_healthy_temperature_is_visible_only_to_administrator(
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+@pytest.mark.parametrize(
+    ("health", "expected_value"),
+    [
+        (SensorHealth.HEALTHY, 6.4),
+        (SensorHealth.STALE, None),
+        (SensorHealth.INVALID, None),
+        (SensorHealth.CALIBRATION_REQUIRED, None),
+    ],
+)
+def test_nonautomatic_display_uses_sampler_health_snapshot(
+    tmp_path: Path, mode: ControlMode, health: SensorHealth, expected_value: float | None
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}-{health.value}.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        clock=lambda: observed_at,
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        source = app.state.temperature_source
+        source.set(TemperatureReading(6.4, observed_at, health))
+        sampler = app.state.temperature_telemetry_sampler
+        assert sampler is not None
+        sampler.sample_once()
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] == expected_value
+    assert payload["sensor_health"] == health.value
+
+
+def test_manual_display_discards_previous_value_after_source_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = client.app.state.temperature_source
+    sampler = client.app.state.temperature_telemetry_sampler
+    assert sampler is not None
+    source.set(
+        TemperatureReading(
+            6.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+        )
+    )
+    sampler.sample_once()
+    assert client.get("/api/v1/display/status", headers=DISPLAY).json()[
+        "pipe_temperature_c"
+    ] == 6.4
+
+    def fail_read() -> TemperatureReading:
+        raise OSError("sensor unavailable")
+
+    monkeypatch.setattr(source, "read", fail_read)
+    sampler.sample_once()
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] is None
+    assert payload["sensor_health"] == "STALE"
+
+
+@pytest.mark.parametrize(
+    ("age_seconds", "expected_value", "expected_health"),
+    [
+        (14.999, 6.4, "HEALTHY"),
+        (15.0, None, "STALE"),
+        (-0.001, None, "STALE"),
+    ],
+)
+def test_automatic_display_uses_injected_clock_for_freshness(
+    tmp_path: Path,
+    age_seconds: float,
+    expected_value: float | None,
+    expected_health: str,
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    current_time = [observed_at]
+    app = create_app(
+        database_path=tmp_path / "automatic-freshness.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: current_time[0],
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        assert app.state.temperature_telemetry_sampler is None
+        app.state.temperature_source.set(
+            TemperatureReading(6.4, observed_at, SensorHealth.HEALTHY)
+        )
+        app.state.control_service.run_cycle()
+        current_time[0] = observed_at + timedelta(seconds=age_seconds)
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] == expected_value
+    assert payload["sensor_health"] == expected_health
+
+
+@pytest.mark.parametrize(
+    "health",
+    [SensorHealth.STALE, SensorHealth.INVALID, SensorHealth.CALIBRATION_REQUIRED],
+)
+def test_automatic_display_hides_unhealthy_numeric_reading(
+    tmp_path: Path, health: SensorHealth
+) -> None:
+    observed_at = datetime(2026, 9, 11, 12, tzinfo=UTC)
+    app = create_app(
+        database_path=tmp_path / f"automatic-{health.value}.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: observed_at,
+        run_background=False,
+    )
+    with TestClient(app) as client:
+        app.state.temperature_source.set(TemperatureReading(6.4, observed_at, health))
+        app.state.control_service.run_cycle()
+        payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert payload["pipe_temperature_c"] is None
+    assert payload["sensor_health"] == health.value
+
+
+def test_uncommissioned_healthy_temperature_is_visible_to_display(
     tmp_path: Path,
 ) -> None:
     app = create_app(
@@ -317,7 +469,8 @@ def _assert_uncommissioned_temperature_visibility(client: TestClient) -> None:
     assert admin_status["state"] == "FROST_PROTECTION"
     assert admin_status["last_reading"]["value_c"] == 8.4
     assert admin_status["last_reading"]["health"] == "HEALTHY"
-    assert "pipe_temperature_c" not in display_status
+    assert display_status["pipe_temperature_c"] == 8.4
+    assert display_status["sensor_health"] == "HEALTHY"
 
 
 def test_status_and_settings_are_administrator_only(client: TestClient) -> None:
@@ -444,3 +597,350 @@ def test_production_upgrade_invalidates_legacy_sensor_commissioning_once(
     assert first.state.control_service.settings.sensor_commissioned is False
     assert first.state.control_service.settings.settings_version == 2
     assert second.state.control_service.settings == first.state.control_service.settings
+
+
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+def test_temperature_telemetry_is_the_only_nonautomatic_sensor_reader(
+    tmp_path: Path, mode: ControlMode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
+        run_background=False,
+    )
+    sampler = app.state.temperature_telemetry_sampler
+    source = app.state.temperature_source
+    reads: list[object] = []
+    original_read = source.read
+
+    def record_read() -> TemperatureReading:
+        reads.append(source)
+        return original_read()
+
+    monkeypatch.setattr(source, "read", record_read)
+    assert sampler is not None
+    assert sampler._source is source
+    monkeypatch.setattr(
+        sampler,
+        "start",
+        lambda: pytest.fail("run_background=False must not start telemetry"),
+    )
+
+    with TestClient(app):
+        app.state.control_service.run_cycle()
+        assert reads == []
+        sampler.sample_once()
+        assert reads == [source]
+        app.state.control_service.run_cycle()
+        assert reads == [source]
+
+
+def test_automatic_control_is_the_only_temperature_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def reject_sampler_construction(_sampler: object, *_args: object, **_kwargs: object) -> None:
+        pytest.fail("automatic mode must not construct a telemetry sampler")
+
+    monkeypatch.setattr(TemperatureTelemetrySampler, "__init__", reject_sampler_construction)
+    app = create_app(
+        database_path=tmp_path / "automatic-ownership.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
+        run_background=False,
+    )
+    source = app.state.temperature_source
+    source.set(
+        TemperatureReading(
+            8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+        )
+    )
+    reads: list[object] = []
+    original_read = source.read
+
+    def record_read() -> TemperatureReading:
+        reads.append(source)
+        return original_read()
+
+    monkeypatch.setattr(source, "read", record_read)
+    assert app.state.temperature_telemetry_sampler is None
+
+    with TestClient(app) as client:
+        startup_reads = len(reads)
+        assert startup_reads == 1
+        app.state.control_service.run_cycle()
+        assert len(reads) == startup_reads + 1
+        assert app.state.control_service.status().last_reading == TemperatureReading(
+            8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+        )
+        assert client.get("/api/v1/display/status", headers=DISPLAY).status_code == 200
+        assert len(reads) == startup_reads + 1
+
+
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+def test_temperature_telemetry_lifespan_order(
+    tmp_path: Path, mode: ControlMode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}-lifespan.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        run_background=True,
+    )
+    service = app.state.control_service
+    calls: list[str] = []
+    original_startup = service.startup
+    original_drain = service.drain
+
+    def record_startup() -> object:
+        calls.append("service.startup")
+        return original_startup()
+
+    def record_drain(reason: str) -> object:
+        calls.append(f"service.drain:{reason}")
+        return original_drain(reason)
+
+    monkeypatch.setattr(service, "startup", record_startup)
+    monkeypatch.setattr(service, "drain", record_drain)
+    monkeypatch.setattr(
+        "freeze_protect.api.app.TemperatureTelemetrySampler.start",
+        lambda _sampler: calls.append("sampler.start"),
+    )
+    monkeypatch.setattr(
+        "freeze_protect.api.app.TemperatureTelemetrySampler.stop",
+        lambda _sampler: calls.append("sampler.stop"),
+    )
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.start",
+        lambda _loop: calls.append("loop.start"),
+    )
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.stop",
+        lambda _loop: calls.append("loop.stop"),
+    )
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
+        calls.append("request.served")
+
+    assert calls == [
+        "service.startup",
+        "sampler.start",
+        "loop.start",
+        "request.served",
+        "sampler.stop",
+        "loop.stop",
+        "service.drain:shutdown_drain",
+    ]
+
+
+@pytest.mark.parametrize("failing_start", ["sampler", "loop"])
+def test_temperature_telemetry_start_failure_still_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failing_start: str
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{failing_start}-startup.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
+        run_background=True,
+    )
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    calls: list[str] = []
+    original_startup = service.startup
+    original_drain = service.drain
+
+    def record_startup() -> object:
+        calls.append("service.startup")
+        return original_startup()
+
+    def record_drain(reason: str) -> object:
+        calls.append(f"service.drain:{reason}")
+        return original_drain(reason)
+
+    def start_sampler(_sampler: object) -> None:
+        calls.append("sampler.start")
+        if failing_start == "sampler":
+            raise RuntimeError("sampler startup failed")
+
+    def start_loop(_loop: object) -> None:
+        calls.append("loop.start")
+        if failing_start == "loop":
+            raise RuntimeError("loop startup failed")
+
+    monkeypatch.setattr(service, "startup", record_startup)
+    monkeypatch.setattr(service, "drain", record_drain)
+    monkeypatch.setattr(TemperatureTelemetrySampler, "start", start_sampler)
+    monkeypatch.setattr(
+        TemperatureTelemetrySampler,
+        "stop",
+        lambda _sampler: calls.append("sampler.stop"),
+    )
+    monkeypatch.setattr("freeze_protect.api.app.PeriodicControlLoop.start", start_loop)
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.stop",
+        lambda _loop: calls.append("loop.stop"),
+    )
+
+    with pytest.raises(RuntimeError, match=f"{failing_start} startup failed"), TestClient(app):
+        pytest.fail("request serving must not begin after startup failure")
+
+    expected_start = ["sampler.start"]
+    if failing_start == "loop":
+        expected_start.append("loop.start")
+    assert calls == [
+        "service.startup",
+        *expected_start,
+        "sampler.stop",
+        "loop.stop",
+        "service.drain:shutdown_drain",
+    ]
+    assert [command.value for command in relay.commands] == ["DRAIN", "DRAIN"]
+
+
+def test_temperature_telemetry_stop_failure_still_stops_loop_and_drains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / "stop-failure.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.MANUAL_TIMED,
+        run_background=True,
+    )
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    calls: list[str] = []
+    original_drain = service.drain
+
+    def record_drain(reason: str) -> object:
+        calls.append(f"service.drain:{reason}")
+        return original_drain(reason)
+
+    def fail_sampler_stop(_sampler: object) -> None:
+        calls.append("sampler.stop")
+        raise RuntimeError("sampler stop failed")
+
+    monkeypatch.setattr(service, "drain", record_drain)
+    monkeypatch.setattr(
+        TemperatureTelemetrySampler,
+        "start",
+        lambda _sampler: calls.append("sampler.start"),
+    )
+    monkeypatch.setattr(TemperatureTelemetrySampler, "stop", fail_sampler_stop)
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.start",
+        lambda _loop: calls.append("loop.start"),
+    )
+    monkeypatch.setattr(
+        "freeze_protect.api.app.PeriodicControlLoop.stop",
+        lambda _loop: calls.append("loop.stop"),
+    )
+
+    with pytest.raises(RuntimeError, match="sampler stop failed"), TestClient(app):
+        calls.append("request.served")
+
+    assert calls == [
+        "sampler.start",
+        "loop.start",
+        "request.served",
+        "sampler.stop",
+        "loop.stop",
+        "service.drain:shutdown_drain",
+    ]
+    assert [command.value for command in relay.commands] == ["DRAIN", "DRAIN"]
+
+
+@pytest.mark.parametrize("failing", [False, True])
+def test_temperature_telemetry_sample_cannot_change_manual_valve_state(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, failing: bool
+) -> None:
+    sampler = client.app.state.temperature_telemetry_sampler
+    source = client.app.state.temperature_source
+    service = client.app.state.control_service
+    relay = client.app.state.relay_driver
+    assert sampler is not None
+    if failing:
+        def fail_read() -> TemperatureReading:
+            raise OSError("sensor unavailable")
+
+        monkeypatch.setattr(source, "read", fail_read)
+    else:
+        source.set(
+            TemperatureReading(
+                8.4, datetime(2026, 9, 11, 12, tzinfo=UTC), SensorHealth.HEALTHY
+            )
+        )
+    before_status = service.status()
+    before_commands = list(relay.commands)
+
+    sampler.sample_once()
+
+    assert service.status() == before_status
+    assert relay.commands == before_commands
+    assert sampler.snapshot().health is (
+        SensorHealth.STALE if failing else SensorHealth.HEALTHY
+    )
+
+
+@pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])
+def test_lifespan_drains_while_temperature_source_read_remains_blocked(
+    tmp_path: Path, mode: ControlMode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(
+        database_path=tmp_path / f"{mode.value}-blocked-telemetry.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=mode,
+        run_background=True,
+    )
+    source = app.state.temperature_source
+    sampler = app.state.temperature_telemetry_sampler
+    service = app.state.control_service
+    relay = app.state.relay_driver
+    read_started = Event()
+    read_release = Event()
+    reads: list[object] = []
+    original_read = source.read
+
+    def blocked_read() -> TemperatureReading:
+        reads.append(source)
+        read_started.set()
+        read_release.wait()
+        return original_read()
+
+    def run_lifespan() -> None:
+        with TestClient(app):
+            assert read_started.wait(timeout=0.5)
+
+    monkeypatch.setattr(source, "read", blocked_read)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        lifespan = executor.submit(run_lifespan)
+        try:
+            assert read_started.wait(timeout=0.5)
+            lifespan.result(timeout=2.0)
+
+            assert not read_release.is_set()
+            assert sampler._thread.is_alive()
+            assert service.status().reason == "shutdown_drain"
+            assert relay.commands[-1] is ActuatorCommand.DRAIN
+            assert all(command is ActuatorCommand.DRAIN for command in relay.commands)
+        finally:
+            read_release.set()
+            lifespan.result(timeout=2.0)
+            sampler.stop()
+
+    assert not sampler._thread.is_alive()
+    assert reads == [source]

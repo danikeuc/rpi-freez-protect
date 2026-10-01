@@ -37,6 +37,10 @@ from freeze_protect.application.service import (
     ControlStatus,
     PeriodicControlLoop,
 )
+from freeze_protect.application.temperature_telemetry import (
+    DISPLAY_TEMPERATURE_STALE_AFTER_S,
+    TemperatureTelemetrySampler,
+)
 from freeze_protect.domain.models import (
     ActuatorCommand,
     AuditEvent,
@@ -135,25 +139,39 @@ def create_app(
         clock=clock_fn,
         mode=control_mode,
     )
+    temperature_telemetry_sampler = (
+        TemperatureTelemetrySampler(temperature_source, clock=clock_fn)
+        if control_mode is not ControlMode.AUTOMATIC
+        else None
+    )
     control_loop = PeriodicControlLoop(service)
     require_admin = build_admin_guard(admin_token)
     require_display = build_display_guard(display_token)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        service.startup()
-        if run_background:
-            control_loop.start()
         try:
+            service.startup()
+            if run_background:
+                if temperature_telemetry_sampler is not None:
+                    temperature_telemetry_sampler.start()
+                control_loop.start()
             yield
         finally:
-            control_loop.stop()
-            service.drain("shutdown_drain")
+            try:
+                if temperature_telemetry_sampler is not None:
+                    temperature_telemetry_sampler.stop()
+            finally:
+                try:
+                    control_loop.stop()
+                finally:
+                    service.drain("shutdown_drain")
 
-    app = FastAPI(title="RPi Freeze Protect", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="RPi Freeze Protect", version="1.0.0", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
+    app.state.temperature_telemetry_sampler = temperature_telemetry_sampler
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -224,7 +242,20 @@ def create_app(
     def display_status(
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
-        return _display_status_payload(service.status(), service.settings)
+        control = service.status()
+        if control.mode is ControlMode.AUTOMATIC:
+            temperature = control.last_reading
+        else:
+            temperature = (
+                temperature_telemetry_sampler.snapshot()
+                if temperature_telemetry_sampler is not None
+                else None
+            )
+        return _display_status_payload(
+            control,
+            service.settings,
+            _normalize_display_temperature(temperature, clock_fn()),
+        )
 
     @app.post("/api/v1/display/actions/timed-shower")
     async def display_timed_shower(
@@ -320,8 +351,25 @@ def _admin_status_payload(
     }
 
 
+def _normalize_display_temperature(
+    reading: TemperatureReading | None, now: datetime
+) -> TemperatureReading | None:
+    if reading is None:
+        return None
+    age_s = (now - reading.observed_at).total_seconds()
+    if reading.health is SensorHealth.HEALTHY and (
+        age_s < 0 or age_s >= DISPLAY_TEMPERATURE_STALE_AFTER_S
+    ):
+        return TemperatureReading(None, reading.observed_at, SensorHealth.STALE)
+    if reading.health is not SensorHealth.HEALTHY:
+        return TemperatureReading(None, reading.observed_at, reading.health)
+    return reading
+
+
 def _display_status_payload(
-    control: ControlStatus, settings: SafetySettings
+    control: ControlStatus,
+    settings: SafetySettings,
+    temperature: TemperatureReading | None,
 ) -> dict[str, object]:
     forecast = _forecast_payload(control.forecast, settings)
     return {
@@ -339,6 +387,10 @@ def _display_status_payload(
         ),
         "action_enabled": control.state is not ControllerState.FAULT
         and control.mode is not ControlMode.SAFE_DRAIN,
+        "pipe_temperature_c": temperature.value_c if temperature is not None else None,
+        "sensor_health": (
+            temperature.health.value if temperature is not None else SensorHealth.STALE.value
+        ),
     }
 
 
