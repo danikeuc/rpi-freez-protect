@@ -77,6 +77,12 @@ The operator replied `ja vse je delalo tako kot mora` (yes, everything worked as
 
 This establishes operator-observed Hub/API unavailability and display recovery for this candidate. Sensor-fault or stale telemetry while the API remains reachable, Wi-Fi interruption, process crash/hang and physical valve fault outcomes remain unverified.
 
+## Roon and shower-page regression — operator observation
+
+After the Hub recovery test, the operator was asked to switch to Roon, check play/pause, change volume by one encoder step and back, then return to the shower page and check temperature and OFF, keeping 24 V valve power disconnected. The operator replied `vse deluje bp` (everything works without problems), confirming all three checks for the installed Pi source and flashed dial artifact recorded above.
+
+This is operator-observed transport, volume and page-return evidence. No exact observation time, volume values, screenshot or independent bridge trace was supplied. The OFF indicator is UI evidence, not relay-contact or physical valve-position feedback. No SUPPLY action was requested in this check.
+
 ## Rollback readiness
 
 Pi rollback source is the previous installed SHA above. Published `v2.5.3-valve.1` firmware files were present under `/tmp/v2.5.3-valve.1-published` and were preserved. Their hashes were read before completing this session:
@@ -94,5 +100,5 @@ Rollback was not performed.
 - Sensor-fault/stale-data visual fallback and signed/extreme-value legibility; ordinary decimal-comma placement and Hub-unavailability fallback/recovery are operator-confirmed above.
 - Three settled reading pairs, reference instrument identity/uncertainty and cold-point comparisons; one room-temperature comparison is recorded above.
 - Exact breakout/safeguard inspection and individual sensor-lead fault/recovery observations.
-- Deliberate Wi-Fi loss and recovery, stale telemetry while the API remains reachable, and non-actuating Roon regression on this exact candidate.
+- Deliberate Wi-Fi loss and recovery, and stale telemetry while the API remains reachable. The bounded Roon play/pause, one-step volume round trip and shower-page return check is operator-confirmed above.
 - No new energized valve test has been performed. Communication loss, process crash/hang, controller reboot and power loss/restoration remain unverified as physical fault outcomes for this candidate.

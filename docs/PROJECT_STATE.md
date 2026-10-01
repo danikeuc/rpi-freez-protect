@@ -23,8 +23,9 @@ current Waveshare candidate. The historical rows retain their original scope.
 - Operator console evidence records Pi deployment of `7a24387efbbe0772ae88646d1d98182feca43369`, active services, `manual_timed` and high/high outputs.
 - Authenticated display JSON reports `24.212243310943986` degrees C / `HEALTHY`, while remaining in `MANUAL_DRAIN`. This is not a calibration result.
 - The dial application from source `385979069a20c2a9f11ab7d02ef656563cd7855e`, SHA-256 `c2abd6d1168cac05d3eeb1581fd11d7c64c6e91a43644878584f148c8f4e4b00`, has been flashed to the recorded ESP32-S3. All four flash regions passed digest verification.
-- A 50-second boot observation found no selected fault markers, reported `5896/12288` free stack bytes, and was followed by HTTP 200. The operator subsequently confirmed `24,3` on the shower page and no temperature on Roon. A subsequent reference thermometer report of `24,4` gives approximately 0.1 degree C difference for this one comparison. Repeated/cold-point comparisons, sensor-fault fallback and remaining interaction checks are pending.
+- A 50-second boot observation found no selected fault markers, reported `5896/12288` free stack bytes, and was followed by HTTP 200. The operator subsequently confirmed `24,3` on the shower page and no temperature on Roon. A subsequent reference thermometer report of `24,4` gives approximately 0.1 degree C difference for this one comparison. Repeated/cold-point comparisons, sensor-fault fallback and Wi-Fi recovery checks are pending.
 - The operator confirmed the expected `---` / `FAULT / Status unavailable` presentation during the prescribed Hub stop/restart test and temperature/DRAIN recovery afterward. A subsequent restricted status check found all three services active and both GPIO outputs high. Exact transition latency was not measured; sensor-fault/stale telemetry and Wi-Fi interruption remain pending.
+- The operator confirmed Roon play/pause, one-step volume change and return, and navigation back to shower temperature/OFF on the flashed PT100 candidate. This is user-observed evidence without a bridge trace or exact observation time.
 - The operator confirmed 24 V disconnected; no SUPPLY action was issued. Neither PR has been merged or released.
 
 ## Current contract
@@ -72,7 +73,7 @@ current Waveshare candidate. The historical rows retain their original scope.
 | Active Pi uses `manual_timed` | Environment value and authenticated status agree | Deployed observation; token values intentionally omitted | Closed | Recheck after any deployment | Pi operator |
 | Only paired GPIO commands are active | Deployed preflight passed; disconnected high/high → low/low → high/high observed | Does not prove relay/valve movement | Closed for software output | Keep preflight in every cutover | Pi operator |
 | LAN exposes only display API | Active Nginx configuration plus 401/404 behavior observed | Installed file hash was not retained | Closed for route behavior | Capture config hash at next maintenance | Pi operator |
-| Roon dial control works | Operator observed volume and play/pause | No retained protocol trace; release image not flashed | Partial | Flash/identify exact release, then repeat compact acceptance | Firmware maintainer + operator |
+| Roon dial control works | Operator confirmed play/pause, one-step volume round trip and shower-page return on the identified PT100 candidate | [Current candidate record](evidence/2026-10-01-pt100-display-commissioning.md); no retained bridge trace or exact observation time | Closed for this bounded candidate check | Recheck after a firmware change; release acceptance remains separate | Firmware maintainer + operator |
 | Valve physical `DRAIN`/`SUPPLY` follows GPIO | No energized observation | GPIO cannot prove physical position | Pending | Separately approved water-isolated 24 V test with both valves observed | Hardware operator |
 | Hub-to-daemon communication loss returns to `DRAIN` | Lease behavior covered by repository tests | No deployed timed/physical fault injection | Partial | Approved disconnected deployed lease-expiry test; physical test later | Pi operator |
 | Hub crash/hang returns to `DRAIN` | Renewal stops by design and in tests | No deployed process-failure timestamps or valve observation | Partial | Approved disconnected service-stop test and later physical confirmation | Pi operator |
@@ -111,7 +112,8 @@ operational runbooks.
 
 Continue disconnected PT100 display acceptance: stabilized reference comparisons,
 cold-point checks, sensor-lead fault/recovery, stale-data and Wi-Fi-loss
-behavior, and the remaining Roon interaction checks on the flashed candidate.
+behavior. The bounded Roon interaction and shower-page return check is now
+operator-confirmed on the flashed candidate.
 Keep `manual_timed` and 24 V valve power disconnected. The single reference
 comparison and observed ordinary shower value do not close those gates.
 
