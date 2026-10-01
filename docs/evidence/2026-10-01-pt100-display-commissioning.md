@@ -1,6 +1,6 @@
 # PT100 display commissioning — partial evidence, 2026-10-01
 
-Status: Pi deployment and authenticated temperature response observed; reviewed dial candidate flashed and boot checked. The operator confirmed a live shower-page value and no temperature on the Roon page. One room-temperature reference comparison was reported; repeated/cold-point comparisons and sensor-fault tests remain pending. Both PRs remain draft.
+Status: Pi deployment and authenticated temperature response observed; reviewed dial candidate flashed and boot checked. The operator confirmed a live shower-page value and no temperature on the Roon page. One room-temperature reference comparison was reported; Wi-Fi recovery is operator-confirmed, the sensor-fault test is skipped by operator decision, and cold-point testing is deferred as currently unavailable. Other evidence limits are listed below. Both PRs remain draft.
 
 ## Observation sources and boundary
 
@@ -75,13 +75,30 @@ For the installed Pi source and flashed dial artifact recorded above, the operat
 
 The operator replied `ja vse je delalo tako kot mora` (yes, everything worked as expected), confirming those expected transitions. No console transcript or measured transition latency was supplied for this test; 20 seconds is the prescribed interruption, not an independently measured duration. A subsequent restricted SSH status check independently reported Node-RED, the paired GPIO daemon and Hub active, with GPIO26 and GPIO20 output/high.
 
-This establishes operator-observed Hub/API unavailability and display recovery for this candidate. Sensor-fault or stale telemetry while the API remains reachable, Wi-Fi interruption, process crash/hang and physical valve fault outcomes remain unverified.
+This establishes operator-observed Hub/API unavailability and display recovery for this candidate. At this observation point, sensor-fault or stale telemetry while the API remained reachable, Wi-Fi interruption, process crash/hang and physical valve fault outcomes were unverified. The subsequent Wi-Fi report and test-scope decision below update only their stated scope.
 
 ## Roon and shower-page regression — operator observation
 
 After the Hub recovery test, the operator was asked to switch to Roon, check play/pause, change volume by one encoder step and back, then return to the shower page and check temperature and OFF, keeping 24 V valve power disconnected. The operator replied `vse deluje bp` (everything works without problems), confirming all three checks for the installed Pi source and flashed dial artifact recorded above.
 
 This is operator-observed transport, volume and page-return evidence. No exact observation time, volume values, screenshot or independent bridge trace was supplied. The OFF indicator is UI evidence, not relay-contact or physical valve-position feedback. No SUPPLY action was requested in this check.
+
+## Wi-Fi observation and operator test-scope decision
+
+The operator reported that Wi-Fi interruption worked during several accidental disconnections in the current candidate session. Record Wi-Fi interruption/recovery as `VERIFIED_BY_OPERATOR`. The exact interrupted component, count, duration, transition timing and logs were not supplied; this report does not establish physical valve behavior during an outage.
+
+The operator explicitly chose to skip the sensor-fault test because temperature is informational, and reported that a lower-temperature test is currently not possible. This decision updates the current display-only acceptance scope:
+
+| Check | Status | Basis and limit |
+| --- | --- | --- |
+| Ordinary shower temperature and page placement | VERIFIED_BY_OPERATOR | Earlier shower-only observation; one decimal comma |
+| Hub interruption and display recovery | VERIFIED_BY_OPERATOR | Earlier bounded stop/restart check |
+| Roon play/pause, volume and shower-page return | VERIFIED_BY_OPERATOR | Earlier confirmation of all three checks |
+| Wi-Fi interruption/recovery | VERIFIED_BY_OPERATOR | Operator report of several accidental interruptions |
+| Physical sensor-fault / individual-lead test | SKIPPED_BY_OPERATOR | Waived for the current informational display scope; behavior remains unverified on hardware |
+| Lower-temperature comparison | DEFERRED_UNAVAILABLE | Currently not feasible; accuracy at lower temperatures remains unverified |
+
+Skipped and deferred checks are not passing tests. The sensor-fault test is no longer a required immediate step for this display-only scope; the lower-temperature check is deferred. This decision does not commission automatic control, modify `sensor_commissioned`, or establish hydraulic fault outcomes.
 
 ## Rollback readiness
 
@@ -95,10 +112,10 @@ Pi rollback source is the previous installed SHA above. Published `v2.5.3-valve.
 
 Rollback was not performed.
 
-## Remaining acceptance
+## Remaining evidence limits
 
-- Sensor-fault/stale-data visual fallback and signed/extreme-value legibility; ordinary decimal-comma placement and Hub-unavailability fallback/recovery are operator-confirmed above.
-- Three settled reading pairs, reference instrument identity/uncertainty and cold-point comparisons; one room-temperature comparison is recorded above.
-- Exact breakout/safeguard inspection and individual sensor-lead fault/recovery observations.
-- Deliberate Wi-Fi loss and recovery, and stale telemetry while the API remains reachable. The bounded Roon play/pause, one-step volume round trip and shower-page return check is operator-confirmed above.
+- Signed/extreme-value legibility and stale telemetry with a reachable API remain unverified on hardware; ordinary display placement and Hub-loss fallback/recovery are operator-confirmed.
+- Three settled reference pairs and instrument identity/uncertainty were not captured; one sequential room-temperature pair was reported. Lower-temperature comparisons are deferred as currently unavailable.
+- Exact breakout/safeguard inspection remains unverified. Physical sensor/individual-lead fault tests are skipped by operator decision for this informational display scope.
+- Wi-Fi recovery and the bounded Roon checks are verified by operator observation within the limits recorded above.
 - No new energized valve test has been performed. Communication loss, process crash/hang, controller reboot and power loss/restoration remain unverified as physical fault outcomes for this candidate.
