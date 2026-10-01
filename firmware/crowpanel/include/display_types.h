@@ -36,6 +36,7 @@ struct DisplayModel {
   ForecastData forecast;
   std::string forecast_text;
   std::string connection_text;
+  std::string connection_detail_text;
   bool connected = false;
   std::string primary_action_text;
   std::string primary_action_detail;

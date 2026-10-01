@@ -24,6 +24,9 @@ void test_two_second_hold_emits_one_safety_drain_before_release() {
 #ifdef PIO_UNIT_TESTING
 #include <unity.h>
 
+extern "C" void setUp(void) {}
+extern "C" void tearDown(void) {}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_short_press_emits_primary_action_on_release);

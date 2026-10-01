@@ -2,6 +2,7 @@
 #include <string>
 
 #include "display_state.h"
+#include "display_layout.h"
 #include "hub_client.h"
 
 namespace {
@@ -31,6 +32,8 @@ void test_offline_disables_actions_and_shows_required_copy() {
 }
 
 void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
+  assert(connection_diagnostic(false, false, 0, 0) ==
+         "WI-FI: POVEZOVANJE");
   assert(connection_diagnostic(false, false, 0, 1) ==
          "WI-FI: SSID NI NAJDEN");
   assert(connection_diagnostic(false, false, 0, 4) ==
@@ -38,11 +41,26 @@ void test_connection_diagnostic_distinguishes_wifi_and_hub_failures() {
   assert(connection_diagnostic(false, false, 0, 5) ==
          "WI-FI: POVEZAVA IZGUBLJENA");
   assert(connection_diagnostic(false, false, 0, 6) ==
-         "WI-FI: NI POVEZAVE");
+         "WI-FI: ODKLOPLJEN");
   assert(connection_diagnostic(true, false, 0, 3) == "HUB NEDOSEGLJIV");
   assert(connection_diagnostic(true, false, 401, 3) == "HUB HTTP 401");
   assert(connection_diagnostic(true, false, 200, 3) == "HUB ODGOVOR NAPAKA");
   assert(connection_diagnostic(true, true, 200, 3) == "HUB POVEZAN");
+}
+
+void test_wifi_diagnostic_exposes_device_state_and_network_identity() {
+  assert(wifi_diagnostic_details(6, "192.168.114.226", "AA:BB:CC:92:AE:DC",
+                                201, 200, true, 0, true) ==
+         "Wi-Fi status: 6\nIP: 192.168.114.226\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: 201\nHub HTTP: 200, JSON valid (0s ago)");
+  assert(wifi_diagnostic_details(0, "0.0.0.0", "AA:BB:CC:92:AE:DC", -1,
+                                0, false, 0, false) ==
+         "Wi-Fi status: 0\nIP: 0.0.0.0\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: none\nHub: no poll yet");
+  assert(wifi_diagnostic_details(6, "0.0.0.0", "AA:BB:CC:92:AE:DC", 201,
+                                200, false, 5, true) ==
+         "Wi-Fi status: 6\nIP: 0.0.0.0\nMAC: AA:BB:CC:92:AE:DC\n"
+         "Disconnect reason: 201\nHub HTTP: 200, JSON invalid (5s ago)");
 }
 
 void test_active_timer_maps_primary_action_to_immediate_drain() {
@@ -105,15 +123,49 @@ void test_encoder_navigation_has_exactly_two_pages() {
   assert(move_page(DisplayPage::Forecast, false) == DisplayPage::Home);
 }
 
+void test_home_state_label_reflects_hub_state() {
+  HubStatus status = healthy_status();
+  status.state = "NORMAL";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "NORMALNO DELOVANJE");
+
+  status.state = "FROST_PROTECTION";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "ZAŠČITA PRED MRAZOM");
+
+  status.state = "FAULT";
+  assert(home_state_label(reduce_status(status, true, true)) ==
+         "NAPAKA SISTEMA");
+
+  status.state = "TIMED_SHOWER";
+  assert(home_state_label(reduce_status(status, true, true)) == "TUŠ AKTIVEN");
+
+  assert(home_state_label(reduce_status(status, true, false)) == "NI POVEZAVE");
+}
+
+void test_forecast_rows_fit_above_the_return_prompt() {
+  constexpr int rows_bottom = DisplayLayout::kForecastRowsY +
+                              DisplayLayout::kForecastLineCount *
+                                  DisplayLayout::kForecastLineHeight;
+  constexpr int footer_top = DisplayLayout::kDisplayHeight -
+                             DisplayLayout::kForecastFooterBottomMargin -
+                             DisplayLayout::kForecastFooterFontHeight;
+  assert(rows_bottom <= footer_top);
+}
+
 }  // namespace
 
 #ifdef PIO_UNIT_TESTING
 #include <unity.h>
 
+extern "C" void setUp(void) {}
+extern "C" void tearDown(void) {}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_offline_disables_actions_and_shows_required_copy);
   RUN_TEST(test_connection_diagnostic_distinguishes_wifi_and_hub_failures);
+  RUN_TEST(test_wifi_diagnostic_exposes_device_state_and_network_identity);
   RUN_TEST(test_active_timer_maps_primary_action_to_immediate_drain);
   RUN_TEST(test_sensor_details_are_not_exposed_on_the_home_screen);
   RUN_TEST(test_forecast_primary_press_returns_to_the_home_screen);
@@ -122,12 +174,15 @@ int main() {
   RUN_TEST(test_hub_result_constructs_with_connection_and_status);
   RUN_TEST(test_action_paths_are_display_api_only);
   RUN_TEST(test_encoder_navigation_has_exactly_two_pages);
+  RUN_TEST(test_home_state_label_reflects_hub_state);
+  RUN_TEST(test_forecast_rows_fit_above_the_return_prompt);
   return UNITY_END();
 }
 #else
 int main() {
   test_offline_disables_actions_and_shows_required_copy();
   test_connection_diagnostic_distinguishes_wifi_and_hub_failures();
+  test_wifi_diagnostic_exposes_device_state_and_network_identity();
   test_active_timer_maps_primary_action_to_immediate_drain();
   test_sensor_details_are_not_exposed_on_the_home_screen();
   test_forecast_primary_press_returns_to_the_home_screen();
@@ -136,5 +191,7 @@ int main() {
   test_hub_result_constructs_with_connection_and_status();
   test_action_paths_are_display_api_only();
   test_encoder_navigation_has_exactly_two_pages();
+  test_home_state_label_reflects_hub_state();
+  test_forecast_rows_fit_above_the_return_prompt();
 }
 #endif
