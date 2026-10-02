@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-02-dial-admin-settings-design.md` — potrjena zasnova, obvezno branje skupaj s tem načrtom.
 
-Status: načrt pripravljen za uporabnikov pregled; nobena spodnja implementacijska naloga še ni opravljena.
+Status: uporabnik je 2026-10-02 potrdil izvedbo s podagenti. Napredek in dokazila sledijo GitHub nalogama #21 in #9; strojni sprejem ostaja ločen.
 
 ## Global Constraints
 
@@ -168,3 +168,8 @@ Ti koraki se izvedejo po pregledu artefaktov in dovoljenju za konkretno namestit
 ## Samopregled načrta
 
 Pokritost: spec 1–2 → obseg/dve dostavi; 3 → Tasks 2–3; 4 → Tasks 2/3/6; 5 → Tasks 1/4; 6 → Tasks 5/6; 7–8 → Tasks 1/4/7 in ločeni strojni sprejem. Vseh pet Review Focus točk ima imenovan test. Vmesniki med nalogami so določeni zgoraj; nove javne vrste se deklarirajo v pripadajočem headerju. Načrt ne dokazuje delovanja in ne spreminja statusa še neizvedenih testov.
+
+## Dopolnitvi ob začetnem pregledu kode
+
+- Task 2 vključuje tudi `idf_app/main/main_idf.c`: ob napaki inicializacije NVS se ne sme avtomatsko izbrisati celotnega pomnilnika. To bi izbrisalo PIN in druge nastavitve. Namerno sprožena obstoječa tovarniška ponastavitev ostane ločen postopek.
+- Task 3 vključuje tudi `idf_app/main/captive_portal.c`: ločeni AP strežnik ima konfiguracijske poti `/configure` in `/wifi-remove`, ki potrebujejo isto prijavo in CSRF zaščito. Preverita se prvi setup in AP konfiguracija z že obstoječim PIN-om.
