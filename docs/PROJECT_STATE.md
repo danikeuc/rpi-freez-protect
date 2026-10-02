@@ -14,6 +14,32 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
+## Paired v1.1.0 publication — 2026-10-02
+
+This publication checkpoint supersedes the draft/unmerged wording in older
+sections below for Pi PR #22 and Dial PR #10. Those sections retain their
+historical hardware observations and limitations.
+
+- [Pi v1.1.0](https://github.com/danikeuc/rpi-freez-protect/releases/tag/v1.1.0)
+  points to `87b12236af955ec068ddd673b7b702ebc09fe846`.
+- [Dial v1.1.0](https://github.com/danikeuc/roon-knob/releases/tag/v1.1.0)
+  points to `9bd5fc062d91f9ca7b3c6bd4c54dc60481129007` and preserves the exact
+  hardware-tested app from `9b1ca059f0142098d2f510637351941d842f4979`.
+- The publication record verified the two merge trees, public tag targets and
+  every downloaded asset against SHA256/size (6 Pi assets, 9 Dial assets).
+  Both v1.0.0 release/tag/asset identities remained unchanged.
+- Pi exact-head CI passed. Firmware remote CI remained unobserved; the release
+  explicitly records the scoped manual publication of the tested local image.
+- Publication did not redeploy devices or test actuators. Pi 1.1.0 version
+  labels are packaged, not confirmed installed. Prior observations remain scoped
+  to their recorded revisions; physical fault outcomes remain unverified.
+
+See [v1.1.0 release notes](releases/v1.1.0.md) and the final publication comments
+on [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22) and
+[Dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
+The [weather-assisted proposal](superpowers/specs/2026-10-02-weather-assisted-shower-design.md)
+is a draft for review, not implemented or commissioned behavior.
+
 ## PT100 commissioning update — 2026-10-01
 
 The [partial commissioning record](evidence/2026-10-01-pt100-display-commissioning.md)
