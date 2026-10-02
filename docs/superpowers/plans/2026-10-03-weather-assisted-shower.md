@@ -10,7 +10,7 @@
 
 **Spec:** [Approved weather design](../specs/2026-10-02-weather-assisted-shower-design.md).
 
-**Status:** Written for owner review on 2026-10-03; no implementation or tests claimed. Execution method and this plan require confirmation. Read the spec as well as this plan.
+**Status:** Owner approved execution, the proposed API contracts and recovery refinement on 2026-10-03 and selected subagent-driven development. Implementation is in progress; approval is not deployment evidence.
 
 ## Global Constraints
 
@@ -73,7 +73,7 @@ Keep legacy `/actions/timed-shower` explicitly bounded and `/actions/drain` avai
 
 Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 body too large, 422 invalid input, 503 unavailable storage/controller. Persistence failures also request DRAIN and latch fault. GET is not a command to enable AUTO.
 
-## Task W1: Five-day rules and durable weather state
+## Task 1 (W1): Five-day rules and durable weather state
 
 **Files:** create `src/freeze_protect/domain/weather.py`, `persistence/weather.py`; modify `domain/models.py` for `ControlMode.WEATHER_ASSISTED` and AUTO controller state; create `tests/unit/test_weather_policy.py`, `tests/integration/test_weather_store.py`.
 
@@ -85,7 +85,7 @@ Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 
 - [ ] Implement the exact interfaces and additive `weather_control` singleton plus version marker, using SQLite transactions, strict decoding and the existing database path. Keep old seven-day decoding unchanged. Rerun the focused suite and `python -m ruff check .` to PASS.
 - [ ] Commit the listed source/tests with `feat(weather): add five-day rules and durable inhibition`.
 
-## Task W2: Bounded weather fetch outside control execution
+## Task 2 (W2): Bounded weather fetch outside control execution
 
 **Files:** modify `adapters/weather.py`; create `application/weather_worker.py`; create `tests/unit/test_weather_window.py`, `tests/unit/test_weather_worker.py`.
 
@@ -97,7 +97,7 @@ Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 
 - [ ] Implement bounded response reading with verified HTTPS/no redirects and a single daemon worker. Use monotonic deadline checks around result handoff; socket timeout alone is not a total DNS/read deadline. Discard stale work and never block control waiting for the worker. Rerun to PASS.
 - [ ] Commit `feat(weather): isolate bounded forecast requests from control`.
 
-## Task W3: Integrate policy, manual timing and lease ownership
+## Task 3 (W3): Integrate policy, manual timing and lease ownership
 
 **Files:** modify `application/service.py`, `application/ports.py`; create `application/weather_control.py` for weather coordination; create `tests/unit/test_weather_service.py`, `tests/integration/test_weather_lease.py`; extend `tests/unit/test_periodic_loop.py`.
 
@@ -109,7 +109,7 @@ Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 
 - [ ] Implement coordination and runtime branches; retain old mode behavior. Worker lifecycle belongs to application lifespan. `PeriodicControlLoop` must not invoke blocking fetch in weather mode; preserve separate temperature telemetry. Run focused tests and existing service/daemon lease suites to PASS.
 - [ ] Commit `feat(control): integrate weather-assisted shower policy`.
 
-## Task W4: Authenticated API, freshness and gateway allowlist
+## Task 4 (W4): Authenticated API, freshness and gateway allowlist
 
 **Files:** create `api/weather.py`, `application/weather_actions.py`; modify `api/app.py`, `api/auth.py`, `main.py`, `deployment/nginx/freeze-protect-display.conf`; create `tests/integration/test_weather_api.py`, `tests/unit/test_weather_actions.py`; extend `tests/integration/test_workstation_commissioning_assets.py`.
 
@@ -121,7 +121,7 @@ Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 
 - [ ] Run focused tests plus `python -m pytest -q tests/integration/test_m1_api.py tests/integration/test_workstation_commissioning_assets.py`; verify PASS and `git diff --check`.
 - [ ] Commit `feat(api): expose scoped weather settings and explicit actions`.
 
-## Task W5: Dial weather admin and AUTO state
+## Task 5 (W5): Dial weather admin and AUTO state
 
 **Files in Dial:** create `idf_app/main/weather_admin_dial.[ch]`; modify `admin_server_dial.c`, `admin_page_dial.h`, `valve_config_dial.[ch]`, `valve_client_dial.c`, `valve_logic.[ch]`, `valve_ui_dial.c`, `idf_app/main/CMakeLists.txt`; create `tests/admin_dial/test_weather_admin.c`; extend existing admin browser/HTTP and valve fixtures plus their runners.
 
@@ -133,7 +133,7 @@ Errors: 401 bad/missing credential, 409 revision/replay/not-ready conflict, 413 
 - [ ] Implement above interfaces, exact `/admin/api/weather` proxy and narrow credential provisioning. Keep PT100 one decimal, existing shower icon/dots and relay indicator. Display AUTO instead of countdown and explain USER_OFF in admin. Rerun both runners to PASS.
 - [ ] Commit Dial changes with `feat(dial): add weather settings and automatic shower display`.
 
-## Task W6: Integration evidence and review handoff
+## Task 6 (W6): Integration evidence and review handoff
 
 **Files:** create `docs/operations/weather-assisted-shower.md`, `docs/evidence/2026-10-03-weather-plan-validation.md` (record actual execution date when used); update `README.md`, `docs/PROJECT_STATE.md` and relevant deployment guides. No private coordinates/tokens/backups in Git.
 

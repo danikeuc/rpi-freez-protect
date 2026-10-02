@@ -10,7 +10,7 @@
 
 **Spec:** [Approved playlist design](../specs/2026-10-03-roon-playlist-favorites-design.md).
 
-**Status:** Owner approved the written design on 2026-10-03. This implementation plan, its additive API contracts and execution method still require owner review. No implemented behavior or test pass is claimed here.
+**Status:** Owner approved execution, the proposed API contracts and recovery refinement on 2026-10-03 and selected subagent-driven development. Implementation is in progress; approval is not deployment evidence.
 
 ## Global Constraints
 
@@ -64,7 +64,7 @@ Strict bodies <=4 KiB; zero-to-five unique favorites; unknown/duplicate JSON fie
 
 HTTP 401 unauthorized, 409 revision/generation/expired-intent conflict, 413 oversize body, 422 invalid request, 503 Core/storage unavailable. No partial save when any selector is invalid. A full favorites write is atomic CAS, with authoritative read-back before Saved.
 
-## Task P1: Establish exact playlist selection and playback semantics
+## Task 1 (P1): Establish exact playlist selection and playback semantics
 
 **Files:** add `tests/fixtures/roon_playlists/PROVENANCE.md` and sanitized recorded/synthetic fixtures in bridge; add `tests/playlist_protocol_probe.rs` against existing mock server/adapter. Inspect `src/adapters/roon.rs`, pinned roon-api sources and official Browse/Item contracts.
 
@@ -76,7 +76,7 @@ HTTP 401 unauthorized, 409 revision/generation/expired-intent conflict, 413 over
 - [ ] Record whether an exact persistent provider key is supported, and how the explicit first-track action interacts with preexisting shuffle. If no durable identity is established, use Reselect on reconnect/restart: favorites stay saved but unavailable until reselected in admin. Do not invent guaranteed title-based identity. If the actual API cannot express queue replacement + first-track semantics without extra playback changes, stop the playlist implementation for a scoped design decision; weather work can continue.
 - [ ] Commit the evidence/tests with `test(roon): characterize exact playlist selection`. This task produces a verified contract or a documented blocker, not permission to fake unavailable behavior.
 
-## Task P2: Catalog, favorite store and protected read/write routes
+## Task 2 (P2): Catalog, favorite store and protected read/write routes
 
 **Files:** create bridge `src/playlist_favorites/{mod.rs,model.rs,store.rs,catalog.rs,routes.rs}`; modify `src/lib.rs`, `src/main.rs`, `src/adapters/roon.rs`, `tests/fixtures/api_routes.txt`; create `tests/playlist_catalog.rs`, `tests/playlist_store.rs`, `tests/playlist_api.rs`.
 
@@ -88,7 +88,7 @@ HTTP 401 unauthorized, 409 revision/generation/expired-intent conflict, 413 over
 - [ ] Implement P1 exact resolution, paginated catalog and the approved GET/PUT/capabilities routes. Persist `dial-playlist-favorites-v1.json` under `config::get_data_dir()` with same-filesystem temporary file, flush/fsync, atomic replacement and parent-directory fsync; a failure is not acknowledged as Saved. Serialize writes. Keep requested target zone immutable to this credential. Reuse existing dependencies; do not alter global authentication or upstream firmware settings.
 - [ ] Rerun focused tests plus `cargo test --test api_contract`; PASS includes exact new route fixtures. Commit `feat(roon): add scoped playlist catalog and favorite storage`.
 
-## Task P3: Fresh, deduplicated playlist playback
+## Task 3 (P3): Fresh, deduplicated playlist playback
 
 **Files:** create `src/playlist_favorites/playback.rs`, extend `routes.rs`, `model.rs`, `store.rs` and `src/adapters/roon.rs`; create `tests/playlist_playback.rs`; extend `tests/playlist_api.rs` and API route fixture.
 
@@ -100,7 +100,7 @@ HTTP 401 unauthorized, 409 revision/generation/expired-intent conflict, 413 over
 - [ ] Implement prepare/play/receipt routes and an atomic durable request journal `dial-playlist-requests-v1.json` containing the last **128** requests; do not evict pending requests to admit another. Reset unresolved Accepted receipts to Unknown after restart; all intents expire on restart. Total pre-dispatch resolution deadline **8 seconds**, existing per-RPC bounded waits retained; after dispatch, **15 seconds** without sufficient correlated observation becomes Unknown. Never automatically resend after timeout, restart or reconnect.
 - [ ] Rerun suites plus `cargo test --test roon_protocol --test client_harness --test api_contract`; PASS required. Commit `feat(roon): start saved playlists with replay-safe requests`.
 
-## Task P4: Shared picker, Dial presentation and mobile admin
+## Task 4 (P4): Shared picker, Dial presentation and mobile admin
 
 **Files:** create Dial `common/controller_playlist.[ch]`, `idf_app/main/playlist_client_dial.[ch]`, `playlist_ui_dial.[ch]`, `playlist_admin_dial.[ch]`; modify `common/controller_action.h`, `controller_action_router.c`, `controller_input_profile.h`, `common/ui.c`, `idf_app/main/controller_input_profile_dial.c`, `platform_display_idf.c`, `admin_server_dial.c`, `admin_page_dial.h`, `main_idf.c`, `idf_app/main/CMakeLists.txt`; add `tests/test_controller_playlist.c`, `tests/playlist_dial/test_playlist_client.c`, `test_playlist_ui.c`, `test_playlist_admin.c`, `scripts/test_playlist_dial.sh` and extend admin browser fixtures.
 
@@ -112,7 +112,7 @@ HTTP 401 unauthorized, 409 revision/generation/expired-intent conflict, 413 over
 - [ ] Implement selected-file interfaces and host fixtures. Obtain a fresh play intent only after the new user confirmation tap, then send once if still within the captured gesture lifetime and correct screen/zone/session generation. Store the device credential privately; no blocking HTTP, NVS or JSON parsing in display callbacks. Network requests use a dedicated bounded worker, separate from valve work. Gate the feature to this custom Dial presentation while preserving shared controller conventions and other targets.
 - [ ] Add matching host/fake builds to the existing CI jobs, rerun playlist/admin/valve runners to PASS, then commit `feat(dial): add admin playlist favorites and touch picker`.
 
-## Task P5: Combined verification, artifacts and rollback record
+## Task 5 (P5): Combined verification, artifacts and rollback record
 
 **Files:** add bridge `docs/dial-playlist-favorites.md`, Dial `docs/operations/playlist-favorites.md`; update API documentation, associated GitHub issues and the Pi integration evidence ledger with links only. Artifact manifests remain revision-specific; never include tokens, full private catalog or account state.
 
