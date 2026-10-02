@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -262,8 +263,8 @@ def create_app(
         request: Request,
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
-        await _require_empty_display_body(request)
-        decision = await run_in_threadpool(service.start_timed_shower)
+        duration_seconds = await _display_duration(request)
+        decision = await run_in_threadpool(service.start_timed_shower, duration_seconds)
         if decision.command is not ActuatorCommand.SUPPLY:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=decision.reason
@@ -307,6 +308,52 @@ async def _require_empty_display_body(request: Request) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="display actions do not accept a request body",
         )
+
+
+async def _display_duration(request: Request) -> int | None:
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 256:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="display action body exceeds 256 bytes",
+            )
+        body.extend(chunk)
+    if not body:
+        return None
+
+    def unique_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
+
+    def reject_constant(_value: str) -> NoReturn:
+        raise ValueError("invalid JSON constant")
+
+    try:
+        payload = json.loads(
+            body.decode("utf-8"),
+            object_pairs_hook=unique_keys,
+            parse_constant=reject_constant,
+        )
+    except (UnicodeDecodeError, ValueError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid duration body"
+        ) from error
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"duration_seconds"}
+        or type(payload["duration_seconds"]) is not int
+        or not 60 <= payload["duration_seconds"] <= 600
+        or payload["duration_seconds"] % 60 != 0
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="invalid duration body"
+        )
+    return payload["duration_seconds"]
 
 
 def _production_actuator(
@@ -380,6 +427,7 @@ def _display_status_payload(
         "reason": control.reason,
         "forecast": forecast,
         "timed_shower_deadline": _iso(control.timed_shower_deadline),
+        "timed_shower_duration_supported": control.mode is ControlMode.MANUAL_TIMED,
         "action": (
             "CLOSE_NOW"
             if control.state is ControllerState.TIMED_SHOWER

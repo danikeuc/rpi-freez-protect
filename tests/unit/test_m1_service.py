@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from freeze_protect.adapters.simulation import (
     InMemoryEventStore,
     SimulatedActuatorDriver,
@@ -421,6 +423,88 @@ def test_manual_interval_is_fixed_at_600_seconds_despite_admin_default() -> None
 
     assert started.command is ActuatorCommand.SUPPLY
     assert service.seconds_until_timed_shower_expiry() == 100
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+@pytest.mark.parametrize("seconds", range(60, 601, 60))
+def test_manual_duration_accepts_whole_minutes(seconds: int) -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+
+    decision = service.start_timed_shower(seconds)
+
+    assert decision.command is ActuatorCommand.SUPPLY
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=seconds)
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+@pytest.mark.parametrize("duration", [True, 60.0, "60", 0, 59, 61, 601])
+def test_manual_duration_rejects_invalid_values(duration: object) -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+
+    with pytest.raises(ValueError):
+        service.start_timed_shower(duration)  # type: ignore[arg-type]
+
+    assert relay.commands == [ActuatorCommand.DRAIN]
+    assert service.status().timed_shower_deadline is None
+
+
+@pytest.mark.parametrize("mode", [ControlMode.SAFE_DRAIN, ControlMode.AUTOMATIC])
+def test_explicit_duration_rejected_outside_manual(mode: ControlMode) -> None:
+    service, relay, _ = build_service(mode=mode)
+    service.startup()
+    before = list(relay.commands)
+
+    decision = service.start_timed_shower(60)
+
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "manual_duration_requires_manual_mode"
+    assert relay.commands == before
+
+
+def test_duration_respects_configured_max() -> None:
+    service, relay, _ = build_service(
+        mode=ControlMode.MANUAL_TIMED,
+        settings=SafetySettings(timed_shower_default_s=120, timed_shower_max_s=300),
+    )
+    service.startup()
+
+    decision = service.start_timed_shower(360)
+
+    assert decision.reason == "manual_duration_exceeds_settings_limit"
+    assert relay.commands == [ActuatorCommand.DRAIN]
+    assert service.status().timed_shower_deadline is None
+
+
+def test_duration_retry_does_not_extend_deadline() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        mode=ControlMode.MANUAL_TIMED, monotonic_clock=elapsed
+    )
+    service.startup()
+    service.start_timed_shower(60)
+    elapsed.advance(30)
+
+    repeated = service.start_timed_shower(600)
+
+    assert repeated.reason == "timed_shower_active"
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=60)
+    assert service.seconds_until_timed_shower_expiry() == 30
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+def test_short_active_duration_survives_lowered_maximum_above_its_length() -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+    service.start_timed_shower(60)
+
+    decision = service.update_settings(
+        SafetySettings(timed_shower_default_s=120, timed_shower_max_s=120)
+    )
+
+    assert decision.command is ActuatorCommand.SUPPLY
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=60)
     assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
 
 
