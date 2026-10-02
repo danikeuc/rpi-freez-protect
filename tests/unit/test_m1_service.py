@@ -463,6 +463,22 @@ def test_explicit_duration_rejected_outside_manual(mode: ControlMode) -> None:
     assert relay.commands == before
 
 
+def test_explicit_duration_rejected_during_active_automatic_shower() -> None:
+    service, relay, _ = build_service(mode=ControlMode.AUTOMATIC)
+    service.startup()
+    assert service.start_timed_shower().command is ActuatorCommand.SUPPLY
+    original_deadline = service.status().timed_shower_deadline
+    before = list(relay.commands)
+
+    rejected = service.start_timed_shower(60)
+
+    assert rejected.state is ControllerState.TIMED_SHOWER
+    assert rejected.command is ActuatorCommand.SUPPLY
+    assert rejected.reason == "manual_duration_requires_manual_mode"
+    assert service.status().timed_shower_deadline == original_deadline
+    assert relay.commands == before
+
+
 def test_duration_respects_configured_max() -> None:
     service, relay, _ = build_service(
         mode=ControlMode.MANUAL_TIMED,

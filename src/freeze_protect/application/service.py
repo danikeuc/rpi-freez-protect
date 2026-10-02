@@ -169,7 +169,7 @@ class ControlService:
             if duration_seconds is not None and self._mode is not ControlMode.MANUAL_TIMED:
                 return Decision(
                     self._state,
-                    ActuatorCommand.DRAIN,
+                    self._last_decision.command,
                     "manual_duration_requires_manual_mode",
                 )
             if self._mode is ControlMode.SAFE_DRAIN:

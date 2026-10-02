@@ -265,7 +265,10 @@ def create_app(
     ) -> dict[str, object]:
         duration_seconds = await _display_duration(request)
         decision = await run_in_threadpool(service.start_timed_shower, duration_seconds)
-        if decision.command is not ActuatorCommand.SUPPLY:
+        if (
+            duration_seconds is not None
+            and decision.reason == "manual_duration_requires_manual_mode"
+        ) or decision.command is not ActuatorCommand.SUPPLY:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=decision.reason
             )

@@ -163,6 +163,42 @@ def test_short_duration_expires_with_disconnected_client(client: TestClient) -> 
     assert [command.value for command in relay.commands] == ["DRAIN", "SUPPLY", "DRAIN"]
 
 
+def test_explicit_duration_rejected_during_active_automatic_shower_api(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        database_path=tmp_path / "automatic.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
+        run_background=False,
+    )
+    relay = app.state.relay_driver
+    with TestClient(app) as automatic_client:
+        started = automatic_client.post(
+            "/api/v1/display/actions/timed-shower", headers=DISPLAY
+        )
+        assert started.status_code == 200
+        original_deadline = app.state.control_service.status().timed_shower_deadline
+        before = list(relay.commands)
+
+        rejected = automatic_client.post(
+            "/api/v1/display/actions/timed-shower",
+            headers=DISPLAY,
+            json={"duration_seconds": 60},
+        )
+
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"] == "manual_duration_requires_manual_mode"
+        assert app.state.control_service.status().timed_shower_deadline == original_deadline
+        assert relay.commands == before
+        assert automatic_client.get("/api/v1/display/status", headers=DISPLAY).json()[
+            "command"
+        ] == "SUPPLY"
+
+
 def test_duplicate_start_does_not_extend_display_countdown(client: TestClient) -> None:
     service = client.app.state.control_service
     ticks = [100.0]
