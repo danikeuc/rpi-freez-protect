@@ -1,7 +1,7 @@
 # Admin stran gumba: PIN, čas tuša in rotacija
 
 Datum: 2026-10-02  
-Status: predlog za uporabnikov pregled; implementacija še ni odobrena ali izvedena.
+Status: zasnova potrjena v pogovoru 2026-10-02, vključno s spletno obnovo PIN-a z obnovitveno kodo. Izvedbeni načrt sledi ločeno; implementacija še ni izvedena.
 
 ## 1. Namen in potrjeni obseg
 
@@ -33,7 +33,7 @@ Spremembe so omejene na roon-knob in rpi-freez-protect. Obstoječe izdaje ostane
 
 **Obnova pozabljenega PIN-a na admin strani:** uporabnik želi spletno ponastavitev namesto postopka na fizičnem gumbu. Na prijavni strani je povezava »Pozabljen PIN«.
 
-**Predlagani način preverjanja, še za uporabnikov pregled:** ob prvi nastavitvi sistem ustvari naključno obnovitveno kodo z najmanj 128 biti entropije, jo enkrat pokaže in uporabnika pozove, naj jo shrani. Na napravi ostane samo soljen preverjevalnik kode. Veljavna koda skupaj z dvojnim vnosom novega štirimestnega PIN-a omogoči ponastavitev. Zahtevki so omejeni glede pogostosti; odgovor pri napačni kodi ne razkriva shranjenih podatkov. Ponastavitev je atomska: nastavi novi PIN, razveljavi obstoječe seje in porabljeno kodo ter ustvari novo obnovitveno kodo, ki se znova pokaže samo enkrat. Sočasna uporaba iste kode lahko uspe največ enkrat. Ob izgubljenem odgovoru se uporabnik lahko prijavi z novim PIN-om in po ponovnem preverjanju PIN-a ustvari nadomestno kodo.
+**Potrjeni način preverjanja:** ob prvi nastavitvi sistem ustvari naključno obnovitveno kodo z najmanj 128 biti entropije, jo enkrat pokaže in uporabnika pozove, naj jo shrani. Na napravi ostane samo soljen preverjevalnik kode. Veljavna koda skupaj z dvojnim vnosom novega štirimestnega PIN-a omogoči ponastavitev. Zahtevki so omejeni glede pogostosti; odgovor pri napačni kodi ne razkriva shranjenih podatkov. Ponastavitev je atomska: nastavi novi PIN, razveljavi obstoječe seje in porabljeno kodo ter ustvari novo obnovitveno kodo, ki se znova pokaže samo enkrat. Sočasna uporaba iste kode lahko uspe največ enkrat. Ob izgubljenem odgovoru se uporabnik lahko prijavi z novim PIN-om in po ponovnem preverjanju PIN-a ustvari nadomestno kodo.
 
 Ponastavi se samo dostop. Ohranijo se Wi-Fi, Roon, povezava z RPi-jem, čas tuša in rotacija. Ponastavitev PIN-a ne sproži relejev in ne spremeni odštevanja. Brez pravilnega PIN-a ali obnovitvene kode spletna stran ne omogoča ponastavitve. Ta prva različica ne dodaja drugega spletnega obvoda za primer izgube obeh podatkov.
 
@@ -97,4 +97,4 @@ Ti testi ne nadomeščajo fizičnega pregleda ventilov. Vsak preizkus s krmiljen
 5. Kompletni obstoječi testi in gradnja za točen Waveshare cilj; nato strojni preizkus telefonske strani, vseh orientacij, Roon-a in pravilnega prikaza časa.
 6. Najprej se pripravi združljiv RPi API; stari gumb ostane uporaben z 10 minutami. Nato se preizkusi novi firmware. Pred vsako namestitvijo se ohranijo točni artefakti in konfiguracija za povrnitev. Povrnitev RPi-ja na stari API pri krajšem času ne sme povzročiti tihega daljšega vklopa.
 
-Ta dokument je zasnova. V tej fazi ni bilo nameščeno ali spremenjeno nič na RPi-ju, gumbu ali Synologyju. Po uporabnikovem pregledu sledi izvedbeni načrt in izbira načina izvedbe po Superpowers brainstorming postopku.
+Ta dokument je zasnova. V tej fazi ni bilo nameščeno ali spremenjeno nič na RPi-ju, gumbu ali Synologyju. Zasnovo dopolnjuje izvedbeni načrt `docs/superpowers/plans/2026-10-02-dial-admin-settings.md`; po njegovem pregledu sledi implementacija po Superpowers postopku.
