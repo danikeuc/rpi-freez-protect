@@ -1,5 +1,14 @@
 # M1A DietPi and paired-valve commissioning
 
+For the protocol version 2 shower-interruption candidate, use the coordinated
+drained upgrade and rollback sequence in
+[`docs/operations/dial-admin-settings.md`](../docs/operations/dial-admin-settings.md).
+Stop the Hub while replacing the daemon/client, bridge, and Hub in that order.
+The bridge and Hub each require a successful version 2 startup DRAIN receipt
+before SUPPLY. A late renewal after daemon expiry or restart must fault; do not
+try a begin fallback. Existing commands below are commissioning procedures,
+not authorization to run them for this repository-only change.
+
 This procedure replaces the old Node-RED relay control with a constrained actuator bridge. Export the legacy relay flow first, but do not leave it deployed and active alongside the new bridge.
 
 ## Electrical boundary

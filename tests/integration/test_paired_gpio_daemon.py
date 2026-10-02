@@ -60,10 +60,11 @@ def test_expired_supply_is_rejected_without_a_low_pair_write() -> None:
     registers = FakeRegisters(daemon)
     gpio = daemon.PairedGpio(registers)
     gpio.configure_outputs()
+    lease = daemon.SupplyLease(gpio)
 
     result = daemon.execute_request(
         {"command": "SUPPLY", "deadline_unix_ms": 9_000.0},
-        gpio,
+        lease,
         clock=lambda: 10_000.0,
     )
 
@@ -77,20 +78,22 @@ def test_delayed_supply_followed_by_drain_cannot_leave_the_pair_low() -> None:
     registers = FakeRegisters(daemon)
     gpio = daemon.PairedGpio(registers)
     gpio.configure_outputs()
+    lease = daemon.SupplyLease(gpio)
 
     delayed_supply = daemon.execute_request(
         {"command": "SUPPLY", "deadline_unix_ms": 9_000.0},
-        gpio,
+        lease,
         clock=lambda: 10_000.0,
     )
     drain = daemon.execute_request(
         {"command": "DRAIN", "deadline_unix_ms": 9_000.0},
-        gpio,
+        lease,
         clock=lambda: 10_000.0,
     )
 
     assert delayed_supply["ok"] is False
-    assert drain == {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}
+    assert drain == {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1},
+                     "protocol_version": 2}
     assert registers.level & daemon.PAIR_MASK == daemon.PAIR_MASK
 
 
@@ -101,8 +104,8 @@ def test_supply_lease_drains_pair_when_hub_stops_renewing() -> None:
     now = [10.0]
     lease = daemon.SupplyLease(gpio, clock=lambda: now[0])
 
-    gpio.write_and_verify("SUPPLY")
-    lease.arm(daemon.SUPPLY_LEASE_S)
+    lease.execute("DRAIN")
+    lease.execute("SUPPLY", "begin")
     assert daemon.SUPPLY_LEASE_S == 60.0
     now[0] = 10.0 + 55.0
 
@@ -119,14 +122,18 @@ def test_failed_command_reports_failed_emergency_drain() -> None:
     daemon = load_daemon()
 
     class BrokenGpio:
+        calls = 0
+
         def write_and_verify(self, command: str) -> dict[str, int]:
+            self.calls += 1
+            if self.calls == 1:
+                return {"26": 1, "20": 1}
             raise RuntimeError(f"{command} failed")
 
-    result = daemon.execute_request(
-        {"command": "SUPPLY", "deadline_unix_ms": 11_000.0},
-        BrokenGpio(),
-        clock=lambda: 10_000.0,
-    )
+    gpio = BrokenGpio()
+    lease = daemon.SupplyLease(gpio)
+    assert lease.execute("DRAIN")["ok"] is True
+    result = lease.execute("SUPPLY", "begin")
 
     assert result["ok"] is False
     assert result["error"] == "SUPPLY failed"

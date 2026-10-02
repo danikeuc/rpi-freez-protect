@@ -28,6 +28,7 @@ MAX_SUPPLY_TTL_S = 1.5
 SUPPLY_LEASE_S = 60.0
 SOCKET_TIMEOUT_S = 1.0
 DEFAULT_SOCKET = "/run/freeze-protect/paired-gpio.sock"
+PROTOCOL_VERSION = 2
 
 
 class Registers(Protocol):
@@ -82,7 +83,7 @@ class PairedGpio:
 
 
 class SupplyLease:
-    """Force DRAIN unless an accepted SUPPLY command is renewed in time."""
+    """Sole lease authority for the paired outputs."""
 
     def __init__(
         self,
@@ -93,18 +94,78 @@ class SupplyLease:
         self._gpio = gpio
         self._clock = clock
         self._expires_at: float | None = None
+        self._drain_verified = False
 
-    def arm(self, ttl_s: float) -> None:
-        self._expires_at = self._clock() + min(max(ttl_s, 0.0), SUPPLY_LEASE_S)
-
-    def disarm(self) -> None:
+    def _drain(self) -> dict[str, Any]:
         self._expires_at = None
+        self._drain_verified = False
+        levels = self._gpio.write_and_verify("DRAIN")
+        self._drain_verified = True
+        return {
+            "ok": True,
+            "command": "DRAIN",
+            "gpio": levels,
+            "protocol_version": PROTOCOL_VERSION,
+        }
+
+    def execute(self, command: str, supply_action: str | None = None) -> dict[str, Any]:
+        if command == "DRAIN":
+            if supply_action is not None:
+                return {
+                    "ok": False,
+                    "command": command,
+                    "error": "DRAIN has no supply action",
+                }
+            try:
+                return self._drain()
+            except Exception as error:  # noqa: BLE001 - GPIO backends can fail arbitrarily.
+                return {"ok": False, "command": command, "error": str(error)}
+        if command != "SUPPLY" or supply_action not in {"begin", "renew"}:
+            return {"ok": False, "command": command, "error": "invalid SUPPLY action"}
+        try:
+            self.enforce()
+        except Exception as error:  # noqa: BLE001 - lease expiry DRAIN must fail closed.
+            return {"ok": False, "command": command, "error": str(error)}
+        if supply_action == "begin":
+            allowed = self._expires_at is None and self._drain_verified
+        else:
+            allowed = self._expires_at is not None and self._clock() < self._expires_at
+        if not allowed:
+            return {
+                "ok": False,
+                "command": command,
+                "error": "SUPPLY lease state rejects action",
+            }
+        self._expires_at = None
+        self._drain_verified = False
+        try:
+            levels = self._gpio.write_and_verify("SUPPLY")
+        except Exception as error:  # noqa: BLE001 - attempt paired DRAIN after failed write.
+            try:
+                self._drain()
+            except Exception as drain_error:  # noqa: BLE001 - preserve both failures.
+                return {
+                    "ok": False,
+                    "command": command,
+                    "error": str(error),
+                    "drain_error": str(drain_error),
+                }
+            return {"ok": False, "command": command, "error": str(error)}
+        self._expires_at = self._clock() + SUPPLY_LEASE_S
+        return {
+            "ok": True,
+            "command": command,
+            "supply_action": supply_action,
+            "gpio": levels,
+            "protocol_version": PROTOCOL_VERSION,
+        }
 
     def enforce(self) -> bool:
         if self._expires_at is None or self._clock() < self._expires_at:
             return False
-        self._gpio.write_and_verify("DRAIN")
         self._expires_at = None
+        self._drain_verified = False
+        self._drain()
         return True
 
 
@@ -114,7 +175,7 @@ def unix_time_ms() -> float:
 
 def execute_request(
     request: object,
-    gpio: PairedGpio,
+    lease: SupplyLease,
     *,
     clock: Callable[[], float] = unix_time_ms,
 ) -> dict[str, Any]:
@@ -124,6 +185,11 @@ def execute_request(
     deadline = request.get("deadline_unix_ms")
     if command not in {"DRAIN", "SUPPLY"}:
         return {"ok": False, "error": "command must be DRAIN or SUPPLY"}
+    if command == "SUPPLY":
+        try:
+            lease.enforce()  # Recheck after the socket's blocking recv.
+        except Exception as error:  # noqa: BLE001 - no SUPPLY after failed expiry DRAIN.
+            return {"ok": False, "command": command, "error": str(error)}
     if isinstance(deadline, bool) or not isinstance(deadline, int | float):
         return {"ok": False, "command": command, "error": "deadline is invalid"}
     now = clock()
@@ -133,20 +199,14 @@ def execute_request(
         deadline <= now or deadline - now > MAX_SUPPLY_TTL_S * 1000
     ):
         return {"ok": False, "command": command, "error": "SUPPLY request expired"}
-    try:
-        levels = gpio.write_and_verify(command)
-    except Exception as error:  # noqa: BLE001 - GPIO backends can fail arbitrarily.
-        try:
-            gpio.write_and_verify("DRAIN")
-        except Exception as drain_error:  # noqa: BLE001 - preserve both failures.
-            return {
-                "ok": False,
-                "command": command,
-                "error": str(error),
-                "drain_error": str(drain_error),
-            }
-        return {"ok": False, "command": command, "error": str(error)}
-    return {"ok": True, "command": command, "gpio": levels}
+    if command == "SUPPLY" and (
+        type(request.get("protocol_version")) is not int
+        or request["protocol_version"] != PROTOCOL_VERSION
+    ):
+        return {"ok": False, "command": command, "error": "protocol version mismatch"}
+    if command == "DRAIN" and request.get("supply_action") is not None:
+        return {"ok": False, "command": command, "error": "DRAIN has no supply action"}
+    return lease.execute(command, request.get("supply_action"))
 
 
 def serve(
@@ -157,13 +217,19 @@ def serve(
 ) -> None:
     socket_path.unlink(missing_ok=True)
     lease = SupplyLease(gpio)
+    startup = lease.execute("DRAIN")
+    if not startup.get("ok"):
+        raise RuntimeError("startup paired DRAIN failed")
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(socket_path))
         os.chmod(socket_path, 0o660)
         listener.listen(8)
         listener.settimeout(0.1)
         while not stop_requested():
-            lease.enforce()
+            try:
+                lease.enforce()
+            except Exception as error:  # noqa: BLE001 - allow a later DRAIN retry.
+                print(f"lease expiry DRAIN failed: {error}", file=sys.stderr)
             try:
                 connection, _ = listener.accept()
             except TimeoutError:
@@ -173,14 +239,16 @@ def serve(
                 try:
                     raw = connection.recv(4096)
                     request = json.loads(raw.decode("utf-8"))
-                    result = execute_request(request, gpio)
+                    # A blocked recv may cross expiry; SUPPLY enforces again below.
+                    result = execute_request(request, lease)
                 except Exception as error:  # noqa: BLE001 - keep daemon responsive.
                     result = {"ok": False, "error": str(error)}
-                if result.get("ok") and result.get("command") == "SUPPLY":
-                    lease.arm(SUPPLY_LEASE_S)
-                elif result.get("ok") and result.get("command") == "DRAIN":
-                    lease.disarm()
-                connection.sendall(json.dumps(result, sort_keys=True).encode("utf-8"))
+                try:
+                    connection.sendall(
+                        json.dumps(result, sort_keys=True).encode("utf-8")
+                    )
+                except OSError:
+                    pass  # The independent lease still expires if a receipt is lost.
 
 
 def run_daemon(socket_path: Path, gpio: PairedGpio) -> None:

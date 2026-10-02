@@ -272,12 +272,12 @@ def test_unrelated_request_completes_while_supply_bridge_is_blocked(
     entered = Event()
     release = Event()
 
-    def blocking_command(command: ActuatorCommand) -> object:
+    def blocking_command(command: ActuatorCommand, *, supply_action=None) -> object:
         if command is ActuatorCommand.SUPPLY:
             entered.set()
             if not release.wait(timeout=5):
                 raise AssertionError("test did not release the simulated bridge")
-        return original_command(command)
+        return original_command(command, supply_action=supply_action)
 
     monkeypatch.setattr(relay, "command", blocking_command)
     with ThreadPoolExecutor(max_workers=2) as requests:

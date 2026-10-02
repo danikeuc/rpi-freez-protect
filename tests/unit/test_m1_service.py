@@ -18,6 +18,7 @@ from freeze_protect.domain.models import (
     ForecastSnapshot,
     SafetySettings,
     SensorHealth,
+    SupplyAction,
     TemperatureReading,
     parse_control_mode,
 )
@@ -33,11 +34,11 @@ class RetryOnceDrainDriver(SimulatedActuatorDriver):
         super().__init__()
         self.attempts: list[ActuatorCommand] = []
 
-    def command(self, command: ActuatorCommand):  # type: ignore[no-untyped-def]
+    def command(self, command: ActuatorCommand, *, supply_action=None):  # type: ignore[no-untyped-def]
         self.attempts.append(command)
         if command is ActuatorCommand.DRAIN and len(self.attempts) == 1:
             raise AdapterError("first drain attempt failed")
-        return super().command(command)
+        return super().command(command, supply_action=supply_action)
 
 
 class FakeClock:
@@ -101,6 +102,33 @@ def test_startup_always_issues_drain_before_status_becomes_available() -> None:
     assert relay.commands == [ActuatorCommand.DRAIN]
     assert decision.state is ControllerState.SAFE_DRAIN
     assert service.status().state is ControllerState.SAFE_DRAIN
+
+
+def test_manual_begin_then_renew_rejection_faults_without_begin_fallback() -> None:
+    class RejectRenew(SimulatedActuatorDriver):
+        def command(self, command, *, supply_action=None):  # type: ignore[no-untyped-def]
+            self.attempts.append((command, supply_action))
+            if supply_action is SupplyAction.RENEW:
+                raise AdapterError("lease expired")
+            return super().command(command, supply_action=supply_action)
+
+    relay = RejectRenew()
+    relay.attempts = []
+    elapsed = FakeMonotonic()
+    service, _, _ = build_service(
+        relay=relay, monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    assert service.startup().state is ControllerState.MANUAL_DRAIN
+    assert service.start_timed_shower().state is ControllerState.TIMED_SHOWER
+    elapsed.advance(30)
+    assert service.run_cycle().state is ControllerState.FAULT
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.attempts == [
+        (ActuatorCommand.DRAIN, None),
+        (ActuatorCommand.SUPPLY, SupplyAction.BEGIN),
+        (ActuatorCommand.SUPPLY, SupplyAction.RENEW),
+        (ActuatorCommand.DRAIN, None),
+    ]
 
 
 def test_mode_parser_fails_closed() -> None:
@@ -269,6 +297,44 @@ def test_active_timed_shower_renews_the_supply_lease_each_cycle() -> None:
         ActuatorCommand.DRAIN,
         ActuatorCommand.SUPPLY,
         ActuatorCommand.SUPPLY,
+    ]
+    assert relay.actions == [None, SupplyAction.BEGIN, SupplyAction.RENEW]
+
+
+def test_automatic_supply_transition_begins_then_renews_without_duplicate_begin() -> (
+    None
+):
+    relay = SimulatedActuatorDriver()
+    forecast = ForecastSnapshot(
+        dates=tuple(date(2026, 9, 11) + timedelta(days=index) for index in range(7)),
+        daily_minima_c=(8.0,) * 7,
+        source_generated_at=None,
+        fetched_at=NOW,
+        latitude=46.5547,
+        longitude=15.6459,
+    )
+    service = ControlService(
+        temperature_source=SimulatedTemperatureSource(
+            TemperatureReading(10.0, NOW, SensorHealth.HEALTHY)
+        ),
+        forecast_store=SimulatedForecastStore(forecast),
+        forecast_client=SimulatedForecastClient(),
+        actuator_driver=relay,
+        event_store=InMemoryEventStore(),
+        settings=SafetySettings(
+            latitude=46.5547, longitude=15.6459, sensor_commissioned=True
+        ),
+        clock=lambda: NOW,
+        mode=ControlMode.AUTOMATIC,
+    )
+    service.startup()
+    service.run_cycle()
+    service.start_timed_shower()
+    assert relay.actions == [
+        None,
+        SupplyAction.BEGIN,
+        SupplyAction.RENEW,
+        SupplyAction.RENEW,
     ]
 
 
@@ -722,10 +788,10 @@ def test_failed_supply_receipt_and_event_persistence_clear_manual_deadlines() ->
 
 def test_safe_mode_refusal_preserves_a_failed_drain_receipt_fault() -> None:
     class FailAfterStartupDriver(SimulatedActuatorDriver):
-        def command(self, command: ActuatorCommand):  # type: ignore[no-untyped-def]
+        def command(self, command: ActuatorCommand, *, supply_action=None):  # type: ignore[no-untyped-def]
             if self.commands:
                 raise AdapterError("drain receipt unavailable")
-            return super().command(command)
+            return super().command(command, supply_action=supply_action)
 
     relay = FailAfterStartupDriver()
     service, _, _ = build_service(relay=relay)

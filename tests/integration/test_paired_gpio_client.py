@@ -37,8 +37,21 @@ def test_client_sends_a_short_expiry_and_returns_verified_daemon_receipt(
     assert json.loads(connection.sent.decode("utf-8")) == {
         "command": "DRAIN",
         "deadline_unix_ms": 11000.0,
+        "protocol_version": 2,
     }
-    assert result == {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}
+    assert result == {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1},
+                      "protocol_version": 2}
+
+
+def test_client_rejects_supply_without_action_before_socket_io(tmp_path: Path) -> None:
+    client = load_client()
+    assert client.request("SUPPLY", tmp_path / "absent.sock")["ok"] is False
+
+
+def test_client_rejects_old_daemon_receipt() -> None:
+    client = load_client()
+    assert client._validate_receipt({"ok": True, "command": "DRAIN", "gpio":
+                                     {"26": 1, "20": 1}}, "DRAIN", None)["ok"] is False
 
 
 class FakeSocket:
@@ -65,5 +78,6 @@ class FakeSocket:
 
     def recv(self, _size: int) -> bytes:
         return json.dumps(
-            {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1}}
+            {"ok": True, "command": "DRAIN", "gpio": {"26": 1, "20": 1},
+             "protocol_version": 2}
         ).encode("utf-8")

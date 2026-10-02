@@ -10,7 +10,9 @@ from urllib.request import urlopen as stdlib_urlopen
 from uuid import uuid4
 
 from freeze_protect.application.ports import AdapterError
-from freeze_protect.domain.models import ActuatorCommand, ActuatorReceipt
+from freeze_protect.domain.models import ActuatorCommand, ActuatorReceipt, SupplyAction
+
+PROTOCOL_VERSION = 2
 
 
 class _Response(Protocol):
@@ -49,13 +51,22 @@ class NodeRedActuatorDriver:
         self._urlopen = urlopen
         self._timeout_s = timeout_s
 
-    def command(self, command: ActuatorCommand) -> ActuatorReceipt:
+    def command(
+        self, command: ActuatorCommand, *, supply_action: SupplyAction | None = None
+    ) -> ActuatorReceipt:
+        if (command is ActuatorCommand.SUPPLY) != (supply_action is not None):
+            raise AdapterError("SUPPLY requires an action and DRAIN forbids one")
         request_id = str(uuid4())
+        body: dict[str, object] = {
+            "command": command.value,
+            "request_id": request_id,
+            "protocol_version": PROTOCOL_VERSION,
+        }
+        if supply_action is not None:
+            body["supply_action"] = supply_action.value
         request = Request(
             self._endpoint,
-            data=json.dumps(
-                {"command": command.value, "request_id": request_id}
-            ).encode("utf-8"),
+            data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -72,18 +83,38 @@ class NodeRedActuatorDriver:
             raise
         except (HTTPError, URLError, OSError) as error:
             raise AdapterError(f"Node-RED request failed: {error}") from error
-        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as error:
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ) as error:
             raise AdapterError(f"Node-RED response is invalid: {error}") from error
-        return _receipt(payload, command, request_id)
+        return _receipt(payload, command, request_id, supply_action)
 
 
 def _receipt(
-    payload: object, command: ActuatorCommand, request_id: str
+    payload: object,
+    command: ActuatorCommand,
+    request_id: str,
+    supply_action: SupplyAction | None,
 ) -> ActuatorReceipt:
     if not isinstance(payload, dict):
         raise AdapterError("Node-RED receipt must be an object")
-    if payload.get("command") != command.value or payload.get("request_id") != request_id:
+    if (
+        payload.get("command") != command.value
+        or payload.get("request_id") != request_id
+    ):
         raise AdapterError("Node-RED receipt does not match the request")
+    if (
+        type(payload.get("protocol_version")) is not int
+        or payload["protocol_version"] != PROTOCOL_VERSION
+    ):
+        raise AdapterError("Node-RED receipt protocol version mismatch")
+    if payload.get("supply_action") != (
+        supply_action.value if supply_action is not None else None
+    ):
+        raise AdapterError("Node-RED receipt supply action mismatch")
     gpio = payload.get("gpio")
     if not isinstance(gpio, dict):
         raise AdapterError("Node-RED receipt has no GPIO map")
@@ -94,6 +125,8 @@ def _receipt(
             gpio_26=_gpio_level(gpio, "26"),
             gpio_20=_gpio_level(gpio, "20"),
             flow_revision=_string(payload, "flow_revision"),
+            protocol_version=PROTOCOL_VERSION,
+            supply_action=supply_action,
         )
     except (TypeError, ValueError) as error:
         raise AdapterError(f"Node-RED receipt is invalid: {error}") from error

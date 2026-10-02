@@ -36,6 +36,11 @@ class ActuatorCommand(str, Enum):
     SUPPLY = "SUPPLY"
 
 
+class SupplyAction(str, Enum):
+    BEGIN = "begin"
+    RENEW = "renew"
+
+
 class SensorHealth(str, Enum):
     HEALTHY = "HEALTHY"
     STALE = "STALE"
@@ -184,6 +189,8 @@ class ActuatorReceipt:
     gpio_26: int
     gpio_20: int
     flow_revision: str
+    protocol_version: int
+    supply_action: SupplyAction | None = None
 
     def __post_init__(self) -> None:
         if not self.request_id or not self.flow_revision:
@@ -191,6 +198,10 @@ class ActuatorReceipt:
         expected_level = 0 if self.command is ActuatorCommand.SUPPLY else 1
         if (self.gpio_26, self.gpio_20) != (expected_level, expected_level):
             raise ValueError("receipt must confirm the paired GPIO levels")
+        if self.protocol_version != 2:
+            raise ValueError("receipt must confirm protocol version 2")
+        if (self.command is ActuatorCommand.SUPPLY) != (self.supply_action is not None):
+            raise ValueError("receipt supply action does not match command")
 
 
 @dataclass(frozen=True, slots=True)

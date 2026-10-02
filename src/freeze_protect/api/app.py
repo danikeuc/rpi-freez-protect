@@ -51,6 +51,7 @@ from freeze_protect.domain.models import (
     ForecastSnapshot,
     SafetySettings,
     SensorHealth,
+    SupplyAction,
     TemperatureReading,
 )
 from freeze_protect.persistence.sqlite import (
@@ -93,7 +94,9 @@ class SimulationInput(BaseModel):
 
 
 class _UnavailableActuatorDriver:
-    def command(self, command: ActuatorCommand) -> NoReturn:
+    def command(
+        self, command: ActuatorCommand, *, supply_action: SupplyAction | None = None
+    ) -> NoReturn:
         raise AdapterError(f"actuator bridge is not configured for {command.value}")
 
 
