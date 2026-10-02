@@ -15,6 +15,7 @@ class ControllerState(str, Enum):
     FROST_PROTECTION = "FROST_PROTECTION"
     NORMAL = "NORMAL"
     TIMED_SHOWER = "TIMED_SHOWER"
+    AUTO_SUPPLY = "AUTO_SUPPLY"
     FAULT = "FAULT"
 
 
@@ -22,6 +23,7 @@ class ControlMode(str, Enum):
     SAFE_DRAIN = "safe_drain"
     MANUAL_TIMED = "manual_timed"
     AUTOMATIC = "automatic"
+    WEATHER_ASSISTED = "weather_assisted"
 
 
 def parse_control_mode(value: str | None) -> ControlMode:
