@@ -44,8 +44,10 @@ Companion dial source `9b1ca059f0142098d2f510637351941d842f4979`, app SHA256
 `38e29badcf6e80927ede5acb955204ff1cc65b39a4d971eba2b6271d8bd25c58`, was flashed
 after a verified full backup. Four regions and unchanged NVS were verified;
 a 50-second boot and GET-only admin checks passed. The first d0b1a28 image
-had an IPv4 admin 403 defect and was superseded by this fix. User PIN,
-duration/rotation persistence and interaction acceptance remain pending.
+had an IPv4 admin 403 defect and was superseded by this fix. The operator subsequently confirmed private PIN/login, duration save and
+browser-reload retention (three minutes then return to ten), and the requested
+rotation/touch/swipe checks. Power-cycle persistence and quantitative timing
+remain unverified.
 No timed/SUPPLY or energized physical test was performed; 24 V was confirmed
 disconnected. These installation observations supersede the source-only
 status in the historical candidate description below, not the remaining
