@@ -29,6 +29,38 @@ current Waveshare candidate. The historical rows retain their original scope.
 - The operator reported successful Wi-Fi interruption/recovery during several accidental disconnections: verified by operator observation, without recorded outage timing or logs. The operator waived physical sensor-fault testing for informational display use and deferred lower-temperature testing because it is currently unavailable; neither is recorded as passed.
 - The operator confirmed 24 V disconnected; no SUPPLY action was issued. Neither PR has been merged or released.
 
+## Dial admin settings repository candidate — 2026-10-02
+
+Draft [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22)
+adds strict one to ten minute manual timing and the status capability consumed
+by draft [dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
+These branches are candidate source and local check evidence; neither this
+section nor their builds establish the installed Pi package, flashed firmware,
+relay contacts, valve position or hydraulic behavior. The earlier sentence
+"neither PR has been merged or released" above describes the 2026-10-01
+checkpoint before the v1.0.0 publication recorded below; it is not a claim
+about the two new draft PRs or the current GitHub release state.
+
+The candidate defaults to 600 seconds for legacy empty requests. A valid
+explicit request is a whole-minute 60–600 seconds, rejected outside that
+range. A dial with a saved short duration blocks START without fresh Pi
+capability, including rollback to an older Pi API. Dial admin setup protects
+configuration surfaces on both station and AP servers; interrupted first PIN
+setup after an established marker may require deliberate recovery. The code
+no longer automatically erases all NVS on boot initialization error. These
+are source properties awaiting exact-artifact bench validation; preservation
+of existing settings after flash and actual PIN behavior are pending device
+checks. The browser UI remains on a trusted LAN.
+
+No live Pi/device session, SUPPLY command, 24 V change, flash, or deployment was
+performed for this candidate entry. Final local verification belongs in draft
+[Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22) and
+[dial PR #10](https://github.com/danikeuc/roon-knob/pull/10); exact local
+artifact identities are in the user-accessible `dial-admin-candidate/manifest.json`.
+Historical operator observations below retain their own
+source revisions and test boundaries. The four fault domains remain pending
+for the candidate as described in the [operations runbook](operations/dial-admin-settings.md).
+
 ## Current contract
 
 - The Raspberry Pi Hub is the valve safety authority. In the deployed
