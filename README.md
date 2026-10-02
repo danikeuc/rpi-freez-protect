@@ -1,5 +1,7 @@
 # RPi Freeze Protect
 
+Paired system release: [v1.1.0 — mobile admin and timed shower settings](docs/releases/v1.1.0.md).
+
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
 allows a bounded one to ten minute `SUPPLY` interval from the Waveshare dial

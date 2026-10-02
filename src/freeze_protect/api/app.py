@@ -171,7 +171,7 @@ def create_app(
                 finally:
                     service.drain("shutdown_drain")
 
-    app = FastAPI(title="RPi Freeze Protect", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="RPi Freeze Protect", version="1.1.0", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
