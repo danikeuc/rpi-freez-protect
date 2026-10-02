@@ -31,6 +31,26 @@ current Waveshare candidate. The historical rows retain their original scope.
 
 ## Dial admin settings repository candidate — 2026-10-02
 
+**Later installation checkpoint:** Pi source `52c0815c17ecd94d4939c2995a0cced3a40be8bc`
+was installed through the trusted operator console on 2026-10-02. All 20
+installed Python files matched source; the operator reported manual_timed,
+MANUAL_DRAIN, duration capability true and a protocol 2 DRAIN receipt.
+Restricted SSH independently confirmed source identity, active Hub/Node-RED/
+paired daemon and GPIO26/20 output/high. The paired flow passed the deployed
+preflight; unrelated nodes were preserved. The root-only pre-upgrade backup
+is `/root/freeze-protect-before-admin.TqLNPDrE`.
+
+Companion dial source `9b1ca059f0142098d2f510637351941d842f4979`, app SHA256
+`38e29badcf6e80927ede5acb955204ff1cc65b39a4d971eba2b6271d8bd25c58`, was flashed
+after a verified full backup. Four regions and unchanged NVS were verified;
+a 50-second boot and GET-only admin checks passed. The first d0b1a28 image
+had an IPv4 admin 403 defect and was superseded by this fix. User PIN,
+duration/rotation persistence and interaction acceptance remain pending.
+No timed/SUPPLY or energized physical test was performed; 24 V was confirmed
+disconnected. These installation observations supersede the source-only
+status in the historical candidate description below, not the remaining
+hardware acceptance gates. Both PRs remain draft and unmerged.
+
 Draft [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22)
 adds strict one to ten minute manual timing and the status capability consumed
 by draft [dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
@@ -65,7 +85,8 @@ for the candidate as described in the [operations runbook](operations/dial-admin
 
 - The Raspberry Pi Hub is the valve safety authority. In the deployed
   `manual_timed` mode, idle is `MANUAL_DRAIN` / `DRAIN`; one authenticated
-  deliberate display action may start one fixed 600-second `SUPPLY` interval.
+  deliberate display action may start a 60–600-second `SUPPLY` interval in
+  whole minutes. The legacy/default request remains 600 seconds.
   Duplicate actions do not extend it. Weather and sensor inputs cannot start
   `SUPPLY` in this mode.
 - BCM 26 and BCM 20 are one paired active-low actuator. `DRAIN` is high/high and
