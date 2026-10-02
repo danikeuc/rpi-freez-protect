@@ -1,9 +1,9 @@
 # Roon playlist favorites on the Waveshare dial
 
-Status: **DRAFT FOR USER REVIEW**. The owner requested up to five favorites
-and confirmed replace-queue-and-play behavior on 2026-10-03. Gesture placement,
-exit behavior and the architecture below are proposed for written review.
-Implementation planning follows approval; this is not implemented or deployed.
+Status: **APPROVED FOR IMPLEMENTATION PLANNING**, 2026-10-03. The owner
+approved this written design after confirming replace-queue-and-play behavior.
+The implementation plan and its exact additive API contracts require review
+before execution. This feature is not implemented or deployed.
 
 ## 1. Intent and independent delivery scope
 
@@ -173,5 +173,6 @@ volume, GPIO, flashing, deployment, merge or release. Firmware and bridge change
 require exact-revision tests and rollback evidence before publication.
 
 Weather implementation planning can proceed from its separately approved spec.
-Review this companion written design before producing its detailed implementation
-plan. Neither new feature is currently implemented by these documents.
+The [playlist implementation plan](../plans/2026-10-03-roon-playlist-favorites.md)
+is ready for review alongside the independently approved weather specification.
+Neither new feature is currently implemented by these documents.

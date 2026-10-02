@@ -3,7 +3,7 @@
 Status: **APPROVED FOR IMPLEMENTATION PLANNING**, 2026-10-03. The owner
 approved the written weather design and requested a separate Roon playlist
 favorites addition. Approval covers this weather specification; the companion
-Roon design and execution plan still require review. No runtime, firmware,
+Roon design was subsequently approved; both execution plans still require review. No runtime, firmware,
 deployment, GPIO or release changes are part of this document.
 
 ## Owner review summary — scope resumed 2026-10-03
@@ -318,3 +318,6 @@ tests, migration, review and deployment gates, then obtain plan review and
 execution-method confirmation. Design approval is not deployment, live
 actuation or release approval. Roon playlist favorites are a companion scope
 with their own design decisions; BLE remotes remain excluded.
+
+Implementation planning: [Weather plan](../plans/2026-10-03-weather-assisted-shower.md)
+and [companion playlist plan](../plans/2026-10-03-roon-playlist-favorites.md).

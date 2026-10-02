@@ -42,7 +42,7 @@ was approved for implementation planning on 2026-10-03; it is not implemented
 or commissioned behavior. The owner also requested up to five Roon playlist
 favorites in the Dial admin and a long-touch/encoder playlist picker. That
 companion [playlist design](superpowers/specs/2026-10-03-roon-playlist-favorites-design.md)
-is a draft for review; BLE remotes remain excluded. The owner confirmed that
+was approved for implementation planning on 2026-10-03; BLE remotes remain excluded. The owner confirmed that
 a playlist selection replaces the queue and starts playback from its first track.
 
 ## PT100 commissioning update — 2026-10-01
@@ -216,3 +216,23 @@ scope and the recorded skipped/deferred tests. [Release scope and component
 identities](releases/v1.0.0.md) distinguish the tested dial binary, Pi package
 metadata update and remaining evidence limits. Earlier draft statuses describe
 their historical checkpoints; current publication state is on GitHub.
+
+## Weather and Roon playlist planning — 2026-10-03
+
+Both written designs are owner-approved. The [weather implementation plan](superpowers/plans/2026-10-03-weather-assisted-shower.md)
+and [playlist implementation plan](superpowers/plans/2026-10-03-roon-playlist-favorites.md)
+are written for owner review and execution-method selection; neither has been
+executed. New bridge routes require explicit contract approval as part of plan
+review. The weather plan proposes conservative USER_OFF recovery after an
+unclean AUTO exit, in addition to the approved interrupted-manual behavior.
+
+The plans reference actual Pi, Dial and bridge interfaces. Documentation checks
+are recorded separately from code/runtime evidence. No source, firmware,
+configuration, device playback, GPIO or release artifact changed during planning.
+Playlist identity across Core reconnect and preexisting shuffle behavior require
+the P1 protocol characterization before playback implementation claims.
+
+Planning validation: `git diff --check` passed; a local Markdown-link check
+resolved all 34 relative links across the ledger, four matching design documents
+and both new plans. This is documentation evidence only; no software tests or
+runtime checks were run for these documentation-only changes.
