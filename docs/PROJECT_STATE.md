@@ -38,7 +38,12 @@ See [v1.1.0 release notes](releases/v1.1.0.md) and the final publication comment
 on [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22) and
 [Dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
 The [weather-assisted proposal](superpowers/specs/2026-10-02-weather-assisted-shower-design.md)
-is a draft for review, not implemented or commissioned behavior.
+was approved for implementation planning on 2026-10-03; it is not implemented
+or commissioned behavior. The owner also requested up to five Roon playlist
+favorites in the Dial admin and a long-touch/encoder playlist picker. That
+companion [playlist design](superpowers/specs/2026-10-03-roon-playlist-favorites-design.md)
+is a draft for review; BLE remotes remain excluded. The owner confirmed that
+a playlist selection replaces the queue and starts playback from its first track.
 
 ## PT100 commissioning update — 2026-10-01
 

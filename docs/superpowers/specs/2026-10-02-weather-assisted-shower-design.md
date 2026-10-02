@@ -1,8 +1,35 @@
-# Weather-assisted shower — design for review
+# Weather-assisted shower — approved design
 
-Status: **DRAFT FOR USER REVIEW**. Conversation-level behavior is accepted;
-this written specification is not yet approved for implementation. No runtime,
-firmware, deployment, GPIO or release changes are part of this document.
+Status: **APPROVED FOR IMPLEMENTATION PLANNING**, 2026-10-03. The owner
+approved the written weather design and requested a separate Roon playlist
+favorites addition. Approval covers this weather specification; the companion
+Roon design and execution plan still require review. No runtime, firmware,
+deployment, GPIO or release changes are part of this document.
+
+## Owner review summary — scope resumed 2026-10-03
+
+The owner requested resuming weather automation only. BLE remotes, remote
+pairing and remote shower control are excluded from this increment. This
+scope was subsequently approved on 2026-10-03; BLE remains excluded.
+The newly requested Roon playlist favorites will have a separate design so
+playlist work does not alter the weather or actuator contracts.
+
+Potrjeni povzetek:
+
+- Pet dni pomeni danes in naslednje štiri lokalne dni. Vseh pet napovedanih
+  minimumov mora biti vsaj 5,0 °C, da je dovoljen stalni dotok.
+- Napoved se osvežuje vsakih 15 minut. Neuspešno pridobivanje, nepopolna,
+  neveljavna ali prestara napoved vrne ročno časovno upravljanje.
+- Že začeti ročni interval se izteče ob prvotnem roku; vremenska sprememba
+  ga ne podaljša. Trajanje ostane nastavljivo od 1 do 10 minut.
+- Ročni STOP ostane veljaven do novega namernega START, tudi po ponovnem zagonu.
+- V obstoječi admin strani dodamo vklop vremenske pomoči in lokacijo.
+  Na strani tuša se pri stalnem dotoku prikaže AUTO. PT100 ostane informativen.
+- Privzeto je avtomatika izklopljena. Namestitev in vklop na napravah sta
+  ločena od implementacije ter zahtevata ustrezno preverjanje strojne opreme.
+
+The detailed timeout, fault, compatibility and credential contracts below
+remain the source of truth for implementation planning.
 
 ## 1. Intent and baseline
 
@@ -60,7 +87,7 @@ Five days means **today plus the next four local calendar dates**, timezone
 qualifies. No hidden hysteresis or PT100 veto is introduced. Forecast eligibility
 is a convenience rule, not evidence of local pipe temperature or valve position.
 
-Proposed engineering defaults for written-spec approval:
+Approved engineering defaults:
 
 - Refresh on startup, enable, location change and local-date rollover, then
   every 900 monotonic seconds. Failed attempts retry at that cadence.
@@ -286,6 +313,8 @@ pinned plan/code and underlying evidence. RPi evidence reconciliation retains
 historical scope; Imperator-specific platform ownership is not imported here.
 The Mermaid diagram is a proposal, not an as-built hardware diagram.
 
-**Next gate:** user review of this written spec. Then produce the implementation
-plan with exact tasks, contracts, tests, migration, review and deployment gates.
-No implementation or release version is authorized/created by this draft alone.
+**Next gate:** produce the implementation plan with exact tasks, contracts,
+tests, migration, review and deployment gates, then obtain plan review and
+execution-method confirmation. Design approval is not deployment, live
+actuation or release approval. Roon playlist favorites are a companion scope
+with their own design decisions; BLE remotes remain excluded.
