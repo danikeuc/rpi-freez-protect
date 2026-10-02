@@ -31,7 +31,11 @@ Spremembe so omejene na roon-knob in rpi-freez-protect. Obstoječe izdaje ostane
 5. PIN se shrani kot soljen preverjevalnik, ne kot izvorne štiri številke. PIN, sejni identifikatorji in obstoječi API žetoni se ne izpisujejo v dnevnik ali vračajo v odgovorih.
 6. Sprememba PIN-a zahteva trenutno prijavo in ponovljen vnos novega PIN-a; obstoječe seje se razveljavijo.
 
-**Predlagana obnova pozabljenega PIN-a:** na fizičnem gumbu je v ločenem meniju nastavitev »Ponastavi dostop« z dodatno potrditvijo. Ponastavi samo PIN in seje. Ohranijo se Wi-Fi, Roon, povezava z RPi-jem, čas tuša in rotacija. Potrditev v tem meniju se porabi kot nastavitveni dogodek in se ne sme prenesti v ukaz za releje.
+**Obnova pozabljenega PIN-a na admin strani:** uporabnik želi spletno ponastavitev namesto postopka na fizičnem gumbu. Na prijavni strani je povezava »Pozabljen PIN«.
+
+**Predlagani način preverjanja, še za uporabnikov pregled:** ob prvi nastavitvi sistem ustvari naključno obnovitveno kodo z najmanj 128 biti entropije, jo enkrat pokaže in uporabnika pozove, naj jo shrani. Na napravi ostane samo soljen preverjevalnik kode. Veljavna koda skupaj z dvojnim vnosom novega štirimestnega PIN-a omogoči ponastavitev. Zahtevki so omejeni glede pogostosti; odgovor pri napačni kodi ne razkriva shranjenih podatkov. Ponastavitev je atomska: nastavi novi PIN, razveljavi obstoječe seje in porabljeno kodo ter ustvari novo obnovitveno kodo, ki se znova pokaže samo enkrat. Sočasna uporaba iste kode lahko uspe največ enkrat. Ob izgubljenem odgovoru se uporabnik lahko prijavi z novim PIN-om in po ponovnem preverjanju PIN-a ustvari nadomestno kodo.
+
+Ponastavi se samo dostop. Ohranijo se Wi-Fi, Roon, povezava z RPi-jem, čas tuša in rotacija. Ponastavitev PIN-a ne sproži relejev in ne spremeni odštevanja. Brez pravilnega PIN-a ali obnovitvene kode spletna stran ne omogoča ponastavitve. Ta prva različica ne dodaja drugega spletnega obvoda za primer izgube obeh podatkov.
 
 Prijava mora zaščititi tudi obstoječe spletne konfiguracijske poti, da sprememb ni mogoče opraviti prek starega obrazca. Redno upravljanje Roon-a in tuša na fizičnem gumbu ne zahteva PIN-a. Spletne spremembe zahtevajo veljavno sejo, zaščito pred ponarejenimi medstranskimi zahtevki in preverjanje izvora. Seja ima HttpOnly in SameSite zaščito. Uporaba ostaja na zaupanem lokalnem omrežju; PIN sam ne zagotavlja šifriranja obstoječega HTTP prenosa.
 
@@ -86,7 +90,7 @@ Ti testi ne nadomeščajo fizičnega pregleda ventilov. Vsak preizkus s krmiljen
 
 ## 8. Preverjanje in dostava
 
-1. Testi PIN-a: prvi vnos, tekmujoča začetna nastavitev, napačni formati, začetne ničle, napačni poskusi, sejni iztek, sprememba in fizična ponastavitev; zavrnjene neposredne stare konfiguracijske poti.
+1. Testi PIN-a: prvi vnos, tekmujoča začetna nastavitev, napačni formati, začetne ničle, napačni poskusi, sejni iztek, sprememba in spletna ponastavitev z obnovitveno kodo, zavrnitev napačne ali že uporabljene kode, tekmujoča ponastavitev, napaka zapisa in izgubljeni odgovor; zavrnjene neposredne stare konfiguracijske poti.
 2. Testi dejanske RPi logike: vse dovoljene minute, neveljavni vnosi, največ 600 sekund, prazno telo starega odjemalca, ponovljen ukaz brez podaljšanja in monoton rok.
 3. Testi shranjevanja: napaka zapisa/povratnega branja in ponovni zagon; podatki in skrivnosti se ne izpisujejo.
 4. Testi preslikave: vsi koti, točke na robovih, delni izrisi, poteze in preklic držanja ob spremembi orientacije.
