@@ -26,6 +26,7 @@ from freeze_protect.domain.models import (
     ForecastSnapshot,
     SafetySettings,
     SensorHealth,
+    SupplyAction,
     TemperatureReading,
 )
 from freeze_protect.domain.policy import evaluate_automatic
@@ -81,7 +82,9 @@ class ControlService:
         self._last_command: ActuatorCommand | None = None
         self._timed_shower_deadline: datetime | None = None
         self._timed_shower_monotonic_deadline: float | None = None
+        self._timed_shower_duration_s: int | None = None
         self._persistence_fault_latched = False
+        self._supply_ready = False
 
     @property
     def settings(self) -> SafetySettings:
@@ -103,7 +106,10 @@ class ControlService:
                 self._timed_shower_deadline is not None
                 and self._mode is ControlMode.MANUAL_TIMED
             ):
-                if settings.timed_shower_max_s < self.MANUAL_TIMED_DURATION_S:
+                if (
+                    self._timed_shower_duration_s is not None
+                    and settings.timed_shower_max_s < self._timed_shower_duration_s
+                ):
                     return self.drain("manual_duration_exceeds_settings_limit")
                 return self._last_decision
             return self._run_idle()
@@ -111,8 +117,11 @@ class ControlService:
     def startup(self) -> Decision:
         """Force physical drain after every process start before evaluating inputs."""
         with self._lock:
+            self._supply_ready = False
+            self._last_command = None
             self._timed_shower_deadline = None
             self._timed_shower_monotonic_deadline = None
+            self._timed_shower_duration_s = None
             if not self._send(ActuatorCommand.DRAIN, force=True):
                 return self._fault("startup_drain_failed")
             if not self._append_event("startup_drain", {"command": "DRAIN"}):
@@ -138,7 +147,11 @@ class ControlService:
                     self._timed_shower_monotonic_deadline is not None
                     and self._monotonic_clock() < self._timed_shower_monotonic_deadline
                 ):
-                    if not self._send(ActuatorCommand.SUPPLY, force=True):
+                    if not self._send(
+                        ActuatorCommand.SUPPLY,
+                        force=True,
+                        supply_action=SupplyAction.RENEW,
+                    ):
                         self._best_effort_drain()
                         return self._fault("relay_driver_error")
                     return self._set_decision(
@@ -151,10 +164,25 @@ class ControlService:
                 return self._finish_timed_shower()
             return self._run_idle()
 
-    def start_timed_shower(self) -> Decision:
+    def start_timed_shower(self, duration_seconds: int | None = None) -> Decision:
+        if duration_seconds is not None and (
+            type(duration_seconds) is not int
+            or not 60 <= duration_seconds <= 600
+            or duration_seconds % 60 != 0
+        ):
+            raise ValueError("duration_seconds must be a whole minute from 60 to 600")
         with self._lock:
             if self._state is ControllerState.FAULT:
                 return self._last_decision
+            if (
+                duration_seconds is not None
+                and self._mode is not ControlMode.MANUAL_TIMED
+            ):
+                return Decision(
+                    self._state,
+                    self._last_decision.command,
+                    "manual_duration_requires_manual_mode",
+                )
             if self._mode is ControlMode.SAFE_DRAIN:
                 idle_decision = self._run_idle()
                 if idle_decision.state is ControllerState.FAULT:
@@ -169,8 +197,7 @@ class ControlService:
             if self._timed_shower_deadline is not None:
                 if (
                     self._timed_shower_monotonic_deadline is None
-                    or self._monotonic_clock()
-                    >= self._timed_shower_monotonic_deadline
+                    or self._monotonic_clock() >= self._timed_shower_monotonic_deadline
                 ):
                     return self._finish_timed_shower()
                 return self._set_decision(
@@ -181,7 +208,12 @@ class ControlService:
                     )
                 )
             if self._mode is ControlMode.MANUAL_TIMED:
-                if self._settings.timed_shower_max_s < self.MANUAL_TIMED_DURATION_S:
+                duration_s = (
+                    self.MANUAL_TIMED_DURATION_S
+                    if duration_seconds is None
+                    else duration_seconds
+                )
+                if self._settings.timed_shower_max_s < duration_s:
                     return self._set_decision(
                         Decision(
                             ControllerState.MANUAL_DRAIN,
@@ -189,18 +221,23 @@ class ControlService:
                             "manual_duration_exceeds_settings_limit",
                         )
                     )
-                duration_s = self.MANUAL_TIMED_DURATION_S
             else:
                 duration_s = min(
                     self._settings.timed_shower_default_s,
                     self._settings.timed_shower_max_s,
                 )
             deadline = self._clock() + timedelta(seconds=duration_s)
-            if not self._send(ActuatorCommand.SUPPLY):
+            action = (
+                SupplyAction.RENEW
+                if self._last_command is ActuatorCommand.SUPPLY
+                else SupplyAction.BEGIN
+            )
+            if not self._send(ActuatorCommand.SUPPLY, force=True, supply_action=action):
                 self._best_effort_drain()
                 return self._fault("relay_driver_error")
             self._timed_shower_deadline = deadline
             self._timed_shower_monotonic_deadline = self._monotonic_clock() + duration_s
+            self._timed_shower_duration_s = duration_s
             decision = self._set_decision(
                 Decision(
                     ControllerState.TIMED_SHOWER,
@@ -219,6 +256,7 @@ class ControlService:
         with self._lock:
             self._timed_shower_deadline = None
             self._timed_shower_monotonic_deadline = None
+            self._timed_shower_duration_s = None
             if not self._send(ActuatorCommand.DRAIN, force=True):
                 return self._fault("relay_driver_error")
             decision = self._set_decision(
@@ -275,7 +313,9 @@ class ControlService:
         with self._lock:
             remaining_seconds = 0
             if self._timed_shower_monotonic_deadline is not None:
-                remaining = self._timed_shower_monotonic_deadline - self._monotonic_clock()
+                remaining = (
+                    self._timed_shower_monotonic_deadline - self._monotonic_clock()
+                )
                 if remaining <= 0:
                     self._finish_timed_shower()
                 else:
@@ -311,6 +351,7 @@ class ControlService:
     def _finish_timed_shower(self) -> Decision:
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None
+        self._timed_shower_duration_s = None
         if not self._send(ActuatorCommand.DRAIN, force=True):
             return self._fault("relay_driver_error")
         decision = self._set_decision(
@@ -366,6 +407,13 @@ class ControlService:
         if not self._send(
             decision.command,
             force=decision.command is ActuatorCommand.SUPPLY,
+            supply_action=(
+                SupplyAction.RENEW
+                if self._last_command is ActuatorCommand.SUPPLY
+                else SupplyAction.BEGIN
+            )
+            if decision.command is ActuatorCommand.SUPPLY
+            else None,
         ):
             if decision.command is ActuatorCommand.SUPPLY:
                 self._best_effort_drain()
@@ -411,13 +459,26 @@ class ControlService:
         *,
         force: bool = False,
         record_error: bool = True,
+        supply_action: SupplyAction | None = None,
     ) -> bool:
+        if command is ActuatorCommand.SUPPLY and (
+            not self._supply_ready or supply_action is None
+        ):
+            return False
         if not force and command is self._last_command:
             return True
         attempts = 2 if command is ActuatorCommand.DRAIN else 1
         for attempt in range(1, attempts + 1):
             try:
-                self._last_receipt = self._actuator_driver.command(command)
+                receipt = self._actuator_driver.command(
+                    command, supply_action=supply_action
+                )
+                if (
+                    receipt.command is not command
+                    or receipt.protocol_version != 2
+                    or receipt.supply_action is not supply_action
+                ):
+                    raise AdapterError("actuator receipt protocol mismatch")
             except AdapterError as error:
                 if record_error and not self._append_event(
                     "relay_driver_error",
@@ -429,7 +490,10 @@ class ControlService:
                 ):
                     return False
                 continue
+            self._last_receipt = receipt
             self._last_command = command
+            if command is ActuatorCommand.DRAIN:
+                self._supply_ready = True
             return True
         return False
 
@@ -441,6 +505,7 @@ class ControlService:
             return self._last_decision
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None
+        self._timed_shower_duration_s = None
         decision = Decision(ControllerState.FAULT, ActuatorCommand.DRAIN, reason)
         self._set_decision(decision)
         self._append_event("fault", {"reason": reason})
@@ -482,6 +547,7 @@ class ControlService:
         self._persistence_fault_latched = True
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None
+        self._timed_shower_duration_s = None
         self._send(ActuatorCommand.DRAIN, force=True, record_error=False)
         self._state = ControllerState.FAULT
         self._last_decision = Decision(

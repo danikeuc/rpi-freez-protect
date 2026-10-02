@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
+
 from freeze_protect.adapters.simulation import (
     InMemoryEventStore,
     SimulatedActuatorDriver,
@@ -16,6 +18,7 @@ from freeze_protect.domain.models import (
     ForecastSnapshot,
     SafetySettings,
     SensorHealth,
+    SupplyAction,
     TemperatureReading,
     parse_control_mode,
 )
@@ -31,11 +34,11 @@ class RetryOnceDrainDriver(SimulatedActuatorDriver):
         super().__init__()
         self.attempts: list[ActuatorCommand] = []
 
-    def command(self, command: ActuatorCommand):  # type: ignore[no-untyped-def]
+    def command(self, command: ActuatorCommand, *, supply_action=None):  # type: ignore[no-untyped-def]
         self.attempts.append(command)
         if command is ActuatorCommand.DRAIN and len(self.attempts) == 1:
             raise AdapterError("first drain attempt failed")
-        return super().command(command)
+        return super().command(command, supply_action=supply_action)
 
 
 class FakeClock:
@@ -99,6 +102,33 @@ def test_startup_always_issues_drain_before_status_becomes_available() -> None:
     assert relay.commands == [ActuatorCommand.DRAIN]
     assert decision.state is ControllerState.SAFE_DRAIN
     assert service.status().state is ControllerState.SAFE_DRAIN
+
+
+def test_manual_begin_then_renew_rejection_faults_without_begin_fallback() -> None:
+    class RejectRenew(SimulatedActuatorDriver):
+        def command(self, command, *, supply_action=None):  # type: ignore[no-untyped-def]
+            self.attempts.append((command, supply_action))
+            if supply_action is SupplyAction.RENEW:
+                raise AdapterError("lease expired")
+            return super().command(command, supply_action=supply_action)
+
+    relay = RejectRenew()
+    relay.attempts = []
+    elapsed = FakeMonotonic()
+    service, _, _ = build_service(
+        relay=relay, monotonic_clock=elapsed, mode=ControlMode.MANUAL_TIMED
+    )
+    assert service.startup().state is ControllerState.MANUAL_DRAIN
+    assert service.start_timed_shower().state is ControllerState.TIMED_SHOWER
+    elapsed.advance(30)
+    assert service.run_cycle().state is ControllerState.FAULT
+    assert service.seconds_until_timed_shower_expiry() is None
+    assert relay.attempts == [
+        (ActuatorCommand.DRAIN, None),
+        (ActuatorCommand.SUPPLY, SupplyAction.BEGIN),
+        (ActuatorCommand.SUPPLY, SupplyAction.RENEW),
+        (ActuatorCommand.DRAIN, None),
+    ]
 
 
 def test_mode_parser_fails_closed() -> None:
@@ -268,6 +298,44 @@ def test_active_timed_shower_renews_the_supply_lease_each_cycle() -> None:
         ActuatorCommand.SUPPLY,
         ActuatorCommand.SUPPLY,
     ]
+    assert relay.actions == [None, SupplyAction.BEGIN, SupplyAction.RENEW]
+
+
+def test_automatic_supply_transition_begins_then_renews_without_duplicate_begin() -> (
+    None
+):
+    relay = SimulatedActuatorDriver()
+    forecast = ForecastSnapshot(
+        dates=tuple(date(2026, 9, 11) + timedelta(days=index) for index in range(7)),
+        daily_minima_c=(8.0,) * 7,
+        source_generated_at=None,
+        fetched_at=NOW,
+        latitude=46.5547,
+        longitude=15.6459,
+    )
+    service = ControlService(
+        temperature_source=SimulatedTemperatureSource(
+            TemperatureReading(10.0, NOW, SensorHealth.HEALTHY)
+        ),
+        forecast_store=SimulatedForecastStore(forecast),
+        forecast_client=SimulatedForecastClient(),
+        actuator_driver=relay,
+        event_store=InMemoryEventStore(),
+        settings=SafetySettings(
+            latitude=46.5547, longitude=15.6459, sensor_commissioned=True
+        ),
+        clock=lambda: NOW,
+        mode=ControlMode.AUTOMATIC,
+    )
+    service.startup()
+    service.run_cycle()
+    service.start_timed_shower()
+    assert relay.actions == [
+        None,
+        SupplyAction.BEGIN,
+        SupplyAction.RENEW,
+        SupplyAction.RENEW,
+    ]
 
 
 def test_decommissioning_sensor_immediately_drains_an_active_normal_state() -> None:
@@ -421,6 +489,104 @@ def test_manual_interval_is_fixed_at_600_seconds_despite_admin_default() -> None
 
     assert started.command is ActuatorCommand.SUPPLY
     assert service.seconds_until_timed_shower_expiry() == 100
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+@pytest.mark.parametrize("seconds", range(60, 601, 60))
+def test_manual_duration_accepts_whole_minutes(seconds: int) -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+
+    decision = service.start_timed_shower(seconds)
+
+    assert decision.command is ActuatorCommand.SUPPLY
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=seconds)
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+@pytest.mark.parametrize("duration", [True, 60.0, "60", 0, 59, 61, 601])
+def test_manual_duration_rejects_invalid_values(duration: object) -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+
+    with pytest.raises(ValueError):
+        service.start_timed_shower(duration)  # type: ignore[arg-type]
+
+    assert relay.commands == [ActuatorCommand.DRAIN]
+    assert service.status().timed_shower_deadline is None
+
+
+@pytest.mark.parametrize("mode", [ControlMode.SAFE_DRAIN, ControlMode.AUTOMATIC])
+def test_explicit_duration_rejected_outside_manual(mode: ControlMode) -> None:
+    service, relay, _ = build_service(mode=mode)
+    service.startup()
+    before = list(relay.commands)
+
+    decision = service.start_timed_shower(60)
+
+    assert decision.command is ActuatorCommand.DRAIN
+    assert decision.reason == "manual_duration_requires_manual_mode"
+    assert relay.commands == before
+
+
+def test_explicit_duration_rejected_during_active_automatic_shower() -> None:
+    service, relay, _ = build_service(mode=ControlMode.AUTOMATIC)
+    service.startup()
+    assert service.start_timed_shower().command is ActuatorCommand.SUPPLY
+    original_deadline = service.status().timed_shower_deadline
+    before = list(relay.commands)
+
+    rejected = service.start_timed_shower(60)
+
+    assert rejected.state is ControllerState.TIMED_SHOWER
+    assert rejected.command is ActuatorCommand.SUPPLY
+    assert rejected.reason == "manual_duration_requires_manual_mode"
+    assert service.status().timed_shower_deadline == original_deadline
+    assert relay.commands == before
+
+
+def test_duration_respects_configured_max() -> None:
+    service, relay, _ = build_service(
+        mode=ControlMode.MANUAL_TIMED,
+        settings=SafetySettings(timed_shower_default_s=120, timed_shower_max_s=300),
+    )
+    service.startup()
+
+    decision = service.start_timed_shower(360)
+
+    assert decision.reason == "manual_duration_exceeds_settings_limit"
+    assert relay.commands == [ActuatorCommand.DRAIN]
+    assert service.status().timed_shower_deadline is None
+
+
+def test_duration_retry_does_not_extend_deadline() -> None:
+    elapsed = FakeMonotonic()
+    service, relay, _ = build_service(
+        mode=ControlMode.MANUAL_TIMED, monotonic_clock=elapsed
+    )
+    service.startup()
+    service.start_timed_shower(60)
+    elapsed.advance(30)
+
+    repeated = service.start_timed_shower(600)
+
+    assert repeated.reason == "timed_shower_active"
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=60)
+    assert service.seconds_until_timed_shower_expiry() == 30
+    assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
+
+
+def test_short_active_duration_survives_lowered_maximum_above_its_length() -> None:
+    service, relay, _ = build_service(mode=ControlMode.MANUAL_TIMED)
+    service.startup()
+    service.start_timed_shower(60)
+
+    decision = service.update_settings(
+        SafetySettings(timed_shower_default_s=120, timed_shower_max_s=120)
+    )
+
+    assert decision.command is ActuatorCommand.SUPPLY
+    assert service.status().timed_shower_deadline == NOW + timedelta(seconds=60)
     assert relay.commands == [ActuatorCommand.DRAIN, ActuatorCommand.SUPPLY]
 
 
@@ -622,10 +788,10 @@ def test_failed_supply_receipt_and_event_persistence_clear_manual_deadlines() ->
 
 def test_safe_mode_refusal_preserves_a_failed_drain_receipt_fault() -> None:
     class FailAfterStartupDriver(SimulatedActuatorDriver):
-        def command(self, command: ActuatorCommand):  # type: ignore[no-untyped-def]
+        def command(self, command: ActuatorCommand, *, supply_action=None):  # type: ignore[no-untyped-def]
             if self.commands:
                 raise AdapterError("drain receipt unavailable")
-            return super().command(command)
+            return super().command(command, supply_action=supply_action)
 
     relay = FailAfterStartupDriver()
     service, _, _ = build_service(relay=relay)

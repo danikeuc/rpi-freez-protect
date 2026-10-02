@@ -10,6 +10,7 @@ from freeze_protect.domain.models import (
     AuditEvent,
     ForecastSnapshot,
     SafetySettings,
+    SupplyAction,
     TemperatureReading,
 )
 
@@ -54,12 +55,18 @@ class SimulatedForecastClient:
 class SimulatedActuatorDriver:
     def __init__(self, fail_for: set[ActuatorCommand] | None = None) -> None:
         self.commands: list[ActuatorCommand] = []
+        self.actions: list[SupplyAction | None] = []
         self._fail_for = fail_for or set()
 
-    def command(self, command: ActuatorCommand) -> ActuatorReceipt:
+    def command(
+        self, command: ActuatorCommand, *, supply_action: SupplyAction | None = None
+    ) -> ActuatorReceipt:
+        if (command is ActuatorCommand.SUPPLY) != (supply_action is not None):
+            raise AdapterError("SUPPLY requires an action and DRAIN forbids one")
         if command in self._fail_for:
             raise AdapterError(f"simulated actuator rejected {command.value}")
         self.commands.append(command)
+        self.actions.append(supply_action)
         level = 0 if command is ActuatorCommand.SUPPLY else 1
         return ActuatorReceipt(
             command=command,
@@ -67,6 +74,8 @@ class SimulatedActuatorDriver:
             gpio_26=level,
             gpio_20=level,
             flow_revision="simulation",
+            protocol_version=2,
+            supply_action=supply_action,
         )
 
 

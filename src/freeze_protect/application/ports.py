@@ -7,6 +7,7 @@ from freeze_protect.domain.models import (
     AuditEvent,
     ForecastSnapshot,
     SafetySettings,
+    SupplyAction,
     TemperatureReading,
 )
 
@@ -30,7 +31,9 @@ class ForecastClient(Protocol):
 
 
 class ActuatorDriver(Protocol):
-    def command(self, command: ActuatorCommand) -> ActuatorReceipt: ...
+    def command(
+        self, command: ActuatorCommand, *, supply_action: SupplyAction | None = None
+    ) -> ActuatorReceipt: ...
 
 
 class EventStore(Protocol):

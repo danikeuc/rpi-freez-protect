@@ -74,6 +74,7 @@ def test_default_api_mode_refuses_supply_and_reports_safe_drain(tmp_path: Path) 
         status = client.get("/api/v1/display/status", headers=DISPLAY)
         attempted = client.post("/api/v1/display/actions/timed-shower", headers=DISPLAY)
         assert status.json()["mode"] == "safe_drain"
+        assert status.json()["timed_shower_duration_supported"] is False
         assert status.json()["state"] == "SAFE_DRAIN"
         assert status.json()["command"] == "DRAIN"
         assert status.json()["remaining_seconds"] == 0
@@ -90,6 +91,112 @@ def test_manual_status_starts_idle_with_no_remaining_time(client: TestClient) ->
     assert payload["command"] == "DRAIN"
     assert payload["remaining_seconds"] == 0
     assert payload["action_enabled"] is True
+    assert payload["timed_shower_duration_supported"] is True
+
+
+@pytest.mark.parametrize("seconds", range(60, 601, 60))
+def test_manual_duration_accepts_whole_minutes_api(
+    client: TestClient, seconds: int
+) -> None:
+    response = client.post(
+        "/api/v1/display/actions/timed-shower",
+        headers=DISPLAY,
+        json={"duration_seconds": seconds},
+    )
+    payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
+
+    assert response.status_code == 200
+    assert payload["timed_shower_deadline"] == (
+        datetime(2026, 9, 11, 12, tzinfo=UTC) + timedelta(seconds=seconds)
+    ).isoformat()
+
+
+@pytest.mark.parametrize("body", [
+    b'{"duration_seconds":true}',
+    b'{"duration_seconds":60.0}',
+    b'{"duration_seconds":"60"}',
+    b'{"duration_seconds":null}',
+    b'{}',
+    b'{"duration_seconds":60,"extra":1}',
+    b'{"duration_seconds":60,"duration_seconds":120}',
+    b'{"duration_seconds":0}',
+    b'{"duration_seconds":59}',
+    b'{"duration_seconds":61}',
+    b'{"duration_seconds":601}',
+    b'{"duration_seconds":NaN}',
+    b'{"duration_seconds":Infinity}',
+    b'{"duration_seconds":-Infinity}',
+    b'{"duration_seconds":60}' + b' ' * 256,
+    b'[60]',
+])
+def test_duration_body_rejects_invalid_without_actuation(
+    client: TestClient, body: bytes
+) -> None:
+    relay = client.app.state.relay_driver
+    before = len(relay.commands)
+
+    response = client.post(
+        "/api/v1/display/actions/timed-shower", headers=DISPLAY,
+        content=body,
+    )
+
+    assert response.status_code == 400
+    assert len(relay.commands) == before
+
+
+def test_short_duration_expires_with_disconnected_client(client: TestClient) -> None:
+    service = client.app.state.control_service
+    ticks = [100.0]
+    service._monotonic_clock = lambda: ticks[0]
+    relay = client.app.state.relay_driver
+    response = client.post(
+        "/api/v1/display/actions/timed-shower",
+        headers=DISPLAY,
+        json={"duration_seconds": 60},
+    )
+    assert response.status_code == 200
+
+    ticks[0] = 160.0
+    decision = service.run_cycle()
+
+    assert decision.reason == "timed_shower_expired"
+    assert [command.value for command in relay.commands] == ["DRAIN", "SUPPLY", "DRAIN"]
+
+
+def test_explicit_duration_rejected_during_active_automatic_shower_api(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        database_path=tmp_path / "automatic.db",
+        admin_token="admin-token",
+        display_token="display-token",
+        development_mode=True,
+        control_mode=ControlMode.AUTOMATIC,
+        clock=lambda: datetime(2026, 9, 11, 12, tzinfo=UTC),
+        run_background=False,
+    )
+    relay = app.state.relay_driver
+    with TestClient(app) as automatic_client:
+        started = automatic_client.post(
+            "/api/v1/display/actions/timed-shower", headers=DISPLAY
+        )
+        assert started.status_code == 200
+        original_deadline = app.state.control_service.status().timed_shower_deadline
+        before = list(relay.commands)
+
+        rejected = automatic_client.post(
+            "/api/v1/display/actions/timed-shower",
+            headers=DISPLAY,
+            json={"duration_seconds": 60},
+        )
+
+        assert rejected.status_code == 409
+        assert rejected.json()["detail"] == "manual_duration_requires_manual_mode"
+        assert app.state.control_service.status().timed_shower_deadline == original_deadline
+        assert relay.commands == before
+        assert automatic_client.get("/api/v1/display/status", headers=DISPLAY).json()[
+            "command"
+        ] == "SUPPLY"
 
 
 def test_duplicate_start_does_not_extend_display_countdown(client: TestClient) -> None:
@@ -165,12 +272,12 @@ def test_unrelated_request_completes_while_supply_bridge_is_blocked(
     entered = Event()
     release = Event()
 
-    def blocking_command(command: ActuatorCommand) -> object:
+    def blocking_command(command: ActuatorCommand, *, supply_action=None) -> object:
         if command is ActuatorCommand.SUPPLY:
             entered.set()
             if not release.wait(timeout=5):
                 raise AssertionError("test did not release the simulated bridge")
-        return original_command(command)
+        return original_command(command, supply_action=supply_action)
 
     monkeypatch.setattr(relay, "command", blocking_command)
     with ThreadPoolExecutor(max_workers=2) as requests:
@@ -304,6 +411,7 @@ def test_display_status_preserves_legacy_valve_fields_with_unavailable_sensor(
         "reason": "manual_idle",
         "forecast": {"available": False, "fresh": False, "dates": [], "minima_c": []},
         "timed_shower_deadline": None,
+        "timed_shower_duration_supported": True,
         "action": "TIMED_SHOWER",
         "action_enabled": True,
         "pipe_temperature_c": None,

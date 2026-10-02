@@ -1,9 +1,13 @@
 # RPi Freeze Protect
 
+Paired system release: [v1.1.0 — mobile admin and timed shower settings](docs/releases/v1.1.0.md).
+
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
-allows a fixed ten-minute `SUPPLY` interval from the Waveshare dial when the
-explicit `manual_timed` mode is selected.
+allows a bounded one to ten minute `SUPPLY` interval from the Waveshare dial
+when the explicit `manual_timed` mode is selected. The default remains ten
+minutes. The variable-duration API is a repository candidate; see
+[the evidence ledger](docs/PROJECT_STATE.md) before treating it as deployed.
 
 Start with the dated [project evidence register](docs/PROJECT_STATE.md). It
 separates repository results, deployed observations, device behavior and facts
@@ -47,7 +51,7 @@ display token.
 - `safe_drain` is the default for an absent or invalid setting. It refuses
   `SUPPLY`.
 - `manual_timed` is the active installation mode. Only an authenticated
-  deliberate display action starts a fixed 600-second interval. Weather and
+  deliberate display action starts a selected 60–600-second interval. Weather and
   temperature cannot start it.
 - `automatic` is a separately commissioned legacy/future mode. Missing, stale,
   invalid or unsafe sensor/forecast inputs keep that mode at `DRAIN`.
@@ -73,7 +77,12 @@ POST /api/v1/display/actions/timed-shower
 POST /api/v1/display/actions/drain
 ```
 
-The action requests have no body and cannot submit a duration. In idle
+The timed-shower action accepts an empty body for the legacy 600-second interval,
+or exactly `{"duration_seconds":N}` for whole-minute `N` from 60 to 600. The
+DRAIN action remains bodyless. Status advertises
+`timed_shower_duration_supported` only in `manual_timed`. An invalid explicit
+duration is rejected; an unsupported client must not silently retry with the
+legacy empty body when a shorter duration is saved. In idle
 `manual_timed` mode, status is shaped like:
 
 ```json
@@ -87,6 +96,7 @@ The action requests have no body and cannot submit a duration. In idle
   "timed_shower_deadline": null,
   "action": "TIMED_SHOWER",
   "action_enabled": true,
+  "timed_shower_duration_supported": true,
   "pipe_temperature_c": null,
   "sensor_health": "STALE"
 }
@@ -138,6 +148,7 @@ uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Active components, authority and failure boundaries |
 | [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) | Canonical dated evidence and unresolved gaps |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | Reproducible repository checks and their limits |
+| [docs/operations/dial-admin-settings.md](docs/operations/dial-admin-settings.md) | Candidate admin setup, API compatibility and rollback |
 | [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) | Pi, Node-RED, GPIO, PT100 and physical commissioning |
 | [deployment/DISPLAY_COMMISSIONING.md](deployment/DISPLAY_COMMISSIONING.md) | Active Waveshare/Roon/valve display acceptance |
 | [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) | Restricted workstation-to-Pi access and handoff |

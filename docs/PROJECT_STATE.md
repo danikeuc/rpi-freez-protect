@@ -29,11 +29,66 @@ current Waveshare candidate. The historical rows retain their original scope.
 - The operator reported successful Wi-Fi interruption/recovery during several accidental disconnections: verified by operator observation, without recorded outage timing or logs. The operator waived physical sensor-fault testing for informational display use and deferred lower-temperature testing because it is currently unavailable; neither is recorded as passed.
 - The operator confirmed 24 V disconnected; no SUPPLY action was issued. Neither PR has been merged or released.
 
+## Dial admin settings repository candidate — 2026-10-02
+
+**Later installation checkpoint:** Pi source `52c0815c17ecd94d4939c2995a0cced3a40be8bc`
+was installed through the trusted operator console on 2026-10-02. All 20
+installed Python files matched source; the operator reported manual_timed,
+MANUAL_DRAIN, duration capability true and a protocol 2 DRAIN receipt.
+Restricted SSH independently confirmed source identity, active Hub/Node-RED/
+paired daemon and GPIO26/20 output/high. The paired flow passed the deployed
+preflight; unrelated nodes were preserved. The root-only pre-upgrade backup
+is `/root/freeze-protect-before-admin.TqLNPDrE`.
+
+Companion dial source `9b1ca059f0142098d2f510637351941d842f4979`, app SHA256
+`38e29badcf6e80927ede5acb955204ff1cc65b39a4d971eba2b6271d8bd25c58`, was flashed
+after a verified full backup. Four regions and unchanged NVS were verified;
+a 50-second boot and GET-only admin checks passed. The first d0b1a28 image
+had an IPv4 admin 403 defect and was superseded by this fix. The operator subsequently confirmed private PIN/login, duration save and
+browser-reload retention (three minutes then return to ten), and the requested
+rotation/touch/swipe checks. The operator also confirmed PIN, duration and selected rotation retained
+after a USB power cycle. Quantitative timing remains unverified.
+No timed/SUPPLY or energized physical test was performed; 24 V was confirmed
+disconnected. These installation observations supersede the source-only
+status in the historical candidate description below, not the remaining
+hardware acceptance gates. Both PRs remain draft and unmerged.
+
+Draft [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22)
+adds strict one to ten minute manual timing and the status capability consumed
+by draft [dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
+These branches are candidate source and local check evidence; neither this
+section nor their builds establish the installed Pi package, flashed firmware,
+relay contacts, valve position or hydraulic behavior. The earlier sentence
+"neither PR has been merged or released" above describes the 2026-10-01
+checkpoint before the v1.0.0 publication recorded below; it is not a claim
+about the two new draft PRs or the current GitHub release state.
+
+The candidate defaults to 600 seconds for legacy empty requests. A valid
+explicit request is a whole-minute 60–600 seconds, rejected outside that
+range. A dial with a saved short duration blocks START without fresh Pi
+capability, including rollback to an older Pi API. Dial admin setup protects
+configuration surfaces on both station and AP servers; interrupted first PIN
+setup after an established marker may require deliberate recovery. The code
+no longer automatically erases all NVS on boot initialization error. These
+are source properties awaiting exact-artifact bench validation; preservation
+of existing settings after flash and actual PIN behavior are pending device
+checks. The browser UI remains on a trusted LAN.
+
+No live Pi/device session, SUPPLY command, 24 V change, flash, or deployment was
+performed for this candidate entry. Final local verification belongs in draft
+[Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22) and
+[dial PR #10](https://github.com/danikeuc/roon-knob/pull/10); exact local
+artifact identities are in the user-accessible `dial-admin-candidate/manifest.json`.
+Historical operator observations below retain their own
+source revisions and test boundaries. The four fault domains remain pending
+for the candidate as described in the [operations runbook](operations/dial-admin-settings.md).
+
 ## Current contract
 
 - The Raspberry Pi Hub is the valve safety authority. In the deployed
   `manual_timed` mode, idle is `MANUAL_DRAIN` / `DRAIN`; one authenticated
-  deliberate display action may start one fixed 600-second `SUPPLY` interval.
+  deliberate display action may start a 60–600-second `SUPPLY` interval in
+  whole minutes. The legacy/default request remains 600 seconds.
   Duplicate actions do not extend it. Weather and sensor inputs cannot start
   `SUPPLY` in this mode.
 - BCM 26 and BCM 20 are one paired active-low actuator. `DRAIN` is high/high and
