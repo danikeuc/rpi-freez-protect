@@ -14,11 +14,13 @@ WEATHER_PROCESSING_BOUND_SECONDS = 30
 
 
 def _number(value: object, name: str) -> None:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int | float)
-        or not isfinite(value)
-    ):
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{name} must be a finite number")  # noqa: TRY004 - domain validation contract
+    try:
+        finite = isfinite(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not finite:
         raise ValueError(f"{name} must be a finite number")
 
 

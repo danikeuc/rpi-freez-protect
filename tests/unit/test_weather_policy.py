@@ -149,3 +149,8 @@ def test_additive_control_mode_and_auto_state():
     assert parse_control_mode("weather_assisted") is ControlMode.WEATHER_ASSISTED
     assert ControllerState.AUTO_SUPPLY.value == "AUTO_SUPPLY"
     assert parse_control_mode("automatic") is ControlMode.AUTOMATIC
+
+
+def test_oversized_integer_is_rejected_as_invalid_model_value():
+    with pytest.raises(ValueError):
+        replace(SETTINGS, latitude=10**400)

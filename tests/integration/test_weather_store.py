@@ -235,3 +235,119 @@ def test_corrupt_nested_settings_faults(tmp_path, change):
         db.execute("UPDATE weather_control SET payload_json=?", (json.dumps(payload),))
     with pytest.raises(WeatherStateError):
         store.load()
+
+
+@pytest.mark.parametrize(
+    "replacement", ["missing", "empty", "other_store", "schema_removed"]
+)
+def test_established_identity_cannot_be_reset(tmp_path, replacement):
+    path = tmp_path / "state.db"
+    store = SQLiteWeatherStore(path)
+    saved = store.compare_and_swap(
+        0, replace(store.load(), active_marker="auto", user_off=True)
+    )
+    assert saved.user_off and saved.active_marker == "auto"
+    if replacement == "schema_removed":
+        with sqlite3.connect(path) as db:
+            db.execute("DROP TABLE weather_control")
+            db.execute("DROP TABLE weather_metadata")
+    else:
+        path.unlink()
+        if replacement == "empty":
+            path.touch()
+        elif replacement == "other_store":
+            other_path = tmp_path / "other.db"
+            SQLiteWeatherStore(other_path)
+            path.write_bytes(other_path.read_bytes())
+    with pytest.raises(WeatherStateError):
+        store.load()
+    with pytest.raises(WeatherStateError):
+        SQLiteWeatherStore(path)
+    if replacement == "missing":
+        assert not path.exists()
+
+
+def test_deeply_nested_json_faults_for_load_and_reopen(tmp_path):
+    path = tmp_path / "state.db"
+    store = SQLiteWeatherStore(path)
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE weather_control SET payload_json=?",
+            ("[" * 10000 + "0" + "]" * 10000,),
+        )
+    with pytest.raises(WeatherStateError):
+        store.load()
+    with pytest.raises(WeatherStateError):
+        SQLiteWeatherStore(path)
+
+
+@pytest.mark.parametrize("sentinel_state", ["missing", "empty", "wrong_identity"])
+def test_established_sentinel_loss_or_corruption_faults(tmp_path, sentinel_state):
+    path = tmp_path / "state.db"
+    store = SQLiteWeatherStore(path)
+    sentinel = path.with_name(path.name + ".weather-identity")
+    assert sentinel.exists()
+    if sentinel_state == "missing":
+        sentinel.unlink()
+    else:
+        sentinel.write_text("" if sentinel_state == "empty" else "0" * 32)
+    with pytest.raises(WeatherStateError):
+        store.load()
+    with pytest.raises(WeatherStateError):
+        SQLiteWeatherStore(path)
+
+
+def test_interrupted_initialization_after_sentinel_creation_faults_closed(
+    tmp_path, monkeypatch
+):
+    import os
+
+    path = tmp_path / "state.db"
+    with monkeypatch.context() as patch:
+
+        def fail_sync(descriptor):
+            raise OSError("injected durability failure")
+
+        patch.setattr(os, "fsync", fail_sync)
+        with pytest.raises(WeatherStateError):
+            SQLiteWeatherStore(path)
+    assert path.with_name(path.name + ".weather-identity").is_file()
+    with pytest.raises(WeatherStateError):
+        SQLiteWeatherStore(path)
+    with sqlite3.connect(path) as db:
+        assert (
+            db.execute(
+                "SELECT name FROM sqlite_master WHERE name='weather_control'"
+            ).fetchone()
+            is None
+        )
+
+
+def test_oversized_persisted_numeric_value_faults(tmp_path):
+    path = tmp_path / "state.db"
+    store = SQLiteWeatherStore(path)
+    payload = asdict(store.load())
+    payload["settings"]["latitude"] = 10**400
+    payload["settings"]["longitude"] = 14.0
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE weather_control SET payload_json=?", (json.dumps(payload),))
+    with pytest.raises(WeatherStateError):
+        store.load()
+    with pytest.raises(WeatherStateError):
+        SQLiteWeatherStore(path)
+
+
+def test_concurrent_first_initialization_has_one_durable_identity(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    path = tmp_path / "state.db"
+    gate = Barrier(2)
+
+    def initialize(_):
+        gate.wait(timeout=5)
+        return SQLiteWeatherStore(path).load()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        records = list(pool.map(initialize, range(2)))
+    assert records[0] == records[1] == SQLiteWeatherStore(path).load()
