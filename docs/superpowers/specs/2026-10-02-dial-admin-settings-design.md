@@ -1,6 +1,6 @@
 # Admin stran gumba: PIN, čas tuša in rotacija
 
-Datum: 2026-10-02  
+Datum: 2026-10-02
 Status: zasnova potrjena v pogovoru 2026-10-02, vključno s spletno obnovo PIN-a z obnovitveno kodo. Izvedbeni načrt sledi ločeno; implementacija še ni izvedena.
 
 ## 1. Namen in potrjeni obseg
