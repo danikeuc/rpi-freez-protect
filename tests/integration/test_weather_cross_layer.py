@@ -310,3 +310,68 @@ def test_real_driver_fault_or_lease_refusal_never_replays_begin(rig, failure):
     assert rig.begins() == 1
     assert rig.status()["command"] == ActuatorCommand.DRAIN.value
     rig.pair_trace()
+
+
+@pytest.mark.parametrize("write_number", [1, 2])
+@pytest.mark.parametrize("automatic", [False, True])
+def test_delayed_durable_start_write_never_dispatches_expired_begin(
+    rig, monkeypatch, write_number, automatic
+):
+    if automatic:
+        rig.enable()
+        rig.warm()
+    assert rig.action("stop", rig.payload()).status_code == 200
+    request = rig.payload(60)
+    before = rig.begins()
+    original = rig.store.compare_and_swap
+    writes = 0
+
+    def delayed_write(*args, **kwargs):
+        nonlocal writes
+        result = original(*args, **kwargs)
+        writes += 1
+        if writes == write_number:
+            rig.elapsed += 11
+        return result
+
+    monkeypatch.setattr(rig.store, "compare_and_swap", delayed_write)
+    assert rig.action("start", request).status_code == 503
+    assert rig.begins() == before
+    assert rig.store.load().user_off and rig.store.load().fault_inhibited
+    assert rig.action("start", request).status_code == 503
+    assert rig.begins() == before
+    assert rig.action("stop", rig.payload()).status_code == 503
+    rig.app.state.control_service.startup()
+    rig.app.state.control_service.run_cycle()
+    assert rig.begins() == before
+    rig.pair_trace()
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_policy_deadline_rechecked_after_active_marker_write(
+    rig, monkeypatch, automatic
+):
+    if automatic:
+        rig.enable()
+        rig.app.state.weather_worker.warm()
+    original = rig.store.compare_and_swap
+
+    def delayed_marker(expected, record):
+        result = original(expected, record)
+        if record.active_marker:
+            rig.elapsed += 1201 if automatic else 61
+        return result
+
+    monkeypatch.setattr(rig.store, "compare_and_swap", delayed_marker)
+    if automatic:
+        rig.app.state.control_service.run_cycle()
+    else:
+        rig.client.post(
+            "/api/v1/display/actions/timed-shower",
+            headers=DISPLAY,
+            json={"duration_seconds": 60},
+        )
+    assert rig.begins() == 0
+    assert rig.status()["command"] == "DRAIN"
+    assert rig.store.load().active_marker is None
+    rig.pair_trace()

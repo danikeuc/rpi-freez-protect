@@ -203,7 +203,8 @@ class WeatherActionGate:
                     self._service.start_weather_shower(
                         request.duration_seconds
                         if request.duration_seconds is not None
-                        else self._service.settings.timed_shower_default_s
+                        else self._service.settings.timed_shower_default_s,
+                        action_fresh=lambda: self._fresh(nonce[1]),
                     )
                     if action == "start"
                     else self._service.stop_weather_shower()
