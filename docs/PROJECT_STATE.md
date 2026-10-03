@@ -69,7 +69,9 @@ The operator also returned `BACKUP_VERIFIED` at
 original restart; independent status again showed `b4ba5ac`, Roon connected.
 The operator subsequently confirmed both labeled Compose inputs are backed up;
 the nine missing entries are repeated optional `.env` checks and unused default
-filenames. Actual restoration remains untested; Compose dry-run is next.
+filenames. The operator Compose dry-run passed. A separately reviewed
+[cutover helper](evidence/2026-10-04-bridge-cutover-preparation.md) is prepared
+with thirteen passing focused tests; actual cutover/restoration remains unverified.
 Browser hydration, normal candidate startup, cutover, private provisioning
 and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
 recorded as installed. This does not alter the Pi disabled installation above.

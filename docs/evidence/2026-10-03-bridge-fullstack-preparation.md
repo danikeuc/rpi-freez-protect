@@ -136,4 +136,23 @@ The next operator step is an explicit Compose dry-run using both existing files
 and a stdin override selecting the exact already-built candidate tag with
 `restart: always` and no pulls/builds/dependencies. The candidate tag must
 still match image `66b41727d29ce255a2b68be3a1aa1c114bf6550ee6b3cdddba15ac974684d6a6`
-before that preview. No dry-run receipt or cutover has been received yet.
+before that preview. The subsequent operator dry-run receipt is recorded below;
+no cutover has been received yet.
+
+## Operator Compose dry-run receipt — 2026-10-04
+
+The operator returned two `DRY-RUN MODE` lines describing recreation/start
+of only the selected bridge service. The supplied command first required the
+candidate tag to resolve to exact image `66b41727d29c...`, then used the two
+existing Compose inputs and a stdin candidate override. This is a simulated
+plan, not a real container replacement or successful candidate runtime.
+
+Preparation of a separate cutover helper is underway. Its intended bounds are
+unchanged original settings/credentials and data mount, a fresh stopped-writer
+checkpoint before replacement, read-only exact version/Core/static checks, and
+verified original recovery or an explicit unresolved recovery state on failure.
+The later [cutover preparation](2026-10-04-bridge-cutover-preparation.md)
+records the reviewed helper and operator handoff. No cutover receipt has been
+received yet. The operator supplied effective service option names: build,
+command, entrypoint, environment, image, network_mode, restart and volumes;
+no values or credentials were requested.
