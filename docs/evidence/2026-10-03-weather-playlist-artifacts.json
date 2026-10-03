@@ -2,10 +2,8 @@
   "observed_at": "2026-10-03T05:54:11.579199+00:00",
   "scope": "local repository candidate builds; no deployment, flash, playback or physical verification",
   "publication": "v1.0.0 and v1.1.0 untouched",
-  "overall_readiness": "NOT_READY",
-  "blockers": [
-    "Dial dependency inventory fails on exact 36 unapproved edges"
-  ],
+  "overall_readiness": "READY_FOR_LOCAL_ACCEPTANCE_REVIEW",
+  "blockers": [],
   "components": {
     "pi": {
       "build_source": "31245c1ad66491d13e36d3201bae946d1fcdefef",
@@ -77,5 +75,13 @@
     "Bridge expanded all-target strict Clippy remains FAIL on documented baseline legacy tests; approved P5 classification, no unrelated repair or PASS claim",
     "Exact-artifact device, deployed service, live Roon and physical acceptance not performed"
   ],
-  "prior_candidate_manifest": "2026-10-03-weather-playlist-artifacts-before-final-repair.json"
+  "prior_candidate_manifest": "2026-10-03-weather-playlist-artifacts-before-final-repair.json",
+  "approval_closure": {
+    "policy_commit": "314224b2d817d7f90afb58fbaeeaf91484eb7ac2",
+    "approved_expected_edge_additions": 36,
+    "other_policy_values_unchanged": true,
+    "affected_shared_ci": "PASS",
+    "review": "policy/documentation delta pending local acceptance review",
+    "scope": "repository policy and evidence only; build sources and all artifact identities unchanged"
+  }
 }

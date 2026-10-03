@@ -1,6 +1,6 @@
 # Weather-assisted shower — approved design
 
-Status: **IMPLEMENTED REPOSITORY CANDIDATE**, 2026-10-03. Owner-approved source contracts are implemented and exercised with local software tests. [Current verification](../../evidence/2026-10-03-weather-plan-validation.md) records pinned revisions and the unresolved Dial inventory gate and documented bridge baseline strict-test-lint limitation; full combined acceptance is NOT_READY. The earlier planning approval remains historical. No deployment, firmware flash, live playback, GPIO or physical acceptance follows from source approval or these checks.
+Status: **IMPLEMENTED REPOSITORY CANDIDATE**, 2026-10-03. Owner-approved source contracts are implemented and exercised with local software tests. [Current verification](../../evidence/2026-10-03-weather-plan-validation.md) records pinned revisions, the owner-approved 36-edge inventory closure and the documented bridge baseline strict-test-lint limitation. Local affected gates pass; the current policy/documentation delta is READY_FOR_LOCAL_ACCEPTANCE_REVIEW. The earlier planning approval remains historical. No deployment, firmware flash, live playback, GPIO or physical acceptance follows from source approval or these checks.
 
 ## Owner review summary — scope resumed 2026-10-03
 

@@ -36,7 +36,7 @@ The combined Dial fixture links actual valve parser/UI/client with the productio
 
 ## Artifact and readiness boundaries
 
-[Redacted artifact manifest](2026-10-03-weather-playlist-artifacts.json) records build sources, sizes and SHA256. Preserved local copies: `/tmp/freeze-build-tools/w6-p5-20261003/`. Pi wheel SHA256 `6297ba9e39b5f4328922532d5967c8fc711691b6725a589f30d61b9566ae7bb7`; Dial app SHA256 `ad614db53794080eb1e44048d2a4a99d1a68e4befaf0a3671993adcba1941995`; bridge server SHA256 `ccd3bcff2dcfcc5d5c8b1ce8d20eda3cd611c22fa9e4e8ad142f94177a46934f`.
+[Redacted artifact manifest](2026-10-03-weather-playlist-artifacts-before-final-repair.json) records build sources, sizes and SHA256. Preserved local copies: `/tmp/freeze-build-tools/w6-p5-20261003/`. Pi wheel SHA256 `6297ba9e39b5f4328922532d5967c8fc711691b6725a589f30d61b9566ae7bb7`; Dial app SHA256 `ad614db53794080eb1e44048d2a4a99d1a68e4befaf0a3671993adcba1941995`; bridge server SHA256 `ccd3bcff2dcfcc5d5c8b1ce8d20eda3cd611c22fa9e4e8ad142f94177a46934f`.
 
 Dial build is incremental at its frozen fixture HEAD; production inputs match reviewed 890e1fdb. Its fixed version label is not a Git attestation. Later evidence/documentation revisions are separate from these artifacts. None was published, deployed or flashed; v1.0.0/v1.1.0 remain untouched. No tokens/private coordinates/catalog/account state appear in the manifest.
 
