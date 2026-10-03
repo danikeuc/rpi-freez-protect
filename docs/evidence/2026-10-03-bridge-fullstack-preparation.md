@@ -52,8 +52,25 @@ compared before and after; no stop/restart/recreate action is present.
 The package is available in the workstation clone's ignored
 `dist/synology-playlists-stage-20261003/` directory.
 
-**Pending:** operator candidate-image build and ABI receipt, protected consistent
-backup of original image/config/data, reviewed cutover/rollback, private scoped
-credential provisioning, firmware installation and live playlist acceptance.
+**Pending:** protected consistent backup of original image/config/data, reviewed
+cutover/rollback, private scoped credential provisioning, firmware installation
+and live playlist acceptance. The later image-build receipt is recorded below.
 The candidate is not recorded as deployed. Pi remains staged with weather
 disabled/manual_timed; no actuator command or physical test occurred.
+
+## Operator image-build receipt
+
+The operator returned `CANDIDATE_PREPARED` after successfully building
+`uhc-candidate:playlists-9490cef-fullstack`, image
+`sha256:66b41727d29ce255a2b68be3a1aa1c114bf6550ee6b3cdddba15ac974684d6a6`.
+The isolated version command returned `0.0.0-valve-candidate.9490cef` and exact
+source `9490cef370a17e83480431d1791303fd663abce6`. This establishes that the
+program can load and execute its version path in the derived runtime image.
+It does not establish normal startup, browser hydration or live playlists.
+The reviewed script's final before/after check reported the original container
+and data mount preserved; candidate deployment has not occurred.
+
+Independent GET `/status` at **2026-10-03T20:48:05+00:00** returned the original bridge
+`0.0.0-pr6`, `git_sha=b4ba5ac`, `roon_connected=true`. Only these bounded status
+fields were retained; no playback command was issued. The temporary candidate
+transfer server was closed after the receipt.

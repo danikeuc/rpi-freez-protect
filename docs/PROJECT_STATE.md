@@ -61,10 +61,11 @@ The protected pre-migration backup is `/root/freeze-protect-before-weather.Eesdu
 records the operator's existing Synology image, `host` networking,
 `restart=always`, data bind and executable path. Exact bridge source `9490cef`
 now has a separate artifact with embedded web assets; isolated GET-only
-HTML/static checks pass. Browser hydration and Synology image compatibility
-remain unverified. The build-only package preserves the running container;
-operator image preparation, backup, cutover, private provisioning and live
-playlist acceptance remain pending. Neither bridge nor Dial candidate is
+HTML/static checks pass. The operator subsequently built candidate image `66b41727d29c` and returned
+`CANDIDATE_PREPARED`; its isolated version check passed in the actual runtime
+image. Independent GET status still showed original `b4ba5ac`, Roon connected.
+Browser hydration, normal candidate startup, backup, cutover, private
+provisioning and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
 recorded as installed. This does not alter the Pi disabled installation above.
 
 ## PT100 commissioning update — 2026-10-01
