@@ -74,3 +74,27 @@ Independent GET `/status` at **2026-10-03T20:48:05+00:00** returned the original
 `0.0.0-pr6`, `git_sha=b4ba5ac`, `roon_connected=true`. Only these bounded status
 fields were retained; no playback command was issued. The temporary candidate
 transfer server was closed after the receipt.
+
+## Backup-only helper prepared, not yet executed on Synology
+
+`backup-original.sh` is frozen at SHA256
+`57e93de9f6dd4eee8588f6cd87423b2485732573eecf027acf1bd2df4daaf221`
+(15,273 bytes). Independent scoped review returned PASS. Seven focused offline
+tests, shell syntax and Python 3.8 grammar checks passed. Tests cover successful
+backup flow, archive/ENOSPC/stop-response/restart failures, both free-space
+guards and a local GNU tar metadata roundtrip. This is not a Synology backup
+or restore result.
+
+The operator helper preserves private original image/config evidence, checks
+capacity before image save and downtime, stops only the captured original ID
+for a metadata-preserving data archive, then attempts to restart that same ID
+before any post-stop receipt write. It neither starts the candidate nor
+performs cutover. Missing Compose paths remain explicit reconstruction gaps.
+Required host Python/tar/fsync checks precede downtime; no tools are installed.
+Actual NAS ACL restoration, protection against unrelated concurrent writers
+and cleanup after host/power loss or SIGKILL remain unverified.
+
+Reviewed helper, tests, report and review are preserved locally under
+`/tmp/synology-playlists-backup-20261003/` and in the workstation clone's ignored
+`dist/synology-playlists-backup-20261003/`. The transfer's exact bytes were
+verified by HTTP checksum. Operator `BACKUP_VERIFIED` receipt remains pending.
