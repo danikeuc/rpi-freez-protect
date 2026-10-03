@@ -52,9 +52,9 @@ compared before and after; no stop/restart/recreate action is present.
 The package is available in the workstation clone's ignored
 `dist/synology-playlists-stage-20261003/` directory.
 
-**Pending:** protected consistent backup of original image/config/data, reviewed
-cutover/rollback, private scoped credential provisioning, firmware installation
-and live playlist acceptance. The later image-build receipt is recorded below.
+**Pending:** reconciliation of missing Compose paths, reviewed cutover/rollback,
+private scoped credential provisioning, firmware installation and live playlist
+acceptance. The later image-build and backup receipts are recorded below.
 The candidate is not recorded as deployed. Pi remains staged with weather
 disabled/manual_timed; no actuator command or physical test occurred.
 
@@ -75,7 +75,7 @@ Independent GET `/status` at **2026-10-03T20:48:05+00:00** returned the original
 fields were retained; no playback command was issued. The temporary candidate
 transfer server was closed after the receipt.
 
-## Backup-only helper prepared, not yet executed on Synology
+## Backup-only helper preparation (before operator execution)
 
 `backup-original.sh` is frozen at SHA256
 `57e93de9f6dd4eee8588f6cd87423b2485732573eecf027acf1bd2df4daaf221`
@@ -97,4 +97,21 @@ and cleanup after host/power loss or SIGKILL remain unverified.
 Reviewed helper, tests, report and review are preserved locally under
 `/tmp/synology-playlists-backup-20261003/` and in the workstation clone's ignored
 `dist/synology-playlists-backup-20261003/`. The transfer's exact bytes were
-verified by HTTP checksum. Operator `BACKUP_VERIFIED` receipt remains pending.
+verified by HTTP checksum. The subsequent operator receipt is recorded below.
+
+## Operator backup receipt
+
+The operator returned `ORIGINAL_IMAGE_BACKUP_VERIFIED`,
+`ORIGINAL_RESTART=VERIFIED`, and
+`BACKUP_VERIFIED=/volume1/docker/unified-hifi-control-4-backup-20261003.ypgw2e8q`.
+The script reported the original running, candidate not started and no
+replacement/playback command. It also reported `COMPOSE_PATH_GAPS=9`.
+These gaps are not yet classified; optional missing Compose/.env files and
+missing labeled overrides must be distinguished before planning cutover.
+Private original runtime inspect remains preserved. No restore test has been
+performed, so backup receipt must not be described as tested restoration.
+
+Independent GET `/status` at **2026-10-03T21:35:50+00:00** returned original
+`0.0.0-pr6`, `git_sha=b4ba5ac`, `roon_connected=true`. This supports service
+and Roon connection recovery; it is not a playback test. The backup transfer
+server was closed after the receipt. The candidate remains uninstalled.

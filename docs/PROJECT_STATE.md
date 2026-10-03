@@ -64,8 +64,12 @@ now has a separate artifact with embedded web assets; isolated GET-only
 HTML/static checks pass. The operator subsequently built candidate image `66b41727d29c` and returned
 `CANDIDATE_PREPARED`; its isolated version check passed in the actual runtime
 image. Independent GET status still showed original `b4ba5ac`, Roon connected.
-Browser hydration, normal candidate startup, backup, cutover, private
-provisioning and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
+The operator also returned `BACKUP_VERIFIED` at
+`/volume1/docker/unified-hifi-control-4-backup-20261003.ypgw2e8q` and verified
+original restart; independent status again showed `b4ba5ac`, Roon connected.
+Nine missing Compose paths await classification; actual restoration is untested.
+Browser hydration, normal candidate startup, cutover, private provisioning
+and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
 recorded as installed. This does not alter the Pi disabled installation above.
 
 ## PT100 commissioning update — 2026-10-01
