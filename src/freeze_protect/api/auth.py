@@ -25,6 +25,17 @@ def build_display_guard(display_token: str | None) -> Callable[[str | None], Non
     return require_display
 
 
+def build_weather_guard(token: str | None) -> Callable[[str | None], None]:
+    def require_weather(
+        x_weather_settings_token: Annotated[str | None, Header()] = None,
+    ) -> None:
+        _require_token(
+            x_weather_settings_token, token, "weather settings authentication"
+        )
+
+    return require_weather
+
+
 def require_confirmation(received: str | None, expected: str) -> None:
     if received != expected:
         raise HTTPException(
@@ -34,7 +45,13 @@ def require_confirmation(received: str | None, expected: str) -> None:
 
 
 def _require_token(received: str | None, expected: str | None, label: str) -> None:
-    if not expected or not received or not secrets.compare_digest(received, expected):
+    if (
+        not expected
+        or not received
+        or not secrets.compare_digest(
+            received.encode("utf-8"), expected.encode("utf-8")
+        )
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"{label} is required",

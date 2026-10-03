@@ -6,7 +6,7 @@ import json
 import os
 import sqlite3
 from contextlib import closing
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -22,6 +22,16 @@ class WeatherRevisionConflict(ValueError):
 
 class WeatherStateError(RuntimeError):
     """Durable weather state is missing, invalid, or unavailable; fail closed."""
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherActionReceipt:
+    request_id: str
+    body_hash: str
+    state: str
+    control_revision: int | None
+    error_status: int | None = None
+    error_reason: str | None = None
 
 
 class SQLiteWeatherStore:
@@ -162,6 +172,163 @@ class SQLiteWeatherStore:
                 return saved
         except sqlite3.Error as error:
             raise WeatherStateError("weather storage write failed") from error
+
+    def initialize_action_receipts(self) -> None:
+        """Add W4 receipts to the established W1 database without replacing state."""
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                self._read(db)
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS weather_action_receipts ("
+                    "sequence INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "request_id TEXT NOT NULL UNIQUE, body_hash TEXT NOT NULL, "
+                    "state TEXT NOT NULL CHECK(state IN ('pending','success','rejected','unknown')), "
+                    "control_revision INTEGER, error_status INTEGER, error_reason TEXT)"
+                )
+                db.execute(
+                    "SELECT request_id, body_hash, state, control_revision, "
+                    "error_status, error_reason FROM weather_action_receipts LIMIT 1"
+                )
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt initialization failed") from error
+
+    def get_action_receipt(self, request_id: str) -> WeatherActionReceipt | None:
+        try:
+            with closing(self._connect()) as db, db:
+                self._read(db)
+                row = db.execute(
+                    "SELECT request_id, body_hash, state, control_revision, "
+                    "error_status, error_reason FROM weather_action_receipts WHERE request_id=?",
+                    (request_id,),
+                ).fetchone()
+                if row is None:
+                    return None
+                receipt = WeatherActionReceipt(*row)
+                if receipt.state not in (
+                    "pending",
+                    "success",
+                    "rejected",
+                    "unknown",
+                ) or (
+                    receipt.state == "success"
+                    and type(receipt.control_revision) is not int
+                ):
+                    raise WeatherStateError("invalid weather receipt")
+                return receipt
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt read failed") from error
+
+    def begin_action_receipt(self, request_id: str, body_hash: str) -> None:
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                self._read(db)
+                count = db.execute(
+                    "SELECT count(*) FROM weather_action_receipts"
+                ).fetchone()[0]
+                if count >= 128:
+                    db.execute(
+                        "DELETE FROM weather_action_receipts WHERE sequence IN "
+                        "(SELECT sequence FROM weather_action_receipts WHERE state!='pending' "
+                        "ORDER BY sequence LIMIT ?)",
+                        (count - 127,),
+                    )
+                    remaining = db.execute(
+                        "SELECT count(*) FROM weather_action_receipts"
+                    ).fetchone()[0]
+                    if remaining >= 128:
+                        raise WeatherStateError("weather receipt capacity exhausted")
+                db.execute(
+                    "INSERT INTO weather_action_receipts(request_id, body_hash, state) VALUES(?,?,'pending')",
+                    (request_id, body_hash),
+                )
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt write failed") from error
+
+    def finish_action_receipt(
+        self,
+        request_id: str,
+        control_revision: int,
+        *,
+        error_status: int | None = None,
+        error_reason: str | None = None,
+    ) -> WeatherActionReceipt:
+        receipt = self.get_action_receipt(request_id)
+        if receipt is None or receipt.state != "pending":
+            raise WeatherStateError("weather pending receipt missing")
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                self._read(db)
+                changed = db.execute(
+                    "UPDATE weather_action_receipts SET state=?, control_revision=?, error_status=?, "
+                    "error_reason=? WHERE request_id=? AND state='pending'",
+                    (
+                        "success" if error_status is None else "rejected",
+                        control_revision,
+                        error_status,
+                        error_reason,
+                        request_id,
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise WeatherStateError("weather receipt completion conflict")
+        except (sqlite3.Error, OverflowError) as error:
+            raise WeatherStateError("weather receipt completion failed") from error
+        return replace(
+            receipt,
+            state="success" if error_status is None else "rejected",
+            control_revision=control_revision,
+            error_status=error_status,
+            error_reason=error_reason,
+        )
+
+    def mark_action_unknown(self, request_id: str) -> None:
+        """Withdraw a successful outcome whose server-side response deadline elapsed."""
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                self._read(db)
+                changed = db.execute(
+                    "UPDATE weather_action_receipts SET state='unknown', error_status=503, "
+                    "error_reason='weather action response expired' WHERE request_id=?",
+                    (request_id,),
+                ).rowcount
+                if changed != 1:
+                    raise WeatherStateError("weather receipt missing")
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt deadline write failed") from error
+
+    def reconcile_pending_action_receipts(self) -> bool:
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                record = self._read(db)
+                pending = db.execute(
+                    "SELECT count(*) FROM weather_action_receipts WHERE state='pending'"
+                ).fetchone()[0]
+                if not pending:
+                    return False
+                # Fault inhibition and reconciliation commit together. A later crash
+                # cannot lose the fault while removing the pending evidence.
+                saved = replace(
+                    record,
+                    user_off=True,
+                    fault_inhibited=True,
+                    control_revision=record.control_revision + 1,
+                )
+                db.execute(
+                    "UPDATE weather_control SET payload_json=? WHERE singleton=1",
+                    (_encode(saved),),
+                )
+                db.execute(
+                    "UPDATE weather_action_receipts SET state='unknown', error_status=503, "
+                    "error_reason='weather action outcome unknown' WHERE state='pending'"
+                )
+                return True
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt recovery failed") from error
 
     def recover_interrupted(self) -> WeatherControlRecord:
         """Startup only: interrupted supply requires a fresh deliberate START.

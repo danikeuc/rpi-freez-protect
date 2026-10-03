@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Annotated, NoReturn, cast
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
@@ -15,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from freeze_protect.adapters.max31865 import Max31865TemperatureSource
 from freeze_protect.adapters.node_red import NodeRedActuatorDriver
 from freeze_protect.adapters.simulation import (
+    InMemoryEventStore,
     SimulatedActuatorDriver,
     SimulatedForecastClient,
     SimulatedForecastStore,
@@ -24,11 +26,19 @@ from freeze_protect.adapters.weather import OpenMeteoForecastClient
 from freeze_protect.api.auth import (
     build_admin_guard,
     build_display_guard,
+    build_weather_guard,
     require_confirmation,
+)
+from freeze_protect.api.weather import (
+    action_input,
+    read_weather_json,
+    settings_input,
+    settings_payload,
 )
 from freeze_protect.application.ports import (
     ActuatorDriver,
     AdapterError,
+    EventStore,
     ForecastClient,
     ForecastStore,
     TemperatureSource,
@@ -42,6 +52,12 @@ from freeze_protect.application.temperature_telemetry import (
     DISPLAY_TEMPERATURE_STALE_AFTER_S,
     TemperatureTelemetrySampler,
 )
+from freeze_protect.application.weather_actions import (
+    WeatherActionError,
+    WeatherActionGate,
+)
+from freeze_protect.application.weather_control import WeatherCoordinator
+from freeze_protect.application.weather_worker import WeatherWorker
 from freeze_protect.domain.models import (
     ActuatorCommand,
     AuditEvent,
@@ -54,11 +70,17 @@ from freeze_protect.domain.models import (
     SupplyAction,
     TemperatureReading,
 )
+from freeze_protect.domain.weather import WeatherSettings, WeatherWindow
 from freeze_protect.persistence.sqlite import (
     SettingsVersionConflict,
     SQLiteEventStore,
     SQLiteForecastStore,
     SQLiteSettingsStore,
+)
+from freeze_protect.persistence.weather import (
+    SQLiteWeatherStore,
+    WeatherRevisionConflict,
+    WeatherStateError,
 )
 
 _PRODUCTION_SENSOR_SOURCE_ID = "MAX31865_PT100_SPI0_CE0"
@@ -106,16 +128,32 @@ def create_app(
     display_token: str | None,
     development_mode: bool,
     *,
+    weather_settings_token: str | None = None,
     control_mode: ControlMode = ControlMode.SAFE_DRAIN,
     node_red_url: str | None = None,
     node_red_token: str | None = None,
     clock: Callable[[], datetime] | None = None,
     run_background: bool = True,
+    monotonic_clock: Callable[[], float] = monotonic,
 ) -> FastAPI:
     clock_fn = clock or _now
-    settings_store = SQLiteSettingsStore(database_path)
-    event_store = SQLiteEventStore(database_path)
-    settings = settings_store.load()
+    weather_store: SQLiteWeatherStore | None = None
+    assembly_failed = False
+    try:
+        # Weather identity must be checked before legacy constructors can create
+        # an absent database and hide loss of established durable state.
+        weather_store = SQLiteWeatherStore(database_path)
+    except WeatherStateError:
+        assembly_failed = True
+    settings_store: SQLiteSettingsStore | None = None
+    event_store: EventStore
+    if weather_store is None:
+        settings = SafetySettings()
+        event_store = InMemoryEventStore()
+    else:
+        settings_store = SQLiteSettingsStore(database_path)
+        event_store = SQLiteEventStore(database_path)
+        settings = settings_store.load()
     temperature_source: TemperatureSource
     forecast_store: ForecastStore
     forecast_client: ForecastClient
@@ -127,11 +165,38 @@ def create_app(
         forecast_client = SimulatedForecastClient()
         actuator_driver: ActuatorDriver = SimulatedActuatorDriver()
     else:
-        settings = settings_store.bind_sensor_source(_PRODUCTION_SENSOR_SOURCE_ID)
+        if settings_store is not None:
+            settings = settings_store.bind_sensor_source(_PRODUCTION_SENSOR_SOURCE_ID)
         temperature_source = Max31865TemperatureSource(clock=clock_fn)
-        forecast_store = SQLiteForecastStore(database_path)
+        forecast_store = (
+            SQLiteForecastStore(database_path)
+            if weather_store is not None
+            else SimulatedForecastStore()
+        )
         forecast_client = OpenMeteoForecastClient()
         actuator_driver = _production_actuator(node_red_url, node_red_token)
+
+    weather_worker: WeatherWorker | None = None
+    weather_coordinator: WeatherCoordinator | None = None
+    if weather_store is not None:
+
+        def development_weather(
+            _settings: WeatherSettings, _now: datetime, _generation: int
+        ) -> WeatherWindow:
+            raise AdapterError("simulated weather unavailable")
+
+        weather_fetch = (
+            development_weather
+            if development_mode
+            else OpenMeteoForecastClient().fetch_window
+        )
+        # Constructors never submit; this wake-only closure is bound before startup.
+        weather_worker = WeatherWorker(
+            weather_fetch, lambda: control_loop.wake(), monotonic_clock
+        )
+        weather_coordinator = WeatherCoordinator(
+            weather_store, weather_worker, clock_fn, monotonic_clock
+        )
 
     service = ControlService(
         temperature_source=temperature_source,
@@ -142,6 +207,9 @@ def create_app(
         settings=settings,
         clock=clock_fn,
         mode=control_mode,
+        monotonic_clock=monotonic_clock,
+        weather_coordinator=weather_coordinator,
+        weather_store=weather_store,
     )
     temperature_telemetry_sampler = (
         TemperatureTelemetrySampler(temperature_source, clock=clock_fn)
@@ -151,11 +219,93 @@ def create_app(
     control_loop = PeriodicControlLoop(service)
     require_admin = build_admin_guard(admin_token)
     require_display = build_display_guard(display_token)
+    # A reused credential cannot grant an additional scope.
+    scoped_weather_token = (
+        weather_settings_token
+        if weather_settings_token not in (admin_token, display_token)
+        else None
+    )
+    require_weather = build_weather_guard(scoped_weather_token)
+
+    def display_payload(read_only: bool = False) -> dict[str, object]:
+        # Weather status expires timers first, so the whole response is coherent.
+        weather = (
+            service.weather_status(expire_timer=not read_only)
+            if weather_store is not None
+            else None
+        )
+        control = service.status(expire_timer=not read_only)
+        temperature = (
+            control.last_reading
+            if control.mode is ControlMode.AUTOMATIC
+            else temperature_telemetry_sampler.snapshot()
+            if temperature_telemetry_sampler is not None
+            else None
+        )
+        payload = _display_status_payload(
+            control,
+            service.settings,
+            _normalize_display_temperature(temperature, clock_fn()),
+        )
+        observation = weather.observation if weather is not None else None
+        window = observation.window if observation is not None else None
+        payload.update(
+            {
+                "weather_assistance_version": 1,
+                "operation": weather.operation if weather is not None else "FAULT",
+                "control_revision": weather.record.control_revision
+                if weather is not None
+                else None,
+                "action_nonce": None,
+                "weather": {
+                    "enabled": weather.record.settings.enabled
+                    if weather is not None
+                    else False,
+                    "available": bool(
+                        observation is not None
+                        and observation.latest_attempt_ok
+                        and window is not None
+                    ),
+                    "eligible": weather.eligibility.eligible
+                    if weather is not None
+                    else False,
+                    "reason": weather.eligibility.reason
+                    if weather is not None
+                    else "storage_unavailable",
+                    "dates": [day.isoformat() for day in window.dates]
+                    if window is not None
+                    else [],
+                    "minima_c": list(window.minima_c) if window is not None else [],
+                    "last_successful_check": _iso(window.fetched_at)
+                    if window is not None
+                    else None,
+                },
+            }
+        )
+        if control.mode is ControlMode.WEATHER_ASSISTED:
+            payload["timed_shower_duration_supported"] = True
+        return payload
+
+    action_gate: WeatherActionGate | None = None
+    if weather_store is not None:
+        try:
+            action_gate = WeatherActionGate(
+                service, weather_store, display_payload, monotonic_clock
+            )
+        except WeatherStateError:
+            assembly_failed = True
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         try:
             service.startup()
+            if assembly_failed:
+                service.handle_persistence_failure()
+            if action_gate is not None:
+                try:
+                    action_gate.recover_pending()
+                except WeatherStateError:
+                    service.handle_persistence_failure()
             if run_background:
                 if temperature_telemetry_sampler is not None:
                     temperature_telemetry_sampler.start()
@@ -169,13 +319,20 @@ def create_app(
                 try:
                     control_loop.stop()
                 finally:
-                    service.drain("shutdown_drain")
+                    try:
+                        service.shutdown()
+                    finally:
+                        if weather_worker is not None:
+                            weather_worker.stop()
 
     app = FastAPI(title="RPi Freeze Protect", version="1.1.0", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
     app.state.temperature_telemetry_sampler = temperature_telemetry_sampler
+    app.state.weather_store = weather_store
+    app.state.weather_worker = weather_worker
+    app.state.weather_action_gate = action_gate
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -193,6 +350,8 @@ def create_app(
         limit: Annotated[int, Query(ge=1, le=1_000)] = 100,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> dict[str, object]:
+        if not isinstance(event_store, SQLiteEventStore):
+            raise HTTPException(503, "event storage unavailable")
         return {
             "items": [
                 _event_payload(event) for event in event_store.list(limit, offset)
@@ -211,6 +370,8 @@ def create_app(
         _admin: None = Depends(require_admin),
     ) -> dict[str, object]:
         try:
+            if settings_store is None:
+                raise WeatherStateError("settings storage unavailable")
             saved = settings_store.save(payload.to_domain())
         except SettingsVersionConflict as error:
             raise HTTPException(
@@ -246,20 +407,91 @@ def create_app(
     def display_status(
         _display: None = Depends(require_display),
     ) -> dict[str, object]:
+        if action_gate is not None:
+            try:
+                return action_gate.status()
+            except (WeatherStateError, WeatherRevisionConflict):
+                service.handle_persistence_failure()
         control = service.status()
-        if control.mode is ControlMode.AUTOMATIC:
-            temperature = control.last_reading
-        else:
-            temperature = (
-                temperature_telemetry_sampler.snapshot()
-                if temperature_telemetry_sampler is not None
-                else None
-            )
-        return _display_status_payload(
-            control,
-            service.settings,
-            _normalize_display_temperature(temperature, clock_fn()),
+        payload = _display_status_payload(control, service.settings, None)
+        payload.update(
+            {
+                "weather_assistance_version": 1,
+                "operation": "FAULT",
+                "control_revision": None,
+                "action_nonce": None,
+                "weather": {
+                    "enabled": False,
+                    "available": False,
+                    "eligible": False,
+                    "reason": "storage_unavailable",
+                    "dates": [],
+                    "minima_c": [],
+                    "last_successful_check": None,
+                },
+            }
         )
+        return payload
+
+    @app.get("/api/v1/display/weather-settings")
+    def get_weather_settings(
+        _weather: None = Depends(require_weather),
+    ) -> dict[str, object]:
+        try:
+            with service.weather_action_guard() as record:
+                return settings_payload(record.settings)
+        except WeatherStateError as error:
+            raise HTTPException(503, "weather settings unavailable") from error
+
+    @app.put("/api/v1/display/weather-settings")
+    async def put_weather_settings(
+        request: Request, _weather: None = Depends(require_weather)
+    ) -> dict[str, object]:
+        payload = await read_weather_json(
+            request,
+            {"expected_revision", "enabled", "latitude", "longitude", "timezone"},
+        )
+        settings = settings_input(payload)
+        try:
+            saved = await run_in_threadpool(
+                service.update_weather_settings, settings.revision, settings
+            )
+            control_loop.wake()
+            return settings_payload(saved)
+        except WeatherRevisionConflict as error:
+            raise HTTPException(409, "weather settings revision conflict") from error
+        except WeatherStateError as error:
+            raise HTTPException(503, "weather settings unavailable") from error
+
+    async def weather_action(request: Request, action: str) -> dict[str, object]:
+        keys = {"request_id", "expected_control_revision", "action_nonce"}
+        if action == "start":
+            keys.add("duration_seconds")
+        payload = action_input(await read_weather_json(request, keys))
+        if action_gate is None:
+            raise HTTPException(503, "weather controller unavailable")
+        try:
+            result = await run_in_threadpool(action_gate.execute, action, payload)
+            control_loop.wake()
+            return asdict(result)
+        except WeatherActionError as error:
+            raise HTTPException(error.status_code, error.detail) from error
+        except WeatherRevisionConflict as error:
+            raise HTTPException(409, "weather controller not ready") from error
+        except WeatherStateError as error:
+            raise HTTPException(503, "weather controller unavailable") from error
+
+    @app.post("/api/v1/display/actions/start")
+    async def display_start(
+        request: Request, _display: None = Depends(require_display)
+    ) -> dict[str, object]:
+        return await weather_action(request, "start")
+
+    @app.post("/api/v1/display/actions/stop")
+    async def display_stop(
+        request: Request, _display: None = Depends(require_display)
+    ) -> dict[str, object]:
+        return await weather_action(request, "stop")
 
     @app.post("/api/v1/display/actions/timed-shower")
     async def display_timed_shower(
@@ -443,7 +675,9 @@ def _display_status_payload(
         and control.mode is not ControlMode.SAFE_DRAIN,
         "pipe_temperature_c": temperature.value_c if temperature is not None else None,
         "sensor_health": (
-            temperature.health.value if temperature is not None else SensorHealth.STALE.value
+            temperature.health.value
+            if temperature is not None
+            else SensorHealth.STALE.value
         ),
     }
 

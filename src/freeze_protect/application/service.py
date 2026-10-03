@@ -352,7 +352,7 @@ class ControlService:
                 return None
             return snapshot
 
-    def status(self) -> ControlStatus:
+    def status(self, *, expire_timer: bool = True) -> ControlStatus:
         with self._lock:
             remaining_seconds = 0
             if self._timed_shower_monotonic_deadline is not None:
@@ -360,7 +360,8 @@ class ControlService:
                     self._timed_shower_monotonic_deadline - self._monotonic_clock()
                 )
                 if remaining <= 0:
-                    self._finish_timed_shower()
+                    if expire_timer:
+                        self._finish_timed_shower()
                 else:
                     remaining_seconds = ceil(remaining)
                     if self._mode is ControlMode.MANUAL_TIMED:
@@ -907,7 +908,7 @@ class ControlService:
 
     @contextmanager
     def weather_action_guard(
-        self, expected_control_revision: int
+        self, expected_control_revision: int | None = None
     ) -> Iterator[WeatherControlRecord]:
         """Serialize W4 nonce/replay acceptance with control and settings changes.
 
@@ -917,7 +918,7 @@ class ControlService:
         leaving the guard. No other component may hold a lock while entering it.
         """
         with self._lock:
-            if (
+            if expected_control_revision is not None and (
                 self._mode is not ControlMode.WEATHER_ASSISTED
                 or not self._weather_started
             ):
@@ -925,17 +926,17 @@ class ControlService:
             record = self._weather_record()
             if record is None:
                 raise WeatherStateError("weather state unavailable")
-            if (
+            if expected_control_revision is not None and (
                 type(expected_control_revision) is not int
                 or record.control_revision != expected_control_revision
             ):
                 raise WeatherRevisionConflict("weather control revision conflict")
             yield record
 
-    def weather_status(self) -> WeatherControlStatus:
+    def weather_status(self, *, expire_timer: bool = True) -> WeatherControlStatus:
         """Never starts a fetch or SUPPLY; expiry and clock invalidation still apply."""
         with self._lock:
-            self.status()  # Existing status semantics confirm DRAIN on manual expiry.
+            self.status(expire_timer=expire_timer)  # Replays must not expire/actuate.
             record = self._weather_record()
             if record is None or self._weather_coordinator is None:
                 raise WeatherStateError("weather state unavailable")
