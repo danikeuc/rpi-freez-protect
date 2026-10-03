@@ -52,7 +52,7 @@ compared before and after; no stop/restart/recreate action is present.
 The package is available in the workstation clone's ignored
 `dist/synology-playlists-stage-20261003/` directory.
 
-**Pending:** reconciliation of missing Compose paths, reviewed cutover/rollback,
+**Pending:** reviewed Compose cutover/rollback,
 private scoped credential provisioning, firmware installation and live playlist
 acceptance. The later image-build and backup receipts are recorded below.
 The candidate is not recorded as deployed. Pi remains staged with weather
@@ -106,8 +106,8 @@ The operator returned `ORIGINAL_IMAGE_BACKUP_VERIFIED`,
 `BACKUP_VERIFIED=/volume1/docker/unified-hifi-control-4-backup-20261003.ypgw2e8q`.
 The script reported the original running, candidate not started and no
 replacement/playback command. It also reported `COMPOSE_PATH_GAPS=9`.
-These gaps are not yet classified; optional missing Compose/.env files and
-missing labeled overrides must be distinguished before planning cutover.
+The later operator path listing below classifies these gaps; neither labeled
+Compose input is missing from the backup.
 Private original runtime inspect remains preserved. No restore test has been
 performed, so backup receipt must not be described as tested restoration.
 
@@ -115,3 +115,25 @@ Independent GET `/status` at **2026-10-03T21:35:50+00:00** returned original
 `0.0.0-pr6`, `git_sha=b4ba5ac`, `roon_connected=true`. This supports service
 and Roon connection recovery; it is not a playback test. The backup transfer
 server was closed after the receipt. The candidate remains uninstalled.
+
+## Compose path reconciliation — 2026-10-04
+
+Operator-supplied filtered backup metadata identifies project
+`unified-hifi-control-4`, service `unified-hifi-control`, working directory
+`/volume1/docker/unified-hifi-control-4`, and exactly two labeled Compose files:
+
+- `docker-compose.yml`
+- `compose.playpause-b4ba5ac-v2.yml`
+
+Both labeled files are present in the backup's saved paths. The nine reported
+missing entries consist of the same optional `.env` checked six times and
+three unused alternate default filenames (`compose.yaml`, `compose.yml`,
+`docker-compose.yaml`). They do not establish a missing active Compose file.
+This closes classification of the reported gaps; it does not prove a full
+restore or validate every effective Compose setting.
+
+The next operator step is an explicit Compose dry-run using both existing files
+and a stdin override selecting the exact already-built candidate tag with
+`restart: always` and no pulls/builds/dependencies. The candidate tag must
+still match image `66b41727d29ce255a2b68be3a1aa1c114bf6550ee6b3cdddba15ac974684d6a6`
+before that preview. No dry-run receipt or cutover has been received yet.

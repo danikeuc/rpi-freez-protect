@@ -67,7 +67,9 @@ image. Independent GET status still showed original `b4ba5ac`, Roon connected.
 The operator also returned `BACKUP_VERIFIED` at
 `/volume1/docker/unified-hifi-control-4-backup-20261003.ypgw2e8q` and verified
 original restart; independent status again showed `b4ba5ac`, Roon connected.
-Nine missing Compose paths await classification; actual restoration is untested.
+The operator subsequently confirmed both labeled Compose inputs are backed up;
+the nine missing entries are repeated optional `.env` checks and unused default
+filenames. Actual restoration remains untested; Compose dry-run is next.
 Browser hydration, normal candidate startup, cutover, private provisioning
 and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
 recorded as installed. This does not alter the Pi disabled installation above.
