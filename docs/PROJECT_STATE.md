@@ -55,7 +55,7 @@ Independent restricted SSH checks completed by **2026-10-03 19:29:16 UTC** confi
 
 The protected pre-migration backup is `/root/freeze-protect-before-weather.EesduvpK`; private install evidence is `/root/freeze-weather-install-state`. Keep the backup and any matching weather identity with its database. Later documentation commits do not change the installed revision. Bridge/Dial delivery and separately authorized runtime/physical acceptance remain the next stages. Original published releases remain unchanged.
 
-## Synology fullstack candidate prepared locally — 2026-10-03
+## Synology fullstack candidate installed — 2026-10-04
 
 [Bridge packaging evidence](evidence/2026-10-03-bridge-fullstack-preparation.md)
 records the operator's existing Synology image, `host` networking,
@@ -71,10 +71,19 @@ The operator subsequently confirmed both labeled Compose inputs are backed up;
 the nine missing entries are repeated optional `.env` checks and unused default
 filenames. The operator Compose dry-run passed. A separately reviewed
 [cutover helper](evidence/2026-10-04-bridge-cutover-preparation.md) is prepared
-with thirteen passing focused tests; actual cutover/restoration remains unverified.
-Browser hydration, normal candidate startup, cutover, private provisioning
-and live playlist acceptance remain pending. Neither bridge nor Dial candidate is
-recorded as installed. This does not alter the Pi disabled installation above.
+with fifteen passing focused tests after the initial operator run stopped before
+Docker changes: the NAS-created working directory was0755 instead of0700.
+The reviewed v2 helper explicitly restricts its new empty directory and retains
+the privacy guard. The operator subsequently returned `CUTOVER_VERIFIED` with
+helper directory `/volume1/docker/uhc-cutover-tool.5ZXSqJT5` and private state
+`/volume1/docker/unified-hifi-control-4/.playlists-cutover-vgbix_si`.
+An independent GET status at2026-10-03T22:48:16.929780+00:00 confirmed exact
+source `9490cef370a17e83480431d1791303fd663abce6`, candidate version and Roon
+connected. The bridge candidate is now recorded as installed; rollback has
+not been exercised. Preserve both printed directories and the original backup.
+The operator confirmed the refreshed web UI renders and Sauna is visible.
+Private playlist provisioning and live playlist acceptance remain pending. Dial candidate installation remains pending. This does not
+alter the Pi disabled/manual_timed installation above.
 
 ## PT100 commissioning update — 2026-10-01
 
