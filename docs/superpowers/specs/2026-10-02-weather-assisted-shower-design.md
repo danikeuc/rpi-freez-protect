@@ -1,10 +1,6 @@
 # Weather-assisted shower — approved design
 
-Status: **APPROVED FOR IMPLEMENTATION PLANNING**, 2026-10-03. The owner
-approved the written weather design and requested a separate Roon playlist
-favorites addition. Approval covers this weather specification; the companion
-Roon design was subsequently approved; both execution plans still require review. No runtime, firmware,
-deployment, GPIO or release changes are part of this document.
+Status: **IMPLEMENTED REPOSITORY CANDIDATE**, 2026-10-03. Owner-approved source contracts are implemented and exercised with local software tests. [Current verification](../../evidence/2026-10-03-weather-plan-validation.md) records pinned revisions and unresolved Dial inventory / bridge strict-test-lint gates; full combined acceptance is NOT_READY. The earlier planning approval remains historical. No deployment, firmware flash, live playback, GPIO or physical acceptance follows from source approval or these checks.
 
 ## Owner review summary — scope resumed 2026-10-03
 
@@ -29,7 +25,7 @@ Potrjeni povzetek:
   ločena od implementacije ter zahtevata ustrezno preverjanje strojne opreme.
 
 The detailed timeout, fault, compatibility and credential contracts below
-remain the source of truth for implementation planning.
+remain the accepted design contract; current implementation evidence is linked above.
 
 ## 1. Intent and baseline
 
@@ -313,11 +309,13 @@ pinned plan/code and underlying evidence. RPi evidence reconciliation retains
 historical scope; Imperator-specific platform ownership is not imported here.
 The Mermaid diagram is a proposal, not an as-built hardware diagram.
 
-**Next gate:** produce the implementation plan with exact tasks, contracts,
+**Historical next gate at design approval:** produce the implementation plan with exact tasks, contracts,
 tests, migration, review and deployment gates, then obtain plan review and
 execution-method confirmation. Design approval is not deployment, live
 actuation or release approval. Roon playlist favorites are a companion scope
 with their own design decisions; BLE remotes remain excluded.
 
-Implementation planning: [Weather plan](../plans/2026-10-03-weather-assisted-shower.md)
+That planning/review/selection gate was subsequently approved and source implementation proceeded. Current pinned candidate verification and remaining acceptance gates are in the [validation record](../../evidence/2026-10-03-weather-plan-validation.md); deployment/live-actuation/release remain separately unauthorized.
+
+Accepted implementation plans: [Weather plan](../plans/2026-10-03-weather-assisted-shower.md)
 and [companion playlist plan](../plans/2026-10-03-roon-playlist-favorites.md).

@@ -1,6 +1,6 @@
 # Project state and evidence register
 
-**Evidence snapshot:** 2026-10-01
+**Repository evidence snapshot:** 2026-10-03; device observations retain their original dates
 
 **Active Pi mode observed:** `manual_timed`
 
@@ -37,13 +37,15 @@ historical hardware observations and limitations.
 See [v1.1.0 release notes](releases/v1.1.0.md) and the final publication comments
 on [Pi PR #22](https://github.com/danikeuc/rpi-freez-protect/pull/22) and
 [Dial PR #10](https://github.com/danikeuc/roon-knob/pull/10).
-The [weather-assisted proposal](superpowers/specs/2026-10-02-weather-assisted-shower-design.md)
-was approved for implementation planning on 2026-10-03; it is not implemented
-or commissioned behavior. The owner also requested up to five Roon playlist
-favorites in the Dial admin and a long-touch/encoder playlist picker. That
-companion [playlist design](superpowers/specs/2026-10-03-roon-playlist-favorites-design.md)
-was approved for implementation planning on 2026-10-03; BLE remotes remain excluded. The owner confirmed that
-a playlist selection replaces the queue and starts playback from its first track.
+The approved weather and playlist plans now have implemented repository candidates. See the [2026-10-03 software validation](evidence/2026-10-03-weather-plan-validation.md) and [weather operations](operations/weather-assisted-shower.md). BLE remains excluded. This supersedes planning-only status for source implementation while retaining all historical deployed and physical limits below.
+
+## Weather and playlist candidate — 2026-10-03
+
+Pi source/build `9ea6fd26165650fdd3d08185962a62e39133d69d`, Dial source/build `bf45eb615030411e6a8b2b73cd5d032170f6074b`, bridge source/build `9490cef370a17e83480431d1791303fd663abce6` are local candidates, not installed revisions. Pi full suite 570 and commissioning suite 110 pass, with Ruff/mypy/build. Dial host playlist/admin/valve/shared checks and ESP-IDF 5.5.5 build pass. The mandatory Dial dependency inventory still fails on exactly 36 unapproved include edges. Bridge canonical-source serial suite passes 1921/0 failed/18 ignored; fmt and production CI Clippy/release build pass, while required expanded strict test Clippy retains documented baseline failures. Full combined CI/acceptance is NOT_READY. Independent review has also reproduced pending source findings: a delayed Pi CAS can outlive the checked action nonce before SUPPLY, and a Dial picker can consume a page swipe after a fresh confirmation. Repairs and affected evidence are pending a consolidated fix wave.
+
+The [manifest](evidence/2026-10-03-weather-playlist-artifacts.json) pins local artifact hashes and build-source revisions; later docs revisions are distinct. No candidate was deployed, flashed, played, released or physically exercised. Source-level fixture coverage uses actual Pi service/driver/daemon logic and actual Dial clients/worker/UI with substituted network/register/RTOS boundaries. It is not electrical/relay/valve proof. Native PlayNow remains Accepted then Unknown when first-track causality cannot be confirmed; runtime checks of empty/populated queue, unchanged volume, Sauna targeting and restart persistence remain pending.
+
+Fresh weather preference is disabled. Any later deployment must retain manual_timed and weather disabled until separately authorized operation/physical gates pass. Keep 24 V disconnected; continuous-duty suitability and independent response to daemon crash, reboot and each power domain remain NOT_VERIFIED. Original v1.0.0/v1.1.0 publications are unchanged.
 
 ## PT100 commissioning update — 2026-10-01
 
@@ -217,20 +219,22 @@ identities](releases/v1.0.0.md) distinguish the tested dial binary, Pi package
 metadata update and remaining evidence limits. Earlier draft statuses describe
 their historical checkpoints; current publication state is on GitHub.
 
-## Weather and Roon playlist planning — 2026-10-03
+## Historical weather and Roon playlist planning checkpoint — 2026-10-03
 
-Both written designs are owner-approved. The [weather implementation plan](superpowers/plans/2026-10-03-weather-assisted-shower.md)
+This section preserves the earlier planning checkpoint. It is superseded for current source status by the [implemented candidate record](#weather-and-playlist-candidate-2026-10-03) and [exact validation](evidence/2026-10-03-weather-plan-validation.md). The owner subsequently approved both plans, exact new bridge API contracts, subagent execution and conservative interrupted-AUTO recovery; current full acceptance remains NOT_READY for the recorded gates.
+
+At this earlier checkpoint both written designs were owner-approved. The [weather implementation plan](superpowers/plans/2026-10-03-weather-assisted-shower.md)
 and [playlist implementation plan](superpowers/plans/2026-10-03-roon-playlist-favorites.md)
-are written for owner review and execution-method selection; neither has been
-executed. New bridge routes require explicit contract approval as part of plan
-review. The weather plan proposes conservative USER_OFF recovery after an
+were written for owner review and execution-method selection; neither had been
+executed at that point. New bridge routes then required explicit contract approval as part of plan
+review. The weather plan proposed conservative USER_OFF recovery after an
 unclean AUTO exit, in addition to the approved interrupted-manual behavior.
 
 The plans reference actual Pi, Dial and bridge interfaces. Documentation checks
 are recorded separately from code/runtime evidence. No source, firmware,
 configuration, device playback, GPIO or release artifact changed during planning.
-Playlist identity across Core reconnect and preexisting shuffle behavior require
-the P1 protocol characterization before playback implementation claims.
+At that checkpoint playlist identity across Core reconnect and preexisting shuffle behavior required
+the P1 protocol characterization before playback implementation claims. Current conservative retained-session/reselection and Accepted-to-Unknown limits are in the validation record above.
 
 Planning validation: `git diff --check` passed; a local Markdown-link check
 resolved all 34 relative links across the ledger, four matching design documents

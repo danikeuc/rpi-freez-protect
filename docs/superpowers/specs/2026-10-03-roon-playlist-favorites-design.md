@@ -1,9 +1,6 @@
 # Roon playlist favorites on the Waveshare dial
 
-Status: **APPROVED FOR IMPLEMENTATION PLANNING**, 2026-10-03. The owner
-approved this written design after confirming replace-queue-and-play behavior.
-The implementation plan and its exact additive API contracts require review
-before execution. This feature is not implemented or deployed.
+Status: **IMPLEMENTED REPOSITORY CANDIDATE**, 2026-10-03. Owner-approved source contracts are implemented and exercised with local software tests. [Current verification](../../evidence/2026-10-03-weather-plan-validation.md) records pinned revisions and unresolved Dial inventory / bridge strict-test-lint gates; full combined acceptance is NOT_READY. The earlier planning approval remains historical. No deployment, firmware flash, live playback, GPIO or physical acceptance follows from source approval or these checks.
 
 ## 1. Intent and independent delivery scope
 
@@ -172,7 +169,4 @@ approved target/operation. This design does not authorize live playback, changin
 volume, GPIO, flashing, deployment, merge or release. Firmware and bridge changes
 require exact-revision tests and rollback evidence before publication.
 
-Weather implementation planning can proceed from its separately approved spec.
-The [playlist implementation plan](../plans/2026-10-03-roon-playlist-favorites.md)
-is ready for review alongside the independently approved weather specification.
-Neither new feature is currently implemented by these documents.
+Historical planning checkpoint: weather planning could proceed from its separately approved spec. The [playlist implementation plan](../plans/2026-10-03-roon-playlist-favorites.md) was ready for review at that point, before either source implementation existed. Both plans and exact additive API contracts were subsequently approved and implemented. This earlier checkpoint is superseded for current source status by the [pinned candidate validation](../../evidence/2026-10-03-weather-plan-validation.md); full required-gate acceptance remains NOT_READY, with no deployment/live playback/physical acceptance.
