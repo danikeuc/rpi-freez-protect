@@ -321,6 +321,8 @@ def create_app(
                 finally:
                     try:
                         service.shutdown()
+                        if action_gate is not None:
+                            action_gate.promote_completed()
                     finally:
                         if weather_worker is not None:
                             weather_worker.stop()

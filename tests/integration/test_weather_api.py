@@ -11,6 +11,7 @@ from freeze_protect.api.app import create_app
 from freeze_protect.application.weather_worker import WeatherResult
 from freeze_protect.domain.models import ActuatorCommand, ControlMode
 from freeze_protect.domain.weather import WeatherWindow
+from freeze_protect.persistence.weather import WeatherStateError
 
 DISPLAY = {"X-Display-Token": "display"}
 WEATHER = {"X-Weather-Settings-Token": "weather"}
@@ -494,3 +495,38 @@ def test_reused_display_or_admin_token_cannot_become_weather_credential(tmp_path
                 ).status_code
                 == 200
             )
+
+
+def test_graceful_shutdown_promotes_timely_receipt(app):
+    with TestClient(app) as client:
+        request = action(client)
+        response = client.post(
+            "/api/v1/display/actions/start", headers=DISPLAY, json=request
+        )
+        assert response.status_code == 200
+        receipt = app.state.weather_store.get_action_receipt(request["request_id"])
+        assert receipt.state == "pending"
+    promoted = app.state.weather_store.get_action_receipt(request["request_id"])
+    assert promoted.state == "success"
+    assert promoted.control_revision == response.json()["control_revision"]
+    assert app.state.relay_driver.commands[-1] is ActuatorCommand.DRAIN
+    assert app.state.weather_worker.stopped
+
+
+def test_shutdown_promotion_failure_still_drains_and_stops_worker(app, monkeypatch):
+    def broken_promotion(*args, **kwargs):
+        raise WeatherStateError("injected shutdown promotion failure")
+
+    with pytest.raises(WeatherStateError), TestClient(app) as client:
+        request = action(client)
+        response = client.post(
+            "/api/v1/display/actions/start", headers=DISPLAY, json=request
+        )
+        assert response.status_code == 200
+        monkeypatch.setattr(
+            app.state.weather_store, "promote_action_receipts", broken_promotion
+        )
+    assert app.state.relay_driver.commands[-1] is ActuatorCommand.DRAIN
+    assert app.state.weather_worker.stopped
+    receipt = app.state.weather_store.get_action_receipt(request["request_id"])
+    assert receipt.state == "pending"

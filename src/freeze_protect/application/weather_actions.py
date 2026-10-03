@@ -85,6 +85,9 @@ class WeatherActionGate:
         self._status_payload = status_payload
         self._clock = monotonic_clock
         self._nonces: dict[str, tuple[int, float]] = {}
+        # A completed pending receipt is provisional until a later operation
+        # promotes this process's timely result. No post-response commit race.
+        self._validated: dict[str, int] = {}
         store.initialize_action_receipts()
 
     def recover_pending(self) -> None:
@@ -123,9 +126,26 @@ class WeatherActionGate:
         )
         return payload
 
+    def promote_completed(self) -> None:
+        """Later normal status/shutdown only; never action finalization or replay."""
+        with self._service.weather_action_guard():
+            if not self._validated:
+                return
+            try:
+                self._store.promote_action_receipts(self._validated)
+            except WeatherStateError:
+                self._service.handle_persistence_failure()
+                raise
+            self._validated.clear()
+
     def status(self) -> dict[str, object]:
         with self._service.weather_action_guard():
+            self.promote_completed()
             return self._snapshot(read_only=False)
+
+    def _fresh(self, issued: float) -> bool:
+        elapsed = self._clock() - issued
+        return isfinite(elapsed) and 0 <= elapsed < NONCE_SECONDS
 
     def execute(self, action: str, request: WeatherActionInput) -> WeatherActionResult:
         if action not in ("start", "stop") or (
@@ -159,16 +179,25 @@ class WeatherActionGate:
         if current.get("operation") == "FAULT" and action == "start":
             raise WeatherActionError(409, "weather controller is fault inhibited")
         nonce = self._nonces.get(request.action_nonce)
-        now = self._clock()
         if (
             nonce is None
             or nonce[0] != request.expected_control_revision
-            or not (isfinite(now - nonce[1]) and 0 <= now - nonce[1] < NONCE_SECONDS)
+            or not self._fresh(nonce[1])
         ):
             raise WeatherActionError(409, "weather action nonce expired or invalid")
         with self._service.weather_action_guard(request.expected_control_revision):
             del self._nonces[request.action_nonce]
             self._store.begin_action_receipt(request.request_id, body_hash)
+            # The intent commit can block beyond the authorization lifetime.
+            # Do not call W3 at all after expiry, even if the revision is current.
+            if not self._fresh(nonce[1]):
+                self._store.finish_action_receipt(
+                    request.request_id,
+                    request.expected_control_revision,
+                    error_status=409,
+                    error_reason="weather action nonce expired or invalid",
+                )
+                raise WeatherActionError(409, "weather action nonce expired or invalid")
             try:
                 decision = (
                     self._service.start_weather_shower(
@@ -189,27 +218,39 @@ class WeatherActionGate:
                 failure = WeatherActionError(503, "weather controller unavailable")
             elif action == "start" and decision.command is not ActuatorCommand.SUPPLY:
                 failure = WeatherActionError(409, "weather start not accepted")
-            elapsed = self._clock() - nonce[1]
-            if not isfinite(elapsed) or not 0 <= elapsed < NONCE_SECONDS:
+            if not self._fresh(nonce[1]):
                 self._service.handle_persistence_failure()
                 failure = WeatherActionError(503, "weather action response expired")
             revision = self._store.load().control_revision
-            receipt = self._store.finish_action_receipt(
+            self._store.finish_action_receipt(
                 request.request_id,
                 revision,
                 error_status=failure.status_code if failure else None,
                 error_reason=failure.detail if failure else None,
             )
-            result = self._result(receipt)
-            elapsed = self._clock() - nonce[1]
-            if not isfinite(elapsed) or not 0 <= elapsed < NONCE_SECONDS:
+            if failure is not None:
+                raise failure
+            snapshot = self._snapshot(read_only=True)
+            if not self._fresh(nonce[1]):
                 self._service.handle_persistence_failure()
                 self._store.mark_action_unknown(request.request_id)
                 raise WeatherActionError(503, "weather action response expired")
-            return result
+            # Nothing durable follows this check on the original response path.
+            # A later status/shutdown can promote the already validated outcome.
+            self._validated[request.request_id] = revision
+            if len(self._validated) > 128:
+                del self._validated[next(iter(self._validated))]
+            return WeatherActionResult(request.request_id, True, revision, snapshot)
 
     def _result(self, receipt: WeatherActionReceipt) -> WeatherActionResult:
-        if receipt.state != "success" or receipt.control_revision is None:
+        timely_provisional = (
+            receipt.state == "pending"
+            and receipt.control_revision is not None
+            and self._validated.get(receipt.request_id) == receipt.control_revision
+        )
+        if (
+            receipt.state != "success" and not timely_provisional
+        ) or receipt.control_revision is None:
             raise WeatherActionError(
                 receipt.error_status or 503,
                 receipt.error_reason or "weather action outcome unknown",

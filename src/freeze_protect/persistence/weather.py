@@ -230,7 +230,8 @@ class SQLiteWeatherStore:
                 if count >= 128:
                     db.execute(
                         "DELETE FROM weather_action_receipts WHERE sequence IN "
-                        "(SELECT sequence FROM weather_action_receipts WHERE state!='pending' "
+                        "(SELECT sequence FROM weather_action_receipts "
+                        "WHERE state!='pending' OR control_revision IS NOT NULL "
                         "ORDER BY sequence LIMIT ?)",
                         (count - 127,),
                     )
@@ -254,8 +255,13 @@ class SQLiteWeatherStore:
         error_status: int | None = None,
         error_reason: str | None = None,
     ) -> WeatherActionReceipt:
+        """Record a result; successful effects remain pending deadline validation."""
         receipt = self.get_action_receipt(request_id)
-        if receipt is None or receipt.state != "pending":
+        if (
+            receipt is None
+            or receipt.state != "pending"
+            or receipt.control_revision is not None
+        ):
             raise WeatherStateError("weather pending receipt missing")
         try:
             with closing(self._connect()) as db, db:
@@ -263,9 +269,10 @@ class SQLiteWeatherStore:
                 self._read(db)
                 changed = db.execute(
                     "UPDATE weather_action_receipts SET state=?, control_revision=?, error_status=?, "
-                    "error_reason=? WHERE request_id=? AND state='pending'",
+                    "error_reason=? WHERE request_id=? AND state='pending' "
+                    "AND control_revision IS NULL",
                     (
-                        "success" if error_status is None else "rejected",
+                        "pending" if error_status is None else "rejected",
                         control_revision,
                         error_status,
                         error_reason,
@@ -278,14 +285,32 @@ class SQLiteWeatherStore:
             raise WeatherStateError("weather receipt completion failed") from error
         return replace(
             receipt,
-            state="success" if error_status is None else "rejected",
+            state="pending" if error_status is None else "rejected",
             control_revision=control_revision,
             error_status=error_status,
             error_reason=error_reason,
         )
 
+    def promote_action_receipts(self, validated: dict[str, int]) -> None:
+        """Confirm earlier timely outcomes, preserving their recorded revisions.
+
+        Pending plus a result revision means provisional completion. Rows pruned
+        by retention may be absent; unfinished or withdrawn rows cannot promote.
+        """
+        try:
+            with closing(self._connect()) as db, db:
+                db.execute("BEGIN IMMEDIATE")
+                self._read(db)
+                db.executemany(
+                    "UPDATE weather_action_receipts SET state='success' "
+                    "WHERE request_id=? AND state='pending' AND control_revision=?",
+                    validated.items(),
+                )
+        except sqlite3.Error as error:
+            raise WeatherStateError("weather receipt promotion failed") from error
+
     def mark_action_unknown(self, request_id: str) -> None:
-        """Withdraw a successful outcome whose server-side response deadline elapsed."""
+        """Withdraw a provisional outcome after the response deadline elapsed."""
         try:
             with closing(self._connect()) as db, db:
                 db.execute("BEGIN IMMEDIATE")
