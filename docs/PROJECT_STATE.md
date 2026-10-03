@@ -82,8 +82,27 @@ source `9490cef370a17e83480431d1791303fd663abce6`, candidate version and Roon
 connected. The bridge candidate is now recorded as installed; rollback has
 not been exercised. Preserve both printed directories and the original backup.
 The operator confirmed the refreshed web UI renders and Sauna is visible.
-Private playlist provisioning and live playlist acceptance remain pending. Dial candidate installation remains pending. This does not
-alter the Pi disabled/manual_timed installation above.
+Private playlist provisioning and live playlist acceptance remain pending. The Dial candidate was subsequently installed; see the USB evidence below.
+This does not alter the Pi disabled/manual_timed installation above.
+
+## Dial weather/playlist candidate installed — 2026-10-04
+
+[USB installation evidence](evidence/2026-10-04-dial-weather-playlist-install.md)
+records the initial source `5eb4c45` installation and a subsequent narrow
+production NVS namespace repair. Current installed application source is
+`4c0a15c08f1ca05fb948cc8c65890ec423eeedf9`, SHA256
+`7bad18553d3bcb117054bd9c16f6fccb52ad0caa57d6fb9ab839f6a446cd6e3f`.
+A protected fresh 16 MB full-flash backup and per-write NVS snapshots remain.
+The corrected app was separately digest-verified; NVS stayed byte-identical
+before boot. Matching ELF prefix, IP and exact Sauna zone were restored with
+no selected fault markers during 50 seconds. Admin GET/session returned 200
+with existing PIN setup; unauthenticated settings returned 401. Pi restricted
+status remained three services active/high/high. The namespace regression,
+affected suites, dependency checks, source review and isolated build pass;
+independent test execution limitation is explicitly recorded in the evidence.
+Operator display/PIN acceptance, scoped token provisioning, hardware token
+persistence, playlist runtime checks and weather commissioning remain pending.
+No media or actuator command was sent. No new release is published.
 
 ## PT100 commissioning update — 2026-10-01
 
