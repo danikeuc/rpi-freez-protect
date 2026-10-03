@@ -55,6 +55,18 @@ Independent restricted SSH checks completed by **2026-10-03 19:29:16 UTC** confi
 
 The protected pre-migration backup is `/root/freeze-protect-before-weather.EesduvpK`; private install evidence is `/root/freeze-weather-install-state`. Keep the backup and any matching weather identity with its database. Later documentation commits do not change the installed revision. Bridge/Dial delivery and separately authorized runtime/physical acceptance remain the next stages. Original published releases remain unchanged.
 
+## Synology fullstack candidate prepared locally — 2026-10-03
+
+[Bridge packaging evidence](evidence/2026-10-03-bridge-fullstack-preparation.md)
+records the operator's existing Synology image, `host` networking,
+`restart=always`, data bind and executable path. Exact bridge source `9490cef`
+now has a separate artifact with embedded web assets; isolated GET-only
+HTML/static checks pass. Browser hydration and Synology image compatibility
+remain unverified. The build-only package preserves the running container;
+operator image preparation, backup, cutover, private provisioning and live
+playlist acceptance remain pending. Neither bridge nor Dial candidate is
+recorded as installed. This does not alter the Pi disabled installation above.
+
 ## PT100 commissioning update — 2026-10-01
 
 The [partial commissioning record](evidence/2026-10-01-pt100-display-commissioning.md)
