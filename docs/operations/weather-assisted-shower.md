@@ -48,6 +48,16 @@ With later operator authorization, disable weather, request DRAIN and verify log
 
 No live fault, flash, deployment or energized valve test was performed for this candidate. GPIO memory tests establish software logic only. The historical physical gate remains open.
 
-## Pending independent review findings
+## Repaired source and remaining gates
 
-This frozen candidate remains NOT_READY. Independent review reproduced a Pi nonce/deadline gap around a delayed SQLite CAS, and a Dial picker consuming a page swipe after fresh playlist confirmation. Consolidated repair and affected test/build evidence are pending. The combined fixture exercises UI handlers directly; actual touch/encoder routing is covered separately with stubs, so it does not prove navigation to STOP during that picker state.
+The current candidate includes the four consolidated source repairs: final local START admission after durable writes, actual picker swipe access to shower STOP, read-only weather observations/rules and identity-bound target label. [Current exact evidence](../evidence/2026-10-03-weather-plan-validation.md) replaces the original W6/P5 candidate; scoped source repairs are verified; final documentation review remains pending. The mandatory 36-edge Dial inventory approval remains unresolved, so full acceptance stays NOT_READY. Bridge expanded strict lint remains a documented baseline limitation under approved P5 scope.
+
+START nonce freshness is checked again immediately before local driver dispatch, after inhibition/active-marker persistence; automatic eligibility and manual deadline are also reevaluated there. Expired deliberate admission faults/inhibits without issuing BEGIN. No such check proves the eventual remote/physical dispatch time.
+
+## Private phone observation contract
+
+Existing authenticated Dial `GET /admin/api/weather` retains `revision`, `enabled`, `latitude`, `longitude`, `timezone` and adds `observation`. This optional object contains only `operation`, `enabled`, `available`, `eligible`, `reason`, `dates`, `minima_c`, `last_successful_check`; null means current observation is unknown. Exact PUT request/response and Pi settings schema are unchanged. Dial reads the already approved Pi display/status route with its display credential and filters out nonce/credentials. No new public route or privilege is introduced.
+
+The browser displays saved preference separately from actual Pi operation. Minima/check metadata are labeled as the last successful forecast; latest failure or stale reason cannot imply AUTO eligibility. Visible rules remain today+four local days, inclusive 5 C, refresh every 15 minutes. Observation-only polling is every 15 seconds while the page is visible/authenticated; unknown/error/hide/logout stops polling until a deliberate refresh or visible-page resume. Polls send GET only and do not save settings or send control actions.
+
+Both settings and optional status share the existing five-second admitted job. A confirmed settings GET is published to an immutable per-job snapshot before status I/O; generation/session validation fences both normal results and timeout fallback. An optional stalled read can return saved settings plus null observation within the original caller deadline. It retains the one worker slot until cleanup and never converts an uncertain PUT into Saved. Old clients that only consume the five original GET fields remain compatible.

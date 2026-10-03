@@ -1,41 +1,44 @@
 {
-  "observed_at": "2026-10-03T05:54:11.579199+00:00",
+  "observed_at": "2026-10-03T04:52:14Z",
   "scope": "local repository candidate builds; no deployment, flash, playback or physical verification",
   "publication": "v1.0.0 and v1.1.0 untouched",
   "overall_readiness": "NOT_READY",
   "blockers": [
-    "Dial dependency inventory fails on exact 36 unapproved edges"
+    "Dial dependency inventory fails on exact 36 unapproved edges",
+    "Bridge required expanded all-target strict Clippy retains documented preexisting failures",
+    "Independent review: delayed Pi CAS can outlive the checked action nonce before SUPPLY; consolidated repair pending",
+    "Independent review: Dial picker can consume a page swipe after fresh confirmation; actual combined input dispatch coverage and repair pending"
   ],
   "components": {
     "pi": {
-      "build_source": "31245c1ad66491d13e36d3201bae946d1fcdefef",
+      "build_source": "9ea6fd26165650fdd3d08185962a62e39133d69d",
       "toolchain": "CPython 3.12.3; build 1.6.1",
       "artifacts": [
         {
           "file": "pi/rpi_freeze_protect-1.1.0-py3-none-any.whl",
-          "bytes": 52774,
-          "sha256": "f4fd05f46ef1e860369691d57707e270e7af35569b5f97f77dcb1352d8270a3b"
+          "bytes": 52105,
+          "sha256": "6297ba9e39b5f4328922532d5967c8fc711691b6725a589f30d61b9566ae7bb7"
         },
         {
           "file": "pi/rpi_freeze_protect-1.1.0.tar.gz",
-          "bytes": 45939,
-          "sha256": "7424c5376e053ffb3bd02fe31da796b360cb77367c4a4e8b9f4f0d9db0d57f16"
+          "bytes": 44855,
+          "sha256": "f6c9c8521e9b38bbd48fed34bb14530f9d6de0ca970db7183514f7c73f5691ec"
         }
       ]
     },
     "dial": {
-      "build_source": "5eb4c4506b031558bfaa3951d10a98dadc09105a",
+      "build_source": "bf45eb615030411e6a8b2b73cd5d032170f6074b",
       "toolchain": "ESP-IDF v5.5.5; ESP32-S3",
       "artifacts": [
         {
           "file": "dial/hiphi_dial.bin",
-          "bytes": 2188928,
-          "sha256": "acb88426f83e532db3570909e4750126e31dab92e0e525a79c1afed133ac4d34"
+          "bytes": 2182528,
+          "sha256": "ad614db53794080eb1e44048d2a4a99d1a68e4befaf0a3671993adcba1941995"
         },
         {
           "file": "dial/hiphi_dial.elf",
-          "bytes": 21469840,
-          "sha256": "ea03fb082c61fc3baa9d5194bacc5ee4a2cbfd5bef9741ef03f7c84dc0ff4f51"
+          "bytes": 21450256,
+          "sha256": "d541cb7996674b347a930809855c685d2fc056b55d5bbfc010b2a88e3ee9d861"
         },
         {
           "file": "dial/bootloader.bin",
@@ -53,7 +56,7 @@
           "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
         }
       ],
-      "build_note": "Production build after immutable parser amendment 5eb4c45, following scoped review. Fixed version label does not attest Git revision; exact source and hashes recorded here."
+      "build_note": "Incremental build at frozen fixture HEAD; production build inputs unchanged from reviewed 890e1fdb. Fixed 2.5.3-valve.1-dev label does not attest a Git revision."
     },
     "bridge": {
       "build_source": "9490cef370a17e83480431d1791303fd663abce6",
@@ -72,10 +75,5 @@
       ],
       "embedded_sha_verified": true
     }
-  },
-  "limitations": [
-    "Bridge expanded all-target strict Clippy remains FAIL on documented baseline legacy tests; approved P5 classification, no unrelated repair or PASS claim",
-    "Exact-artifact device, deployed service, live Roon and physical acceptance not performed"
-  ],
-  "prior_candidate_manifest": "2026-10-03-weather-playlist-artifacts-before-final-repair.json"
+  }
 }
