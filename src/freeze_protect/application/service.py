@@ -515,6 +515,7 @@ class ControlService:
         if not force and command is self._last_command:
             return True
         attempts = 2 if command is ActuatorCommand.DRAIN else 1
+        weather_receipt_failed = False
         for attempt in range(1, attempts + 1):
             try:
                 receipt = self._actuator_driver.command(
@@ -534,6 +535,9 @@ class ControlService:
                     and self._mode is not ControlMode.WEATHER_ASSISTED
                 ):
                     raise
+                if self._mode is ControlMode.WEATHER_ASSISTED:
+                    weather_receipt_failed = True
+                    self._supply_ready = False
                 if record_error and not self._append_event(
                     "relay_driver_error",
                     {
@@ -549,8 +553,10 @@ class ControlService:
             self._last_receipt = receipt
             self._last_command = command
             if command is ActuatorCommand.DRAIN:
-                self._supply_ready = True
-            return True
+                self._supply_ready = not weather_receipt_failed
+            # A successful best-effort DRAIN retry confirms the pair, but must
+            # not erase an earlier failed receipt or authorize weather supply.
+            return not weather_receipt_failed
         return False
 
     def _best_effort_drain(self) -> None:
@@ -747,6 +753,9 @@ class ControlService:
             self._send(ActuatorCommand.DRAIN, force=True, record_error=False)
             return self._last_decision
         if inhibit and not self._save_weather_record(replace(record, user_off=True)):
+            # Persistence may already be fault-latched, so this deliberate STOP
+            # must independently attempt DRAIN and retain the uncleared marker.
+            self._send(ActuatorCommand.DRAIN, force=True, record_error=False)
             return self._last_decision
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None

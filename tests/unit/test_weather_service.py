@@ -557,3 +557,99 @@ def test_restarted_manual_marker_requires_fresh_start(tmp_path):
     assert restarted.run_cycle().command is Command.DRAIN
     assert restarted.weather_status().operation == "USER_OFF"
     assert restarted.status().remaining_seconds == 0
+
+
+@pytest.mark.parametrize("action", ["stop_weather_shower", "drain"])
+@pytest.mark.parametrize("first_drain_fails", [False, True])
+def test_repeated_stop_attempts_drain_when_cas_and_fault_write_fail(
+    tmp_path, monkeypatch, action, first_drain_fails
+):
+    from freeze_protect.application.ports import AdapterError
+
+    rig = Rig(tmp_path)
+    rig.warm()
+    attempts = []
+    reject_drain = first_drain_fails
+    original = rig.driver.command
+
+    def driver(command, **kwargs):
+        attempts.append(command)
+        if command is Command.DRAIN and reject_drain:
+            raise AdapterError("injected drain failure")
+        return original(command, **kwargs)
+
+    def failed_write(*args):
+        raise WeatherStateError("injected CAS failure")
+
+    monkeypatch.setattr(rig.driver, "command", driver)
+    monkeypatch.setattr(rig.store, "compare_and_swap", failed_write)
+    stop = getattr(rig.service, action)
+    assert stop().state is State.FAULT
+    assert attempts and set(attempts) == {Command.DRAIN}
+    assert rig.store.load().active_marker == "auto"
+
+    reject_drain = False
+    for _ in range(2):
+        before = len(attempts)
+        assert stop().state is State.FAULT
+        assert attempts[before:] == [Command.DRAIN]
+        assert rig.store.load().active_marker == "auto"
+        assert rig.service.run_cycle().state is State.FAULT
+    assert rig.driver.commands.count(Command.SUPPLY) == 1
+
+
+@pytest.mark.parametrize("failure", ["raised", "ambiguous"])
+@pytest.mark.parametrize("phase", ["startup", "stop", "expiry", "shutdown"])
+def test_failed_weather_drain_receipt_remains_fault_after_successful_retry(
+    tmp_path, monkeypatch, failure, phase
+):
+    from types import SimpleNamespace
+
+    from freeze_protect.application.ports import AdapterError
+
+    rig = Rig(tmp_path)
+    if phase == "expiry":
+        rig.service.startup()
+        rig.service.start_timed_shower(60)
+        rig.advance(60)
+    elif phase != "startup":
+        rig.warm()
+    original = rig.driver.command
+    attempts = []
+
+    def retry_once(command, **kwargs):
+        attempts.append(command)
+        if len(attempts) == 1:
+            assert command is Command.DRAIN
+            if failure == "raised":
+                raise AdapterError("first receipt failed")
+            return SimpleNamespace(
+                command=command,
+                protocol_version=2,
+                supply_action=None,
+                gpio_26=1,
+                gpio_20=0,
+            )
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(rig.driver, "command", retry_once)
+    action = {
+        "startup": rig.service.startup,
+        "stop": rig.service.stop_weather_shower,
+        "expiry": rig.service.run_cycle,
+        "shutdown": rig.service.shutdown,
+    }[phase]
+    assert action().state is State.FAULT
+    assert attempts == [Command.DRAIN, Command.DRAIN]
+    assert rig.driver.commands[-1] is Command.DRAIN
+    record = rig.store.load()
+    assert record.fault_inhibited and record.user_off
+    assert record.active_marker == (
+        None if phase == "startup" else "manual" if phase == "expiry" else "auto"
+    )
+    if phase == "startup":
+        assert not rig.worker.requests
+    for _ in range(2):
+        assert rig.service.run_cycle().state is State.FAULT
+        assert rig.service.start_weather_shower(180).state is State.FAULT
+    assert attempts == [Command.DRAIN, Command.DRAIN]
