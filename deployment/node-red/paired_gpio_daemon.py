@@ -95,11 +95,15 @@ class SupplyLease:
         self._clock = clock
         self._expires_at: float | None = None
         self._drain_verified = False
+        self._drain_pending = False
 
     def _drain(self) -> dict[str, Any]:
         self._expires_at = None
         self._drain_verified = False
+        # Revoking SUPPLY must not discard an unconfirmed safe-state request.
+        self._drain_pending = True
         levels = self._gpio.write_and_verify("DRAIN")
+        self._drain_pending = False
         self._drain_verified = True
         return {
             "ok": True,
@@ -161,10 +165,11 @@ class SupplyLease:
         }
 
     def enforce(self) -> bool:
-        if self._expires_at is None or self._clock() < self._expires_at:
+        if not self._drain_pending and (
+            self._expires_at is None or self._clock() < self._expires_at
+        ):
             return False
-        self._expires_at = None
-        self._drain_verified = False
+        # The existing socket loop retries pending DRAIN even without Hub traffic.
         self._drain()
         return True
 
@@ -229,7 +234,7 @@ def serve(
             try:
                 lease.enforce()
             except Exception as error:  # noqa: BLE001 - allow a later DRAIN retry.
-                print(f"lease expiry DRAIN failed: {error}", file=sys.stderr)
+                print(f"pending or expired lease DRAIN failed: {error}", file=sys.stderr)
             try:
                 connection, _ = listener.accept()
             except TimeoutError:

@@ -1,8 +1,8 @@
 # Project state and evidence register
 
-**Repository evidence snapshot:** 2026-10-03; device observations retain their original dates
+**Repository evidence snapshot:** 2026-10-05; device observations retain their original dates
 
-**Active Pi mode observed:** `manual_timed`
+**Active Pi mode observed:** `weather_assisted`, `USER_OFF` / `DRAIN` (operator installation receipt, 2026-10-05; independent GPIO readback high/high).
 
 **Physical valve position:** `UNKNOWN / NOT_VERIFIED`
 
@@ -13,6 +13,28 @@ must never be promoted into a physical claim. The external observations below
 are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
+
+## Pi v1.2.0 publication preparation
+
+The owner approved publishing v1.2.0, preserving v1.0.0/v1.1.0. The
+[release notes](releases/v1.2.0.md) include weather assistance, optional forecast
+icons metadata and the installed P1 repair. Release package/API labels change
+to 1.2.0; no device redeployment or new physical acceptance is implied. Final
+source, CI and asset identities are recorded in the published manifest and
+verification asset. Companion firmware/bridge publication is outside this Pi
+release.
+
+## GPIO pending-DRAIN P1 repair installed - 2026-10-05
+
+The [pending-DRAIN repair](evidence/2026-10-05-pending-drain-fix.md) preserves
+independent retry after a failed safety DRAIN. Offline verification: 654 tests,
+Ruff and configured mypy pass; 12 installer tests pass. The operator completed
+the installation under USER_OFF. Independent restricted SSH confirmed the exact
+candidate daemon hash, all three services active and both outputs high.
+[Installation receipt](evidence/2026-10-05-pending-drain-installation.json)
+records backup `/root/freeze-paired-drain-fix._j1g92ni`. No physical valve or live
+fault-injection acceptance is claimed. Earlier manual_timed/disabled-weather
+sections below retain their historical observations.
 
 ## Paired v1.1.0 publication — 2026-10-02
 
@@ -82,7 +104,17 @@ source `9490cef370a17e83480431d1791303fd663abce6`, candidate version and Roon
 connected. The bridge candidate is now recorded as installed; rollback has
 not been exercised. Preserve both printed directories and the original backup.
 The operator confirmed the refreshed web UI renders and Sauna is visible.
-Private playlist provisioning and live playlist acceptance remain pending. The Dial candidate was subsequently installed; see the USB evidence below.
+The operator subsequently returned DIAL_PROVISION_UNCONFIRMED at private state
+`/volume1/docker/unified-hifi-control-4/.scope-provision-80suk28s`: backend scope
+verification passed, while Dial credential/save/readback did not complete.
+Preserve its scope.json as the fourth Compose input. Subsequent bridge GET
+status remained source9490cef/Roon connected; operator Dial favorites still
+returned unconfirmed. Initial provisioning must not be rerun. Same-token
+continuation passed backend and pre-save gates, but its one Dial form attempt
+failed after8012ms with OS_ERROR; logout returned401. Preserve its durable
+CONTINUATION_SAVE_PENDING marker. Fresh authenticated readback and live playlist
+acceptance remain pending; do not resend the form. The Dial candidate
+was installed; see the USB evidence below.
 This does not alter the Pi disabled/manual_timed installation above.
 
 ## Dial weather/playlist candidate installed — 2026-10-04
@@ -100,8 +132,14 @@ with existing PIN setup; unauthenticated settings returned 401. Pi restricted
 status remained three services active/high/high. The namespace regression,
 affected suites, dependency checks, source review and isolated build pass;
 independent test execution limitation is explicitly recorded in the evidence.
-Operator display/PIN acceptance, scoped token provisioning, hardware token
-persistence, playlist runtime checks and weather commissioning remain pending.
+The operator subsequently reached the admin settings page, but weather and
+playlist controls remained disabled; the busy cursor is a misleading disabled
+style, not proof of an in-flight save. The operator subsequently returned
+WEATHER_CREDENTIAL_VERIFIED using the v2 connection helper: manual_timed and
+weather_enabled=false were retained, with protected recovery state
+`/root/.scope-provision-_x54h4n1`. The Dial authenticated weather read now passes.
+Playlist provisioning, reboot persistence, actual settings saves and weather
+commissioning remain pending.
 No media or actuator command was sent. No new release is published.
 
 ## PT100 commissioning update — 2026-10-01
@@ -175,18 +213,20 @@ for the candidate as described in the [operations runbook](operations/dial-admin
 
 ## Current contract
 
-- The Raspberry Pi Hub is the valve safety authority. In the deployed
-  `manual_timed` mode, idle is `MANUAL_DRAIN` / `DRAIN`; one authenticated
-  deliberate display action may start a 60–600-second `SUPPLY` interval in
-  whole minutes. The legacy/default request remains 600 seconds.
-  Duplicate actions do not extend it. Weather and sensor inputs cannot start
-  `SUPPLY` in this mode.
+- The Raspberry Pi Hub is the valve safety authority. The recorded mode is
+  `weather_assisted`, with durable `USER_OFF` / `DRAIN`. A fresh deliberate START
+  can select AUTO only with eligible five-day weather, otherwise a bounded
+  60-600-second manual interval. STOP inhibits reopening across restarts;
+  forecast/settings changes and duplicates do not extend an accepted interval.
+- `manual_timed` remains available as a separate mode. Only a deliberate
+  authenticated action starts its 60-600-second interval; its default is 600.
+  Weather and informational sensor inputs cannot start SUPPLY in that mode.
 - BCM 26 and BCM 20 are one paired active-low actuator. `DRAIN` is high/high and
-  `SUPPLY` is low/low. The daemon is the sole GPIO writer and expires an
-  unrenewed `SUPPLY` lease within 60 seconds.
-- Nginx exposes only display status, timed-shower and drain routes on trusted-LAN
-  port `8081`. The Hub remains on `127.0.0.1:8000`; Node-RED remains on
-  `127.0.0.1:1880`.
+  `SUPPLY` is low/low. The sole GPIO daemon requests DRAIN when its 60-second
+  lease expires and retains failed DRAIN for retry until both outputs verify.
+- The current gateway source exposes scoped display status, timed-shower,
+  drain, weather-settings and explicit start/stop routes on trusted-LAN port
+  `8081`. The Hub remains on `127.0.0.1:8000`; Node-RED on `127.0.0.1:1880`.
 - The active display is the Waveshare ESP32-S3 dial. Roon control is implemented
   by the separate `roon-knob` and `roon-control` repositories. The CrowPanel in
   this repository is historical and retired from the active valve network.
@@ -216,7 +256,7 @@ for the candidate as described in the [operations runbook](operations/dial-admin
 
 | Claim or required proof | Current evidence | Source and limit | Category | Minimal next fix | Owner |
 | --- | --- | --- | --- | --- | --- |
-| Active Pi uses `manual_timed` | Environment value and authenticated status agree | Deployed observation; token values intentionally omitted | Closed | Recheck after any deployment | Pi operator |
+| Historical Pi mode was `manual_timed` (superseded by 2026-10-05 weather activation) | Environment value and authenticated status agree | Deployed observation; token values intentionally omitted | Closed | Recheck after any deployment | Pi operator |
 | Only paired GPIO commands are active | Deployed preflight passed; disconnected high/high → low/low → high/high observed | Does not prove relay/valve movement | Closed for software output | Keep preflight in every cutover | Pi operator |
 | LAN exposes only display API | Active Nginx configuration plus 401/404 behavior observed | Installed file hash was not retained | Closed for route behavior | Capture config hash at next maintenance | Pi operator |
 | Roon dial control works | Operator confirmed play/pause, one-step volume round trip and shower-page return on the identified PT100 candidate | [Current candidate record](evidence/2026-10-01-pt100-display-commissioning.md); no retained bridge trace or exact observation time | Closed for this bounded candidate check | Recheck after a firmware change; release acceptance remains separate | Firmware maintainer + operator |
@@ -261,10 +301,12 @@ checks are recorded. Physical sensor-fault testing is skipped by operator decisi
 for informational display use; cold-point comparisons are deferred as currently
 unavailable. Do not request those tests again as immediate prerequisites for this
 scope. Other evidence limitations remain in the commissioning record.
-Keep `manual_timed`; automatic-policy commissioning remains separate.
+Keep the recorded `weather_assisted` installation in `USER_OFF` / `DRAIN` until
+a separately authorized operational test. Physical AUTO acceptance and legacy
+sensor-driven `automatic` commissioning remain separate.
 
 Record each new result against the installed Pi source and exact firmware hash.
-Both PRs remain draft. Energized valve tests and automatic-policy commissioning
+Earlier draft-PR statements are historical. Energized valve tests and automatic-policy commissioning
 require their separately defined approval and test boundaries; GPIO readback
 must not be described as valve-position evidence.
 

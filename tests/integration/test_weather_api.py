@@ -46,7 +46,7 @@ class Worker:
     def stop(self):
         self.stopped = True
 
-    def warm(self):
+    def warm(self, weather_codes=()):
         request = self.requests[-1]
         today = request.requested_at.astimezone(
             ZoneInfo(request.settings.timezone)
@@ -62,6 +62,7 @@ class Worker:
                 request.settings.timezone,
                 request.settings.revision,
                 request.generation,
+                weather_codes=weather_codes,
             ),
             None,
             self.clock(),
@@ -169,6 +170,7 @@ def test_status_exact_additions_and_manual_start_stop_contract(client):
         "reason": "disabled",
         "dates": [],
         "minima_c": [],
+        "weather_codes": [],
         "last_successful_check": None,
     }
     assert isinstance(status["action_nonce"], str)
@@ -202,7 +204,8 @@ def test_status_exact_additions_and_manual_start_stop_contract(client):
     )
 
 
-def test_warm_equality_at_five_is_auto_without_a_countdown(client):
+@pytest.mark.parametrize("codes", [(), (0, 3, 61, 71, 97)])
+def test_warm_equality_at_five_is_auto_without_a_countdown(client, codes):
     saved = client.put(
         "/api/v1/display/weather-settings",
         headers=WEATHER,
@@ -215,7 +218,7 @@ def test_warm_equality_at_five_is_auto_without_a_countdown(client):
         },
     )
     assert saved.status_code == 200
-    client.app.state.weather_worker.warm()
+    client.app.state.weather_worker.warm(codes)
     client.app.state.control_service.run_cycle()
     status = client.get("/api/v1/display/status", headers=DISPLAY).json()
     assert status["operation"] == "AUTO_SUPPLY"
@@ -224,6 +227,7 @@ def test_warm_equality_at_five_is_auto_without_a_countdown(client):
     assert status["remaining_seconds"] == 0
     assert status["weather"]["eligible"] is True
     assert status["weather"]["minima_c"] == [5.0] * 5
+    assert status["weather"]["weather_codes"] == list(codes)
     assert len(status["weather"]["dates"]) == 5
     before = list(client.app.state.relay_driver.commands)
     client.get("/api/v1/display/status", headers=DISPLAY)
@@ -386,6 +390,7 @@ def test_corrupt_weather_identity_still_constructs_startup_drain_and_fault(app):
         status = client.get("/api/v1/display/status", headers=DISPLAY)
         assert status.status_code == 200
         assert status.json()["operation"] == "FAULT"
+        assert status.json()["weather"]["weather_codes"] == []
         assert status.json()["action_nonce"] is None
         assert status.json()["control_revision"] is None
         assert damaged.state.relay_driver.commands and all(
@@ -530,3 +535,40 @@ def test_shutdown_promotion_failure_still_drains_and_stops_worker(app, monkeypat
     assert app.state.weather_worker.stopped
     receipt = app.state.weather_store.get_action_receipt(request["request_id"])
     assert receipt.state == "pending"
+
+
+@pytest.mark.parametrize("failure", ["weather_stale", "latest_attempt_failed"])
+def test_forecast_codes_preserve_authoritative_freshness_on_failure(client, failure):
+    saved = client.put(
+        "/api/v1/display/weather-settings",
+        headers=WEATHER,
+        json={
+            "expected_revision": 0,
+            "enabled": True,
+            "latitude": 46.5,
+            "longitude": 15.5,
+            "timezone": "Europe/Ljubljana",
+        },
+    )
+    assert saved.status_code == 200
+    worker = client.app.state.weather_worker
+    worker.warm((0, 3, 61, 71, 97))
+    client.app.state.control_service.run_cycle()
+    fresh = client.get("/api/v1/display/status", headers=DISPLAY).json()["weather"]
+    if failure == "weather_stale":
+        client.app.state.test_elapsed[0] += 1200
+    else:
+        worker.result = WeatherResult(
+            worker.requests[-1], None, "request_failed", worker.clock()
+        )
+    client.app.state.control_service.run_cycle()
+    before = list(client.app.state.relay_driver.commands)
+    status = client.get("/api/v1/display/status", headers=DISPLAY).json()
+    weather = status["weather"]
+    assert weather["reason"] == failure
+    assert weather["eligible"] is False
+    assert weather["available"] is (failure == "weather_stale")
+    for field in ("dates", "minima_c", "weather_codes", "last_successful_check"):
+        assert weather[field] == fresh[field]
+    assert status["command"] == "DRAIN"
+    assert client.app.state.relay_driver.commands == before

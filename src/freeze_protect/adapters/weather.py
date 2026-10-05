@@ -104,7 +104,7 @@ class OpenMeteoForecastClient:
             {
                 "latitude": settings.latitude,
                 "longitude": settings.longitude,
-                "daily": "temperature_2m_min",
+                "daily": "temperature_2m_min,weather_code",
                 "forecast_days": 5,
                 "temperature_unit": "celsius",
                 "timezone": settings.timezone,
@@ -181,6 +181,7 @@ def _parse_window(
         raise ValueError("local date coverage mismatch")
     if settings.latitude is None or settings.longitude is None:
         raise ValueError("location missing")
+    codes = daily.get("weather_code")
     return WeatherWindow(
         dates,
         tuple(_finite_value(value) for value in minima),
@@ -190,6 +191,9 @@ def _parse_window(
         settings.timezone,
         settings.revision,
         generation,
+        weather_codes=tuple(codes)
+        if isinstance(codes, list) and units.get("weather_code") == "wmo code"
+        else (),
     )
 
 

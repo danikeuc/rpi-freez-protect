@@ -12,6 +12,13 @@ WEATHER_FETCH_DEADLINE_SECONDS = 5
 WEATHER_MAX_AGE_SECONDS = 1200
 WEATHER_PROCESSING_BOUND_SECONDS = 30
 
+# Open-Meteo daily weather_code values; presentation only, never eligibility.
+# https://open-meteo.com/en/docs#weathervariables
+_WMO_WEATHER_CODES = frozenset({
+    0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67,
+    71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 97, 99,
+})
+
 
 def _number(value: object, name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int | float):
@@ -74,6 +81,7 @@ class WeatherWindow:
     timezone: str
     settings_revision: int
     generation: int
+    weather_codes: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if type(self.dates) is not tuple or type(self.minima_c) is not tuple:
@@ -95,6 +103,17 @@ class WeatherWindow:
         _timezone(self.timezone)
         _revision(self.settings_revision, "settings_revision")
         _revision(self.generation, "generation")
+        # Optional display metadata cannot invalidate a usable temperature window.
+        # Discard the whole array if it cannot align one valid code to each date.
+        if (
+            type(self.weather_codes) is not tuple
+            or len(self.weather_codes) != 5
+            or any(
+                type(code) is not int or code not in _WMO_WEATHER_CODES
+                for code in self.weather_codes
+            )
+        ):
+            object.__setattr__(self, "weather_codes", ())
 
 
 @dataclass(frozen=True, slots=True)

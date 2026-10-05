@@ -154,3 +154,24 @@ def test_additive_control_mode_and_auto_state():
 def test_oversized_integer_is_rejected_as_invalid_model_value():
     with pytest.raises(ValueError):
         replace(SETTINGS, latitude=10**400)
+
+
+@pytest.mark.parametrize("codes", [(), None, [0] * 5, (True,) * 5, (4,) * 5])
+def test_invalid_optional_codes_are_absent_without_changing_policy(codes):
+    snapshot = window(weather_codes=codes)
+    assert snapshot.weather_codes == ()
+    assert eligible(snapshot)
+    assert not eligible(replace(snapshot, minima_c=(4.9,) * 5))
+
+
+@pytest.mark.parametrize(
+    "code",
+    [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67,
+     71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 97, 99],
+)
+def test_supported_condition_codes_are_presentation_only(code):
+    snapshot = window(weather_codes=(code,) * 5)
+    assert snapshot.weather_codes == (code,) * 5
+    assert eligible(snapshot)
+    assert not eligible(snapshot, now=NOW + timedelta(seconds=1200), mono=1300.0)
+    assert not eligible(snapshot, ok=False)

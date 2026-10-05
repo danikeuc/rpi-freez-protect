@@ -1,13 +1,14 @@
 # RPi Freeze Protect
 
-Paired system release: [v1.1.0 — mobile admin and timed shower settings](docs/releases/v1.1.0.md).
+Pi release: [v1.2.0 — weather assistance and verified DRAIN recovery](docs/releases/v1.2.0.md).
 
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
 allows a bounded one to ten minute `SUPPLY` interval from the Waveshare dial
 when the explicit `manual_timed` mode is selected. The default remains ten
-minutes. Weather assistance and Roon playlist favorites are implemented repository
-candidates; see [the evidence ledger](docs/PROJECT_STATE.md) for deployed
+minutes. Optional weather assistance uses five local forecast days, with durable
+STOP and timed manual fallback. Roon playlists belong to the separate Dial/bridge
+components; see [the evidence ledger](docs/PROJECT_STATE.md) for deployed
 observations and remaining gates.
 
 Start with the dated [project evidence register](docs/PROJECT_STATE.md). It
@@ -23,7 +24,8 @@ that still require physical confirmation.
 
 `DRAIN` is the requested safe state. The paired GPIO daemon is the only GPIO
 writer and gives every accepted `SUPPLY` a 60-second lease that the Hub must
-renew. Loss of renewal requests paired `DRAIN`. Mixed GPIO states and
+renew. Loss of renewal requests paired `DRAIN`. A failed DRAIN remains pending
+and is retried until both outputs verify high. Mixed GPIO states and
 single-valve commands are illegal.
 
 A GPIO receipt or readback proves output levels only. It does not prove relay
@@ -51,12 +53,13 @@ display token.
 
 - `safe_drain` is the default for an absent or invalid setting. It refuses
   `SUPPLY`.
-- `manual_timed` is the active installation mode. Only an authenticated
+- `manual_timed`: only an authenticated
   deliberate display action starts a selected 60–600-second interval. Weather and
   temperature cannot start it.
-- `weather_assisted` is a new opt-in repository mode with disabled saved preference
-  by default. Five warm local dates can permit AUTO; a durable STOP and bounded
-  manual deadline remain authoritative. See [weather operation](docs/operations/weather-assisted-shower.md).
+- `weather_assisted` is opt-in, with disabled saved preference by default.
+  Five warm local dates can permit AUTO; a durable STOP and bounded manual
+  deadline remain authoritative. The recorded installation uses this mode with
+  `USER_OFF` / `DRAIN`. See [weather operation](docs/operations/weather-assisted-shower.md).
 - `automatic` is a separately commissioned legacy/future mode. Missing, stale,
   invalid or unsafe sensor/forecast inputs keep that mode at `DRAIN`.
 

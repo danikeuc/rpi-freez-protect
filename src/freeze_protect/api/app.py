@@ -276,6 +276,9 @@ def create_app(
                     if window is not None
                     else [],
                     "minima_c": list(window.minima_c) if window is not None else [],
+                    "weather_codes": list(window.weather_codes)
+                    if window is not None
+                    else [],
                     "last_successful_check": _iso(window.fetched_at)
                     if window is not None
                     else None,
@@ -327,7 +330,7 @@ def create_app(
                         if weather_worker is not None:
                             weather_worker.stop()
 
-    app = FastAPI(title="RPi Freeze Protect", version="1.1.0", lifespan=lifespan)
+    app = FastAPI(title="RPi Freeze Protect", version="1.2.0", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
@@ -429,6 +432,7 @@ def create_app(
                     "reason": "storage_unavailable",
                     "dates": [],
                     "minima_c": [],
+                    "weather_codes": [],
                     "last_successful_check": None,
                 },
             }

@@ -9,7 +9,11 @@ import pytest
 
 from freeze_protect.adapters.weather import OpenMeteoForecastClient
 from freeze_protect.application.ports import AdapterError
-from freeze_protect.domain.weather import WeatherSettings
+from freeze_protect.domain.weather import (
+    WeatherObservation,
+    WeatherSettings,
+    evaluate_weather,
+)
 
 NOW = datetime(2026, 10, 3, 12, tzinfo=UTC)
 SETTINGS = WeatherSettings(True, 46.5, 15.5)
@@ -39,7 +43,7 @@ class Response:
                 {
                     "latitude": 46.5,
                     "longitude": 15.5,
-                    "daily": "temperature_2m_min",
+                    "daily": "temperature_2m_min,weather_code",
                     "forecast_days": 5,
                     "temperature_unit": "celsius",
                     "timezone": "Europe/Ljubljana",
@@ -79,7 +83,7 @@ def test_query_grid_coordinate_and_bounded_read() -> None:
         "latitude": ["46.5"],
         "longitude": ["15.5"],
         "timezone": ["Europe/Ljubljana"],
-        "daily": ["temperature_2m_min"],
+        "daily": ["temperature_2m_min,weather_code"],
         "forecast_days": ["5"],
         "temperature_unit": ["celsius"],
     }
@@ -218,3 +222,61 @@ def test_network_error_is_sanitized() -> None:
 
     with pytest.raises(AdapterError, match="^Open-Meteo request failed$"):
         OpenMeteoForecastClient(opener).fetch_window(SETTINGS, NOW, 0)
+
+
+@pytest.mark.parametrize(
+    "codes,expected",
+    [
+        ([0, 3, 61, 71, 97], (0, 3, 61, 71, 97)),
+        (None, ()),
+        ([], ()),
+        ([0] * 4, ()),
+        ([0] * 6, ()),
+        ([0, 1, 2, 3, None], ()),
+        ([False] * 5, ()),
+        ([0.0] * 5, ()),
+        (["0"] * 5, ()),
+        ([4] * 5, ()),
+        ([100] * 5, ()),
+        ([float("nan")] * 5, ()),
+        ([{}] * 5, ()),
+        ({"0": 0}, ()),
+    ],
+)
+@pytest.mark.parametrize("minimum", [4.9, 5.0])
+def test_optional_codes_never_change_temperature_eligibility(codes, expected, minimum):
+    data = payload()
+    data["daily_units"]["weather_code"] = "wmo code"
+    data["daily"]["weather_code"] = codes
+    data["daily"]["temperature_2m_min"] = [minimum] * 5
+    window = OpenMeteoForecastClient(
+        lambda *_: Response(json.dumps(data).encode())
+    ).fetch_window(SETTINGS, NOW, 0)
+    assert window.weather_codes == expected
+    decision = evaluate_weather(
+        SETTINGS, WeatherObservation(window, 100.0, True, "success"), NOW, 100.0
+    )
+    assert decision.eligible is (minimum >= 5.0)
+    assert decision.reason == ("eligible" if minimum >= 5.0 else "cold_forecast")
+
+
+@pytest.mark.parametrize("units", [None, "", "unknown", 1])
+def test_optional_code_units_do_not_invalidate_temperature_window(units):
+    data = payload()
+    data["daily"]["weather_code"] = [0] * 5
+    data["daily_units"]["weather_code"] = units
+    window = OpenMeteoForecastClient(
+        lambda *_: Response(json.dumps(data).encode())
+    ).fetch_window(SETTINGS, NOW, 0)
+    assert window.weather_codes == ()
+    assert window.minima_c == (5.0,) * 5
+
+
+def test_legacy_provider_response_without_codes_remains_eligible():
+    window = OpenMeteoForecastClient(
+        lambda *_: Response(json.dumps(payload()).encode())
+    ).fetch_window(SETTINGS, NOW, 0)
+    assert window.weather_codes == ()
+    assert evaluate_weather(
+        SETTINGS, WeatherObservation(window, 100.0, True, "success"), NOW, 100.0
+    ).eligible
