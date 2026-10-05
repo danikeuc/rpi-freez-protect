@@ -17,6 +17,7 @@ app = create_app(
     database_path=Path(os.environ.get("FREEZE_PROTECT_DB_PATH", "./data/freeze-protect.db")),
     admin_token=os.environ.get("FREEZE_PROTECT_ADMIN_TOKEN"),
     display_token=os.environ.get("FREEZE_PROTECT_DISPLAY_TOKEN"),
+    weather_settings_token=os.environ.get("FREEZE_PROTECT_WEATHER_SETTINGS_TOKEN"),
     development_mode=_development_mode(os.environ.get("FREEZE_PROTECT_DEVELOPMENT_MODE")),
     node_red_url=os.environ.get("FREEZE_PROTECT_NODE_RED_URL"),
     node_red_token=os.environ.get("FREEZE_PROTECT_NODE_RED_TOKEN"),

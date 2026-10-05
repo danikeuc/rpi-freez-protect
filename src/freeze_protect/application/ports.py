@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Protocol
 
+from freeze_protect.application.weather_worker import WeatherRequest, WeatherResult
 from freeze_protect.domain.models import (
     ActuatorCommand,
     ActuatorReceipt,
@@ -44,3 +45,13 @@ class SettingsStore(Protocol):
     def load(self) -> SafetySettings: ...
 
     def save(self, settings: SafetySettings) -> SafetySettings: ...
+
+
+class WeatherWorkerPort(Protocol):
+    """Nonblocking worker operations; lifecycle ownership remains in the app."""
+
+    def submit(self, request: WeatherRequest) -> bool: ...
+
+    def poll(self) -> WeatherResult | None: ...
+
+    def cancel(self) -> None: ...

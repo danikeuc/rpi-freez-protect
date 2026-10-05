@@ -1,13 +1,15 @@
 # RPi Freeze Protect
 
-Paired system release: [v1.1.0 — mobile admin and timed shower settings](docs/releases/v1.1.0.md).
+Pi release: [v1.2.0 — weather assistance and verified DRAIN recovery](docs/releases/v1.2.0.md).
 
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
 allows a bounded one to ten minute `SUPPLY` interval from the Waveshare dial
 when the explicit `manual_timed` mode is selected. The default remains ten
-minutes. The variable-duration API is a repository candidate; see
-[the evidence ledger](docs/PROJECT_STATE.md) before treating it as deployed.
+minutes. Optional weather assistance uses five local forecast days, with durable
+STOP and timed manual fallback. Roon playlists belong to the separate Dial/bridge
+components; see [the evidence ledger](docs/PROJECT_STATE.md) for deployed
+observations and remaining gates.
 
 Start with the dated [project evidence register](docs/PROJECT_STATE.md). It
 separates repository results, deployed observations, device behavior and facts
@@ -22,7 +24,8 @@ that still require physical confirmation.
 
 `DRAIN` is the requested safe state. The paired GPIO daemon is the only GPIO
 writer and gives every accepted `SUPPLY` a 60-second lease that the Hub must
-renew. Loss of renewal requests paired `DRAIN`. Mixed GPIO states and
+renew. Loss of renewal requests paired `DRAIN`. A failed DRAIN remains pending
+and is retried until both outputs verify high. Mixed GPIO states and
 single-valve commands are illegal.
 
 A GPIO receipt or readback proves output levels only. It does not prove relay
@@ -50,9 +53,13 @@ display token.
 
 - `safe_drain` is the default for an absent or invalid setting. It refuses
   `SUPPLY`.
-- `manual_timed` is the active installation mode. Only an authenticated
+- `manual_timed`: only an authenticated
   deliberate display action starts a selected 60–600-second interval. Weather and
   temperature cannot start it.
+- `weather_assisted` is opt-in, with disabled saved preference by default.
+  Five warm local dates can permit AUTO; a durable STOP and bounded manual
+  deadline remain authoritative. The recorded installation uses this mode with
+  `USER_OFF` / `DRAIN`. See [weather operation](docs/operations/weather-assisted-shower.md).
 - `automatic` is a separately commissioned legacy/future mode. Missing, stale,
   invalid or unsafe sensor/forecast inputs keep that mode at `DRAIN`.
 
@@ -69,18 +76,25 @@ automatic-mode commissioning is complete.
 
 ## Display API
 
-Nginx exposes exactly three token-protected paths on the trusted LAN:
+The candidate Nginx configuration exposes these exact paths on the trusted LAN
+(display token, or distinct restricted weather token for settings):
 
 ```text
 GET  /api/v1/display/status
 POST /api/v1/display/actions/timed-shower
 POST /api/v1/display/actions/drain
+GET/PUT /api/v1/display/weather-settings
+POST /api/v1/display/actions/start
+POST /api/v1/display/actions/stop
 ```
 
 The timed-shower action accepts an empty body for the legacy 600-second interval,
 or exactly `{"duration_seconds":N}` for whole-minute `N` from 60 to 600. The
 DRAIN action remains bodyless. Status advertises
-`timed_shower_duration_supported` only in `manual_timed`. An invalid explicit
+`timed_shower_duration_supported` in `manual_timed` and `weather_assisted`.
+Weather status adds version, operation, control revision, nonce and forecast eligibility.
+New START/STOP require fresh revision/nonce plus request UUID; see the
+[operation/API contract](docs/operations/weather-assisted-shower.md#compatible-interfaces-and-credentials). An invalid explicit
 duration is rejected; an unsupported client must not silently retry with the
 legacy empty body when a shorter duration is saved. In idle
 `manual_timed` mode, status is shaped like:
@@ -149,6 +163,8 @@ uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
 | [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) | Canonical dated evidence and unresolved gaps |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | Reproducible repository checks and their limits |
 | [docs/operations/dial-admin-settings.md](docs/operations/dial-admin-settings.md) | Candidate admin setup, API compatibility and rollback |
+| [docs/operations/weather-assisted-shower.md](docs/operations/weather-assisted-shower.md) | Candidate weather/API/staged rollback procedure |
+| [docs/evidence/2026-10-03-weather-plan-validation.md](docs/evidence/2026-10-03-weather-plan-validation.md) | Exact software checks, artifacts and unverified layers |
 | [deployment/COMMISSIONING.md](deployment/COMMISSIONING.md) | Pi, Node-RED, GPIO, PT100 and physical commissioning |
 | [deployment/DISPLAY_COMMISSIONING.md](deployment/DISPLAY_COMMISSIONING.md) | Active Waveshare/Roon/valve display acceptance |
 | [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) | Restricted workstation-to-Pi access and handoff |

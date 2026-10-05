@@ -1,0 +1,87 @@
+{
+  "observed_at": "2026-10-03T05:54:11.579199+00:00",
+  "scope": "local repository candidate builds; no deployment, flash, playback or physical verification",
+  "publication": "v1.0.0 and v1.1.0 untouched",
+  "overall_readiness": "READY_FOR_LOCAL_ACCEPTANCE_REVIEW",
+  "blockers": [],
+  "components": {
+    "pi": {
+      "build_source": "31245c1ad66491d13e36d3201bae946d1fcdefef",
+      "toolchain": "CPython 3.12.3; build 1.6.1",
+      "artifacts": [
+        {
+          "file": "pi/rpi_freeze_protect-1.1.0-py3-none-any.whl",
+          "bytes": 52774,
+          "sha256": "f4fd05f46ef1e860369691d57707e270e7af35569b5f97f77dcb1352d8270a3b"
+        },
+        {
+          "file": "pi/rpi_freeze_protect-1.1.0.tar.gz",
+          "bytes": 45939,
+          "sha256": "7424c5376e053ffb3bd02fe31da796b360cb77367c4a4e8b9f4f0d9db0d57f16"
+        }
+      ]
+    },
+    "dial": {
+      "build_source": "5eb4c4506b031558bfaa3951d10a98dadc09105a",
+      "toolchain": "ESP-IDF v5.5.5; ESP32-S3",
+      "artifacts": [
+        {
+          "file": "dial/hiphi_dial.bin",
+          "bytes": 2188928,
+          "sha256": "acb88426f83e532db3570909e4750126e31dab92e0e525a79c1afed133ac4d34"
+        },
+        {
+          "file": "dial/hiphi_dial.elf",
+          "bytes": 21469840,
+          "sha256": "ea03fb082c61fc3baa9d5194bacc5ee4a2cbfd5bef9741ef03f7c84dc0ff4f51"
+        },
+        {
+          "file": "dial/bootloader.bin",
+          "bytes": 20832,
+          "sha256": "4046683129466dca4be6dbf4258b39d5468b7e3d75241b34366d4ae69dd1b3a5"
+        },
+        {
+          "file": "dial/partition-table.bin",
+          "bytes": 3072,
+          "sha256": "a1ab6444806fcaf52c8b03b6a07404625644a15853bd8945622c102e46c95853"
+        },
+        {
+          "file": "dial/ota_data_initial.bin",
+          "bytes": 8192,
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+        }
+      ],
+      "build_note": "Production build after immutable parser amendment 5eb4c45, following scoped review. Fixed version label does not attest Git revision; exact source and hashes recorded here."
+    },
+    "bridge": {
+      "build_source": "9490cef370a17e83480431d1791303fd663abce6",
+      "toolchain": "Rust 1.98.1; UHC_GIT_SHA exact build source",
+      "artifacts": [
+        {
+          "file": "bridge/unified-hifi-control",
+          "bytes": 19734072,
+          "sha256": "ccd3bcff2dcfcc5d5c8b1ce8d20eda3cd611c22fa9e4e8ad142f94177a46934f"
+        },
+        {
+          "file": "bridge/protocol-checker",
+          "bytes": 654896,
+          "sha256": "24c48c9fef15e1bef10c8166e788a0accb062816d860db04186abfeedd429d72"
+        }
+      ],
+      "embedded_sha_verified": true
+    }
+  },
+  "limitations": [
+    "Bridge expanded all-target strict Clippy remains FAIL on documented baseline legacy tests; approved P5 classification, no unrelated repair or PASS claim",
+    "Exact-artifact device, deployed service, live Roon and physical acceptance not performed"
+  ],
+  "prior_candidate_manifest": "2026-10-03-weather-playlist-artifacts-before-final-repair.json",
+  "approval_closure": {
+    "policy_commit": "314224b2d817d7f90afb58fbaeeaf91484eb7ac2",
+    "approved_expected_edge_additions": 36,
+    "other_policy_values_unchanged": true,
+    "affected_shared_ci": "PASS",
+    "review": "policy/documentation delta pending local acceptance review",
+    "scope": "repository policy and evidence only; build sources and all artifact identities unchanged"
+  }
+}

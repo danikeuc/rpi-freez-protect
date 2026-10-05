@@ -1,0 +1,79 @@
+{
+  "observed_at": "2026-10-03T04:52:14Z",
+  "scope": "local repository candidate builds; no deployment, flash, playback or physical verification",
+  "publication": "v1.0.0 and v1.1.0 untouched",
+  "overall_readiness": "NOT_READY",
+  "blockers": [
+    "Dial dependency inventory fails on exact 36 unapproved edges",
+    "Bridge required expanded all-target strict Clippy retains documented preexisting failures",
+    "Independent review: delayed Pi CAS can outlive the checked action nonce before SUPPLY; consolidated repair pending",
+    "Independent review: Dial picker can consume a page swipe after fresh confirmation; actual combined input dispatch coverage and repair pending"
+  ],
+  "components": {
+    "pi": {
+      "build_source": "9ea6fd26165650fdd3d08185962a62e39133d69d",
+      "toolchain": "CPython 3.12.3; build 1.6.1",
+      "artifacts": [
+        {
+          "file": "pi/rpi_freeze_protect-1.1.0-py3-none-any.whl",
+          "bytes": 52105,
+          "sha256": "6297ba9e39b5f4328922532d5967c8fc711691b6725a589f30d61b9566ae7bb7"
+        },
+        {
+          "file": "pi/rpi_freeze_protect-1.1.0.tar.gz",
+          "bytes": 44855,
+          "sha256": "f6c9c8521e9b38bbd48fed34bb14530f9d6de0ca970db7183514f7c73f5691ec"
+        }
+      ]
+    },
+    "dial": {
+      "build_source": "bf45eb615030411e6a8b2b73cd5d032170f6074b",
+      "toolchain": "ESP-IDF v5.5.5; ESP32-S3",
+      "artifacts": [
+        {
+          "file": "dial/hiphi_dial.bin",
+          "bytes": 2182528,
+          "sha256": "ad614db53794080eb1e44048d2a4a99d1a68e4befaf0a3671993adcba1941995"
+        },
+        {
+          "file": "dial/hiphi_dial.elf",
+          "bytes": 21450256,
+          "sha256": "d541cb7996674b347a930809855c685d2fc056b55d5bbfc010b2a88e3ee9d861"
+        },
+        {
+          "file": "dial/bootloader.bin",
+          "bytes": 20832,
+          "sha256": "4046683129466dca4be6dbf4258b39d5468b7e3d75241b34366d4ae69dd1b3a5"
+        },
+        {
+          "file": "dial/partition-table.bin",
+          "bytes": 3072,
+          "sha256": "a1ab6444806fcaf52c8b03b6a07404625644a15853bd8945622c102e46c95853"
+        },
+        {
+          "file": "dial/ota_data_initial.bin",
+          "bytes": 8192,
+          "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+        }
+      ],
+      "build_note": "Incremental build at frozen fixture HEAD; production build inputs unchanged from reviewed 890e1fdb. Fixed 2.5.3-valve.1-dev label does not attest a Git revision."
+    },
+    "bridge": {
+      "build_source": "9490cef370a17e83480431d1791303fd663abce6",
+      "toolchain": "Rust 1.98.1; UHC_GIT_SHA exact build source",
+      "artifacts": [
+        {
+          "file": "bridge/unified-hifi-control",
+          "bytes": 19734072,
+          "sha256": "ccd3bcff2dcfcc5d5c8b1ce8d20eda3cd611c22fa9e4e8ad142f94177a46934f"
+        },
+        {
+          "file": "bridge/protocol-checker",
+          "bytes": 654896,
+          "sha256": "24c48c9fef15e1bef10c8166e788a0accb062816d860db04186abfeedd429d72"
+        }
+      ],
+      "embedded_sha_verified": true
+    }
+  }
+}

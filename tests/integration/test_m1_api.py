@@ -403,7 +403,7 @@ def test_display_status_preserves_legacy_valve_fields_with_unavailable_sensor(
 ) -> None:
     payload = client.get("/api/v1/display/status", headers=DISPLAY).json()
 
-    assert payload == {
+    legacy_expected = {
         "mode": "manual_timed",
         "command": "DRAIN",
         "remaining_seconds": 0,
@@ -417,6 +417,7 @@ def test_display_status_preserves_legacy_valve_fields_with_unavailable_sensor(
         "pipe_temperature_c": None,
         "sensor_health": "STALE",
     }
+    assert {key: payload[key] for key in legacy_expected} == legacy_expected
 
 
 @pytest.mark.parametrize("mode", [ControlMode.MANUAL_TIMED, ControlMode.SAFE_DRAIN])

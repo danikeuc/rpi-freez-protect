@@ -98,10 +98,11 @@ def test_display_gateway_rejects_methods_outside_its_device_contract() -> None:
     )
 
     assert nginx.count("if ($request_method != GET) { return 405; }") == 1
-    assert nginx.count("if ($request_method != POST) { return 405; }") == 2
+    assert nginx.count("if ($request_method != POST) { return 405; }") == 4
+    assert nginx.count('if ($request_method !~ "^(GET|PUT)$") { return 405; }') == 1
 
 
-def test_display_gateway_exposes_exactly_three_device_routes() -> None:
+def test_display_gateway_exposes_exact_scoped_device_routes() -> None:
     nginx = (FLOW_PATH.parents[1] / "nginx" / "freeze-protect-display.conf").read_text(
         encoding="utf-8"
     )
@@ -111,6 +112,9 @@ def test_display_gateway_exposes_exactly_three_device_routes() -> None:
         "= /api/v1/display/status",
         "= /api/v1/display/actions/timed-shower",
         "= /api/v1/display/actions/drain",
+        "= /api/v1/display/weather-settings",
+        "= /api/v1/display/actions/start",
+        "= /api/v1/display/actions/stop",
         "/",
     ]
     assert re.findall(
@@ -120,6 +124,8 @@ def test_display_gateway_exposes_exactly_three_device_routes() -> None:
         ("/api/v1/display/status", "GET"),
         ("/api/v1/display/actions/timed-shower", "POST"),
         ("/api/v1/display/actions/drain", "POST"),
+        ("/api/v1/display/actions/start", "POST"),
+        ("/api/v1/display/actions/stop", "POST"),
     ]
     assert "location / {\n        return 404;" in nginx
 

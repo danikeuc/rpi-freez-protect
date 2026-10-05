@@ -1,0 +1,29 @@
+{
+  "recorded_at_utc": "2026-10-05T19:38:16.921702+00:00",
+  "operator_receipt": "PAIRED_DRAIN_FIX_INSTALLED",
+  "daemon_sha256": "33088ea9e6ccf8d327e226bab1602c6a2b3ba2423de7dcab408b1d06f2233d2f",
+  "mode": "weather_assisted",
+  "operation": "USER_OFF",
+  "command": "DRAIN",
+  "gpio26": "high",
+  "gpio20": "high",
+  "backup": "/root/freeze-paired-drain-fix._j1g92ni",
+  "independent_read_only_checks": {
+    "status_exit": 0,
+    "services": [
+      "node-red.service",
+      "freeze-protect-pair-gpio.service",
+      "freeze-protect.service"
+    ],
+    "all_active": true,
+    "gpio26": "high",
+    "gpio20": "high",
+    "diagnose_exit": 0,
+    "daemon_hash_matches": true,
+    "daemon_running": true,
+    "main_pid": 400948,
+    "nrestarts": 0,
+    "active_since_utc": "2026-10-05T19:36:52+00:00"
+  },
+  "limits": "Mode, USER_OFF and backup validation are operator installer evidence. Restricted SSH independently confirms services, GPIO readback and daemon file hash. No physical valve or live fault-injection test."
+}

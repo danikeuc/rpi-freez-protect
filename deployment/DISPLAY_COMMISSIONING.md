@@ -1,5 +1,7 @@
 # Waveshare dial commissioning
 
+Weather/playlist candidate procedure: [weather operations](../docs/operations/weather-assisted-shower.md) and [exact repository validation](../docs/evidence/2026-10-03-weather-plan-validation.md). Existing physical/SSH gates remain mandatory. Later candidate staging keeps manual_timed and weather disabled; back up the matching SQLite weather-identity sentinel with its database when present. These source changes do not authorize deployment, timed commands, 24 V connection or flash.
+
 This is the active display procedure for the Waveshare ESP32-S3 Knob 1.8-inch
 dial. The Pi remains the valve safety authority. Roon and valve pages share the
 dial hardware but use separate service paths.

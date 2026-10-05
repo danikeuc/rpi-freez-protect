@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from math import ceil
+from math import ceil, isfinite
 from threading import Event, RLock, Thread
 from time import monotonic
 from uuid import uuid4
@@ -16,6 +17,7 @@ from freeze_protect.application.ports import (
     ForecastStore,
     TemperatureSource,
 )
+from freeze_protect.application.weather_control import WeatherCoordinator
 from freeze_protect.domain.models import (
     ActuatorCommand,
     ActuatorReceipt,
@@ -30,6 +32,26 @@ from freeze_protect.domain.models import (
     TemperatureReading,
 )
 from freeze_protect.domain.policy import evaluate_automatic
+from freeze_protect.domain.weather import (
+    WEATHER_PROCESSING_BOUND_SECONDS,
+    WeatherControlRecord,
+    WeatherEligibility,
+    WeatherObservation,
+    WeatherSettings,
+)
+from freeze_protect.persistence.weather import (
+    SQLiteWeatherStore,
+    WeatherRevisionConflict,
+    WeatherStateError,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherControlStatus:
+    record: WeatherControlRecord
+    operation: str
+    eligibility: WeatherEligibility
+    observation: WeatherObservation | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +84,8 @@ class ControlService:
         clock: Callable[[], datetime],
         monotonic_clock: Callable[[], float] = monotonic,
         mode: ControlMode = ControlMode.SAFE_DRAIN,
+        weather_coordinator: WeatherCoordinator | None = None,
+        weather_store: SQLiteWeatherStore | None = None,
     ) -> None:
         self._temperature_source = temperature_source
         self._forecast_store = forecast_store
@@ -85,6 +109,9 @@ class ControlService:
         self._timed_shower_duration_s: int | None = None
         self._persistence_fault_latched = False
         self._supply_ready = False
+        self._weather_coordinator = weather_coordinator
+        self._weather_store = weather_store
+        self._weather_started = False
 
     @property
     def settings(self) -> SafetySettings:
@@ -102,9 +129,9 @@ class ControlService:
                 {"settings_version": settings.settings_version},
             ):
                 return self._last_decision
-            if (
-                self._timed_shower_deadline is not None
-                and self._mode is ControlMode.MANUAL_TIMED
+            if self._timed_shower_deadline is not None and self._mode in (
+                ControlMode.MANUAL_TIMED,
+                ControlMode.WEATHER_ASSISTED,
             ):
                 if (
                     self._timed_shower_duration_s is not None
@@ -126,6 +153,8 @@ class ControlService:
                 return self._fault("startup_drain_failed")
             if not self._append_event("startup_drain", {"command": "DRAIN"}):
                 return self._last_decision
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                return self._startup_weather()
             if self._mode is not ControlMode.AUTOMATIC:
                 return self._set_decision(
                     Decision(
@@ -142,6 +171,8 @@ class ControlService:
         with self._lock:
             if self._state is ControllerState.FAULT:
                 return self._last_decision
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                return self._run_weather()
             if self._timed_shower_deadline is not None:
                 if (
                     self._timed_shower_monotonic_deadline is not None
@@ -172,6 +203,12 @@ class ControlService:
         ):
             raise ValueError("duration_seconds must be a whole minute from 60 to 600")
         with self._lock:
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                return self._start_weather_manual(
+                    self.MANUAL_TIMED_DURATION_S
+                    if duration_seconds is None
+                    else duration_seconds
+                )
             if self._state is ControllerState.FAULT:
                 return self._last_decision
             if (
@@ -254,6 +291,10 @@ class ControlService:
 
     def drain(self, reason: str = "drain_requested") -> Decision:
         with self._lock:
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                if reason == "shutdown_drain":
+                    return self.shutdown()
+                return self._drain_weather(reason, inhibit=True)
             self._timed_shower_deadline = None
             self._timed_shower_monotonic_deadline = None
             self._timed_shower_duration_s = None
@@ -272,6 +313,8 @@ class ControlService:
 
     def clear_fault(self) -> Decision:
         with self._lock:
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                return self._clear_weather_fault()
             if (
                 self._state is not ControllerState.FAULT
                 or self._persistence_fault_latched
@@ -309,7 +352,7 @@ class ControlService:
                 return None
             return snapshot
 
-    def status(self) -> ControlStatus:
+    def status(self, *, expire_timer: bool = True) -> ControlStatus:
         with self._lock:
             remaining_seconds = 0
             if self._timed_shower_monotonic_deadline is not None:
@@ -317,7 +360,8 @@ class ControlService:
                     self._timed_shower_monotonic_deadline - self._monotonic_clock()
                 )
                 if remaining <= 0:
-                    self._finish_timed_shower()
+                    if expire_timer:
+                        self._finish_timed_shower()
                 else:
                     remaining_seconds = ceil(remaining)
                     if self._mode is ControlMode.MANUAL_TIMED:
@@ -349,6 +393,8 @@ class ControlService:
             )
 
     def _finish_timed_shower(self) -> Decision:
+        if self._mode is ControlMode.WEATHER_ASSISTED:
+            return self._drain_weather("timed_shower_expired", inhibit=False)
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None
         self._timed_shower_duration_s = None
@@ -366,13 +412,15 @@ class ControlService:
         return decision
 
     def _idle_state(self) -> ControllerState:
-        if self._mode is ControlMode.MANUAL_TIMED:
+        if self._mode in (ControlMode.MANUAL_TIMED, ControlMode.WEATHER_ASSISTED):
             return ControllerState.MANUAL_DRAIN
         if self._mode is ControlMode.SAFE_DRAIN:
             return ControllerState.SAFE_DRAIN
         return ControllerState.FROST_PROTECTION
 
     def _run_idle(self) -> Decision:
+        if self._mode is ControlMode.WEATHER_ASSISTED:
+            return self._run_weather()
         if self._mode is ControlMode.AUTOMATIC:
             return self._run_automatic()
         if self._is_faulted():
@@ -468,6 +516,7 @@ class ControlService:
         if not force and command is self._last_command:
             return True
         attempts = 2 if command is ActuatorCommand.DRAIN else 1
+        weather_receipt_failed = False
         for attempt in range(1, attempts + 1):
             try:
                 receipt = self._actuator_driver.command(
@@ -477,15 +526,27 @@ class ControlService:
                     receipt.command is not command
                     or receipt.protocol_version != 2
                     or receipt.supply_action is not supply_action
+                    or (receipt.gpio_26, receipt.gpio_20)
+                    != ((0, 0) if command is ActuatorCommand.SUPPLY else (1, 1))
                 ):
                     raise AdapterError("actuator receipt protocol mismatch")
-            except AdapterError as error:
+            except Exception as error:
+                if (
+                    not isinstance(error, AdapterError)
+                    and self._mode is not ControlMode.WEATHER_ASSISTED
+                ):
+                    raise
+                if self._mode is ControlMode.WEATHER_ASSISTED:
+                    weather_receipt_failed = True
+                    self._supply_ready = False
                 if record_error and not self._append_event(
                     "relay_driver_error",
                     {
                         "command": command.value,
                         "attempt": attempt,
-                        "error": str(error),
+                        "error": str(error)
+                        if isinstance(error, AdapterError)
+                        else "actuator_failure",
                     },
                 ):
                     return False
@@ -493,8 +554,10 @@ class ControlService:
             self._last_receipt = receipt
             self._last_command = command
             if command is ActuatorCommand.DRAIN:
-                self._supply_ready = True
-            return True
+                self._supply_ready = not weather_receipt_failed
+            # A successful best-effort DRAIN retry confirms the pair, but must
+            # not erase an earlier failed receipt or authorize weather supply.
+            return not weather_receipt_failed
         return False
 
     def _best_effort_drain(self) -> None:
@@ -508,6 +571,7 @@ class ControlService:
         self._timed_shower_duration_s = None
         decision = Decision(ControllerState.FAULT, ActuatorCommand.DRAIN, reason)
         self._set_decision(decision)
+        self._persist_weather_fault()
         self._append_event("fault", {"reason": reason})
         return self._last_decision
 
@@ -545,6 +609,7 @@ class ControlService:
         if self._persistence_fault_latched:
             return
         self._persistence_fault_latched = True
+        self._persist_weather_fault()
         self._timed_shower_deadline = None
         self._timed_shower_monotonic_deadline = None
         self._timed_shower_duration_s = None
@@ -556,6 +621,396 @@ class ControlService:
             "persistence_error",
         )
 
+    def _weather_record(self) -> WeatherControlRecord | None:
+        try:
+            if self._weather_store is None:
+                raise WeatherStateError("weather storage unavailable")
+            return self._weather_store.load()
+        except Exception:  # noqa: BLE001 - durable state boundary
+            self._latch_persistence_failure()
+            return None
+
+    def _save_weather_record(self, record: WeatherControlRecord) -> bool:
+        try:
+            if self._weather_store is None:
+                raise WeatherStateError("weather storage unavailable")
+            self._weather_store.compare_and_swap(record.control_revision, record)
+            return True
+        except Exception:  # noqa: BLE001 - durable state boundary
+            self._latch_persistence_failure()
+            return False
+
+    def _persist_weather_fault(self) -> None:
+        # Preserve the marker even if the fault write fails: restart recovery
+        # then still inhibits supply. Never recursively retry a failed disk.
+        if (
+            self._mode is not ControlMode.WEATHER_ASSISTED
+            or self._weather_store is None
+        ):
+            return
+        try:
+            record = self._weather_store.load()
+            self._weather_store.compare_and_swap(
+                record.control_revision,
+                replace(record, fault_inhibited=True, user_off=True),
+            )
+        except Exception:  # noqa: BLE001, S110 - marker is the durable fallback
+            pass
+
+    def _startup_weather(self) -> Decision:
+        self._weather_started = False
+        try:
+            if (
+                self._weather_store is None
+                or self._weather_coordinator is None
+                or self._weather_coordinator.store is not self._weather_store
+            ):
+                raise WeatherStateError("weather dependencies unavailable")
+            self._weather_coordinator.invalidate("startup")
+            record = self._weather_store.recover_interrupted()
+            if record.active_marker is not None and not self._save_weather_record(
+                replace(record, active_marker=None)
+            ):
+                return self._last_decision
+        except Exception:  # noqa: BLE001 - startup must fail closed
+            self._latch_persistence_failure()
+            return self._last_decision
+        self._weather_started = True
+        # Startup requests a fresh fetch, but cannot consume a cached observation.
+        return self._run_weather()
+
+    def _weather_tick(self) -> WeatherEligibility | None:
+        try:
+            if self._weather_coordinator is None:
+                raise WeatherStateError("weather coordinator unavailable")
+            return self._weather_coordinator.tick()
+        except Exception:  # noqa: BLE001 - coordinator/storage boundary
+            self._latch_persistence_failure()
+            return None
+
+    def _run_weather(self) -> Decision:
+        if self._is_faulted() or not self._weather_started:
+            return self._last_decision
+        record = self._weather_record()
+        if record is None:
+            return self._last_decision
+        if record.fault_inhibited:
+            self._best_effort_drain()
+            return self._set_decision(
+                Decision(
+                    ControllerState.FAULT,
+                    ActuatorCommand.DRAIN,
+                    "weather_fault_inhibited",
+                )
+            )
+        eligibility = self._weather_tick()
+        if eligibility is None:
+            return self._last_decision
+        if self._timed_shower_monotonic_deadline is not None:
+            if self._monotonic_clock() >= self._timed_shower_monotonic_deadline:
+                return self._finish_timed_shower()
+            return self._weather_supply("manual", "timed_shower_active")
+        if record.user_off:
+            return self._drain_weather("user_off", inhibit=False)
+        if eligibility.eligible:
+            return self._weather_supply("auto", "weather_eligible")
+        return self._drain_weather(eligibility.reason, inhibit=False)
+
+    def _weather_supply(
+        self,
+        marker: str,
+        reason: str,
+        *,
+        action_fresh: Callable[[], bool] | None = None,
+        manual_deadline: float | None = None,
+    ) -> Decision:
+        record = self._weather_record()
+        if record is None:
+            return self._last_decision
+        if record.user_off or record.fault_inhibited:
+            return self._drain_weather("user_off", inhibit=False)
+        action = (
+            SupplyAction.RENEW
+            if self._last_command is ActuatorCommand.SUPPLY
+            else SupplyAction.BEGIN
+        )
+        if action is SupplyAction.BEGIN:
+            if not self._save_weather_record(replace(record, active_marker=marker)):
+                return self._last_decision
+        elif record.active_marker != marker:
+            self._best_effort_drain()
+            return self._fault("weather_marker_mismatch")
+        # All durable work precedes local dispatch admission. Remote transport
+        # and hydraulic execution remain separate timing/evidence boundaries.
+        if marker == "auto":
+            if self._weather_coordinator is None:
+                self._best_effort_drain()
+                return self._fault("weather_coordinator_unavailable")
+            eligibility = self._weather_coordinator.eligibility(record.settings)
+            if not eligibility.eligible:
+                return self._drain_weather(eligibility.reason, inhibit=False)
+        else:
+            deadline = (
+                manual_deadline
+                if manual_deadline is not None
+                else self._timed_shower_monotonic_deadline
+            )
+            now = self._monotonic_clock()
+            if deadline is None or not isfinite(now) or not now < deadline:
+                return self._drain_weather("timed_shower_expired", inhibit=False)
+        if action_fresh is not None and not action_fresh():
+            self._best_effort_drain()
+            return self._fault("weather_action_expired")
+        if not self._send(ActuatorCommand.SUPPLY, force=True, supply_action=action):
+            self._best_effort_drain()
+            return self._fault("relay_driver_error")
+        return self._set_decision(
+            Decision(
+                ControllerState.TIMED_SHOWER
+                if marker == "manual"
+                else ControllerState.AUTO_SUPPLY,
+                ActuatorCommand.SUPPLY,
+                reason,
+            )
+        )
+
+    def _drain_weather(self, reason: str, *, inhibit: bool) -> Decision:
+        record = self._weather_record()
+        if record is None:
+            # An operator or shutdown may always retry DRAIN even while storage
+            # is unavailable and a previous persistence failure is latched.
+            self._send(ActuatorCommand.DRAIN, force=True, record_error=False)
+            return self._last_decision
+        if inhibit and not self._save_weather_record(replace(record, user_off=True)):
+            # Persistence may already be fault-latched, so this deliberate STOP
+            # must independently attempt DRAIN and retain the uncleared marker.
+            self._send(ActuatorCommand.DRAIN, force=True, record_error=False)
+            return self._last_decision
+        self._timed_shower_deadline = None
+        self._timed_shower_monotonic_deadline = None
+        self._timed_shower_duration_s = None
+        if not self._send(
+            ActuatorCommand.DRAIN,
+            force=inhibit or self._last_command is not ActuatorCommand.DRAIN,
+        ):
+            return self._fault("relay_driver_error")
+        record = self._weather_record()
+        if record is None:
+            return self._last_decision
+        clear_marker = record.active_marker is not None or (
+            self._is_faulted() and not record.fault_inhibited
+        )
+        if clear_marker and not self._save_weather_record(
+            replace(
+                record,
+                active_marker=None,
+                user_off=record.user_off or self._is_faulted(),
+                fault_inhibited=record.fault_inhibited or self._is_faulted(),
+            )
+        ):
+            return self._last_decision
+        if self._is_faulted() or record.fault_inhibited:
+            return self._last_decision
+        return self._set_decision(
+            Decision(ControllerState.MANUAL_DRAIN, ActuatorCommand.DRAIN, reason)
+        )
+
+    @staticmethod
+    def _validate_weather_duration(duration_seconds: int) -> None:
+        if (
+            type(duration_seconds) is not int
+            or not 60 <= duration_seconds <= 600
+            or duration_seconds % 60
+        ):
+            raise ValueError("duration_seconds must be a whole minute from 60 to 600")
+
+    def _start_weather_manual(
+        self, duration_seconds: int, *, action_fresh: Callable[[], bool] | None = None
+    ) -> Decision:
+        if self._is_faulted() or not self._weather_started:
+            return self._last_decision
+        record = self._weather_record()
+        if record is None:
+            return self._last_decision
+        if record.user_off or record.fault_inhibited:
+            return Decision(
+                self._state, self._last_decision.command, "weather_start_required"
+            )
+        if self._timed_shower_monotonic_deadline is not None:
+            if self._monotonic_clock() >= self._timed_shower_monotonic_deadline:
+                return self._finish_timed_shower()
+            return self._last_decision
+        if duration_seconds > self._settings.timed_shower_max_s:
+            return Decision(
+                self._state,
+                self._last_decision.command,
+                "manual_duration_exceeds_settings_limit",
+            )
+        if self._last_command is ActuatorCommand.SUPPLY:
+            self._drain_weather("manual_transition", inhibit=False)
+            if self._is_faulted():
+                return self._last_decision
+        # Anchor before persistence/I/O so delays cannot gift extra manual time.
+        deadline_mono = self._monotonic_clock() + duration_seconds
+        deadline_wall = self._clock() + timedelta(seconds=duration_seconds)
+        result = self._weather_supply(
+            "manual",
+            "timed_shower_started",
+            action_fresh=action_fresh,
+            manual_deadline=deadline_mono,
+        )
+        if result.state is ControllerState.TIMED_SHOWER:
+            self._timed_shower_monotonic_deadline = deadline_mono
+            self._timed_shower_deadline = deadline_wall
+            self._timed_shower_duration_s = duration_seconds
+        return result
+
+    def start_weather_shower(
+        self, duration_seconds: int, *, action_fresh: Callable[[], bool] | None = None
+    ) -> Decision:
+        self._validate_weather_duration(duration_seconds)
+        with self._lock:
+            if self._mode is not ControlMode.WEATHER_ASSISTED:
+                raise ValueError("weather action requires weather_assisted mode")
+            if self._is_faulted() or not self._weather_started:
+                return self._last_decision
+            if self._timed_shower_monotonic_deadline is not None:
+                return self._start_weather_manual(
+                    duration_seconds, action_fresh=action_fresh
+                )
+            record = self._weather_record()
+            if record is None:
+                return self._last_decision
+            if record.fault_inhibited:
+                return self._fault("weather_fault_inhibited")
+            eligibility = self._weather_tick()
+            if eligibility is None:
+                return self._last_decision
+            if (
+                not eligibility.eligible
+                and duration_seconds > self._settings.timed_shower_max_s
+            ):
+                return Decision(
+                    self._state,
+                    self._last_decision.command,
+                    "manual_duration_exceeds_settings_limit",
+                )
+            if not self._save_weather_record(replace(record, user_off=False)):
+                return self._last_decision
+            if eligibility.eligible:
+                return self._weather_supply(
+                    "auto", "weather_eligible", action_fresh=action_fresh
+                )
+            return self._start_weather_manual(
+                duration_seconds, action_fresh=action_fresh
+            )
+
+    def stop_weather_shower(self) -> Decision:
+        with self._lock:
+            if self._mode is not ControlMode.WEATHER_ASSISTED:
+                raise ValueError("weather action requires weather_assisted mode")
+            return self._drain_weather("user_off", inhibit=True)
+
+    def _clear_weather_fault(self) -> Decision:
+        if not self._is_faulted() or self._persistence_fault_latched:
+            return self._last_decision
+        if not self._send(ActuatorCommand.DRAIN, force=True):
+            return self._last_decision
+        record = self._weather_record()
+        if record is None or not self._save_weather_record(
+            replace(
+                record,
+                user_off=True,
+                fault_inhibited=False,
+                active_marker=None,
+            )
+        ):
+            return self._last_decision
+        return self._set_decision(
+            Decision(ControllerState.MANUAL_DRAIN, ActuatorCommand.DRAIN, "user_off")
+        )
+
+    def update_weather_settings(
+        self, expected_revision: int, settings: WeatherSettings
+    ) -> WeatherSettings:
+        with self._lock:
+            try:
+                if self._weather_coordinator is None:
+                    raise WeatherStateError("weather coordinator unavailable")
+                saved = self._weather_coordinator.update_settings(
+                    expected_revision, settings
+                )
+            except WeatherRevisionConflict:
+                raise
+            except Exception as error:
+                self._latch_persistence_failure()
+                raise WeatherStateError("weather settings unavailable") from error
+            if self._mode is ControlMode.WEATHER_ASSISTED:
+                self._run_weather()
+            return saved
+
+    @contextmanager
+    def weather_action_guard(
+        self, expected_control_revision: int | None = None
+    ) -> Iterator[WeatherControlRecord]:
+        """Serialize W4 nonce/replay acceptance with control and settings changes.
+
+        The caller validates/records its action under this guard, then invokes the
+        reentrant service action. No awaits, network calls or worker joins here.
+        Caller persistence failures must call handle_persistence_failure before
+        leaving the guard. No other component may hold a lock while entering it.
+        """
+        with self._lock:
+            if expected_control_revision is not None and (
+                self._mode is not ControlMode.WEATHER_ASSISTED
+                or not self._weather_started
+            ):
+                raise WeatherRevisionConflict("weather controller not ready")
+            record = self._weather_record()
+            if record is None:
+                raise WeatherStateError("weather state unavailable")
+            if expected_control_revision is not None and (
+                type(expected_control_revision) is not int
+                or record.control_revision != expected_control_revision
+            ):
+                raise WeatherRevisionConflict("weather control revision conflict")
+            yield record
+
+    def weather_status(self, *, expire_timer: bool = True) -> WeatherControlStatus:
+        """Never starts a fetch or SUPPLY; expiry and clock invalidation still apply."""
+        with self._lock:
+            self.status(expire_timer=expire_timer)  # Replays must not expire/actuate.
+            record = self._weather_record()
+            if record is None or self._weather_coordinator is None:
+                raise WeatherStateError("weather state unavailable")
+            operation = (
+                "FAULT"
+                if self._is_faulted() or record.fault_inhibited
+                else "USER_OFF"
+                if record.user_off
+                else "MANUAL_ACTIVE"
+                if self._timed_shower_monotonic_deadline is not None
+                else "AUTO_SUPPLY"
+                if self._state is ControllerState.AUTO_SUPPLY
+                else "MANUAL_IDLE"
+            )
+            return WeatherControlStatus(
+                record,
+                operation,
+                self._weather_coordinator.eligibility(record.settings),
+                self._weather_coordinator.observation,
+            )
+
+    def shutdown(self) -> Decision:
+        """Lifespan stops the loop first, then calls this, then stops the worker."""
+        with self._lock:
+            if self._mode is not ControlMode.WEATHER_ASSISTED:
+                return self.drain("shutdown_drain")
+            self._weather_started = False
+            if self._weather_coordinator is not None:
+                self._weather_coordinator.invalidate("shutdown")
+            return self._drain_weather("shutdown_drain", inhibit=False)
+
 
 class PeriodicControlLoop:
     def __init__(
@@ -566,7 +1021,11 @@ class PeriodicControlLoop:
         forecast_interval_s: float = 3_600.0,
     ) -> None:
         self._service = service
-        self._cycle_interval_s = cycle_interval_s
+        self._cycle_interval_s = (
+            min(cycle_interval_s, WEATHER_PROCESSING_BOUND_SECONDS)
+            if getattr(service, "mode", None) is ControlMode.WEATHER_ASSISTED
+            else cycle_interval_s
+        )
         self._forecast_interval_s = forecast_interval_s
         self._stop = Event()
         self._wake = Event()

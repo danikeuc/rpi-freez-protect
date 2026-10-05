@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 DAEMON_PATH = (
     Path(__file__).parents[2]
     / "deployment"
@@ -186,3 +188,96 @@ module.run_daemon(Path("unused.sock"), FakeGpio())
         "SUPPLY",
         "DRAIN",
     ]
+
+
+class FailingDrainRegisters(FakeRegisters):
+    """Fail at real register boundaries, without replacing lease/GPIO logic."""
+
+    def __init__(self, daemon: ModuleType, failure: str) -> None:
+        super().__init__(daemon)
+        self.failure = failure
+        self.fail_drain = False
+        self.fail_supply_readback = False
+        self.drain_attempts = 0
+
+    def write32(self, offset: int, value: int) -> None:
+        if offset == self.daemon.GPSET0:
+            self.drain_attempts += 1
+            if self.fail_drain:
+                if self.failure == "write":
+                    raise OSError("DRAIN register write failed")
+                # Simulate a failed latch: real PairedGpio rejects LOW readback.
+                return
+        super().write32(offset, value)
+
+    def read32(self, offset: int) -> int:
+        if offset == self.daemon.GPLEV0 and self.fail_supply_readback:
+            self.fail_supply_readback = False
+            raise OSError("SUPPLY readback failed")
+        return super().read32(offset)
+
+
+@pytest.mark.parametrize("failure", ["write", "readback"])
+@pytest.mark.parametrize("trigger", ["expiry", "explicit", "emergency"])
+def test_failed_drain_retries_without_hub_until_pair_is_verified(
+    failure: str, trigger: str,
+) -> None:
+    daemon = load_daemon()
+    registers = FailingDrainRegisters(daemon, failure)
+    now = [0.0]
+    lease = daemon.SupplyLease(daemon.PairedGpio(registers), clock=lambda: now[0])
+    assert lease.execute("DRAIN")["ok"]
+    assert lease.execute("SUPPLY", "begin")["ok"]
+    registers.fail_drain = True
+    if trigger == "expiry":
+        now[0] = 61.0
+        with pytest.raises((OSError, RuntimeError)):
+            lease.enforce()
+    elif trigger == "explicit":
+        assert not lease.execute("DRAIN")["ok"]
+    else:
+        registers.fail_supply_readback = True
+        result = lease.execute("SUPPLY", "renew")
+        assert not result["ok"]
+        assert "drain_error" in result
+    assert registers.level & daemon.PAIR_MASK == 0
+    attempts = registers.drain_attempts
+
+    # No more Hub requests: the independent daemon loop must keep trying.
+    now[0] = 90.0
+    with pytest.raises((OSError, RuntimeError)):
+        lease.enforce()
+    assert registers.drain_attempts == attempts + 1
+    registers.fail_drain = False
+    now[0] = 120.0
+    assert lease.enforce() is True
+    assert registers.level & daemon.PAIR_MASK == daemon.PAIR_MASK
+    attempts = registers.drain_attempts
+    now[0] = 600.0
+    assert lease.enforce() is False
+    assert registers.drain_attempts == attempts
+    # A stale RENEW cannot reopen after recovery; a new BEGIN can.
+    assert not lease.execute("SUPPLY", "renew")["ok"]
+    assert lease.execute("SUPPLY", "begin")["ok"]
+
+
+@pytest.mark.parametrize("action", ["begin", "renew"])
+def test_unverified_drain_rejects_supply_requests(action: str) -> None:
+    daemon = load_daemon()
+    registers = FailingDrainRegisters(daemon, "write")
+    now = [0.0]
+    lease = daemon.SupplyLease(daemon.PairedGpio(registers), clock=lambda: now[0])
+    assert lease.execute("DRAIN")["ok"]
+    assert lease.execute("SUPPLY", "begin")["ok"]
+    registers.fail_drain = True
+    now[0] = 61.0
+    with pytest.raises(OSError):
+        lease.enforce()
+    supply_writes = registers.writes.count((daemon.GPCLR0, daemon.PAIR_MASK))
+    result = daemon.execute_request(
+        {"command": "SUPPLY", "supply_action": action,
+         "protocol_version": 2, "deadline_unix_ms": 10_500},
+        lease, clock=lambda: 10_000,
+    )
+    assert not result["ok"]
+    assert registers.writes.count((daemon.GPCLR0, daemon.PAIR_MASK)) == supply_writes

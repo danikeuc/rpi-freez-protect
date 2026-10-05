@@ -1,5 +1,7 @@
 # Workstation Codex commissioning
 
+Weather/playlist candidate procedure: [weather operations](../docs/operations/weather-assisted-shower.md) and [exact repository validation](../docs/evidence/2026-10-03-weather-plan-validation.md). Existing physical/SSH gates remain mandatory. Later candidate staging keeps manual_timed and weather disabled; back up the matching SQLite weather-identity sentinel with its database when present. These source changes do not authorize deployment, timed commands, 24 V connection or flash.
+
 This guide defines the workstation-led commissioning route. Use only the
 dedicated `freezeprotect-commission` account for remote access.
 `freezeprotect` remains the non-login service identity; it owns the Hub's

@@ -2142,3 +2142,31 @@ fi
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_weather_gateway_has_only_exact_scoped_methods_and_no_admin_locations() -> None:
+    import re
+
+    gateway = (ROOT / "deployment/nginx/freeze-protect-display.conf").read_text()
+    locations = dict(
+        re.findall(r"location = (\S+)\s*\{(.*?)\n    \}", gateway, re.DOTALL)
+    )
+    assert set(locations) == {
+        "/api/v1/display/status",
+        "/api/v1/display/actions/timed-shower",
+        "/api/v1/display/actions/drain",
+        "/api/v1/display/actions/start",
+        "/api/v1/display/actions/stop",
+        "/api/v1/display/weather-settings",
+    }
+    for path, block in locations.items():
+        if path.endswith("weather-settings"):
+            assert 'if ($request_method !~ "^(GET|PUT)$") { return 405; }' in block
+        else:
+            method = "GET" if path.endswith("status") else "POST"
+            assert f"if ($request_method != {method}) {{ return 405; }}" in block
+        assert "proxy_pass http://127.0.0.1:8000;" in block
+    assert re.search(r"location /\s*\{\s*return 404;\s*\}", gateway)
+    assert "$request_body" not in gateway
+    assert "$http_x_weather_settings_token" not in gateway
+    assert "action_nonce" not in gateway
