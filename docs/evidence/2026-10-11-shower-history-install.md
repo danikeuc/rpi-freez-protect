@@ -84,3 +84,18 @@ was published at 2026-10-11T17:09:14Z, with the unchanged tag/source and artifac
 hashes recorded above. This supersedes earlier draft status only. Installation
 and delayed-Node-RED cold-boot acceptance remain unconfirmed, explicitly stated
 in release notes. No device mutation was performed during publication.
+
+## Pi 1.3.1 installed
+
+The operator supplied STARTUP_READINESS_INSTALLED with version 1.3.1, source
+`d89827d7e0ea8963f5ed00984c3c0070286e2831`, wheel SHA256
+`90b0faa89b9afcc6304d3f8b978428da0056533c34d813e40ac7e22d4279a812`,
+and seven history rows through each of ports 8000 and 8081. USER_OFF/DRAIN and
+GPIO26/20 high were verified. Backup: `/root/freeze-before-startup-psoa_xgm`.
+The deployed checkout remains `d0dfeac61856e0ff716e700348be61709dc68505`.
+
+The subsequent restricted remote status check confirmed all three services
+active and both GPIO outputs high. This closes the pending package installation
+gate, superseding earlier pending-installation entries. It establishes the
+ordinary service start with the readiness drop-in; it does not establish a
+cold boot with deliberately delayed Node-RED or physical valve positions.

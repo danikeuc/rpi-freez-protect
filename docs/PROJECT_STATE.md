@@ -354,7 +354,7 @@ returned two rows, USER_OFF/DRAIN and high/high readbacks were confirmed.
 See [exact receipt and startup fault](evidence/2026-10-11-shower-history-install.md).
 The exact CI Dial v1.3.0-shower.3 application is installed and readback-verified;
 authenticated history UI was confirmed by the operator on 2026-10-11. The Node-RED startup readiness
-repair is implemented in 1.3.1 and awaits trusted-console installation.
+repair is installed in 1.3.1, confirmed by the trusted-console receipt below.
 
 ## Startup readiness patch preparation - 2026-10-11
 
@@ -366,12 +366,23 @@ checks. Independent review closed baseline-version validation and timing-claim
 findings. Repository tests do not prove a deployed reboot with delayed Node-RED.
 The additive updater requires installed 1.3.0 and durable USER_OFF/DRAIN, makes
 verified software/database backups, and preserves settings/source checkout.
-Deployment receipt for 1.3.1 is pending; installed Pi remains 1.3.0.
+The operator subsequently supplied STARTUP_READINESS_INSTALLED for 1.3.1;
+both history routes returned seven rows and USER_OFF/DRAIN was retained.
 
 ## Publication checkpoint - 2026-10-11
 
 Pi history v1.3.0 is published, with the exact installed wheel and installer.
 Pi v1.3.1 was published on explicit operator request on 2026-10-11;
-trusted-console patch installation remains unconfirmed.
+trusted-console installation is now confirmed for the exact released wheel.
 Dial v1.3.0-shower.3 was published after operator confirmation of visible history. See the [publication evidence](evidence/2026-10-11-shower-history-install.md#publication-checkpoint).
 Release branches are committed/pushed; PRs #24 (Pi) and #14 (Dial) are unmerged.
+
+## Pi 1.3.1 installation complete
+
+Operator receipt matches release source d89827d7e0ea8963f5ed00984c3c0070286e2831
+and wheel 90b0faa89b9afcc6304d3f8b978428da0056533c34d813e40ac7e22d4279a812.
+Both history routes returned seven rows; operation USER_OFF, command DRAIN,
+GPIO26/20 high. Subsequent restricted SSH status independently confirmed all
+three services active and both pins high. Backup: /root/freeze-before-startup-psoa_xgm.
+Source checkout remains d0dfeac61856e0ff716e700348be61709dc68505 by design;
+the installed wheel is 1.3.1. A cold boot with delayed Node-RED remains untested.
