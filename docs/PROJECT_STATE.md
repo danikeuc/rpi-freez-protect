@@ -367,3 +367,11 @@ findings. Repository tests do not prove a deployed reboot with delayed Node-RED.
 The additive updater requires installed 1.3.0 and durable USER_OFF/DRAIN, makes
 verified software/database backups, and preserves settings/source checkout.
 Deployment receipt for 1.3.1 is pending; installed Pi remains 1.3.0.
+
+## Publication checkpoint - 2026-10-11
+
+Pi history v1.3.0 is published, with the exact installed wheel and installer.
+Pi v1.3.1 and Dial v1.3.0-shower.3 are prepared drafts; their outstanding gates
+are respectively trusted-console patch installation and authenticated history UI
+observation. See the [publication evidence](evidence/2026-10-11-shower-history-install.md#publication-checkpoint).
+Release branches are committed/pushed; PRs #24 (Pi) and #14 (Dial) are unmerged.

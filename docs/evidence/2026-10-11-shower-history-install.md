@@ -43,3 +43,21 @@ A 60-second boot observation recorded one app boot and no panic/BLE init failure
 markers. A subsequent GET /admin returned HTTP200 with history markup. This
 establishes network/admin availability; authenticated user-visible history and
 new AUTO/manual transitions have not yet been directly accepted by the operator.
+
+## Publication checkpoint
+
+Pi [v1.3.0](https://github.com/danikeuc/rpi-freez-protect/releases/tag/v1.3.0)
+was published on 2026-10-11 at 16:50:56 UTC with the installed wheel and verified
+trusted-console archive. Its tag still resolves to b1e244758553b10052909804d7ddca4610b3a207.
+
+Pi v1.3.1 remains a draft, source d89827d7e0ea8963f5ed00984c3c0070286e2831.
+Archive SHA256: a45de392ad6ec0548c72b22c44d271e96dec7702793b430c53270c7925ffde9f.
+Wheel SHA256: 90b0faa89b9afcc6304d3f8b978428da0056533c34d813e40ac7e22d4279a812.
+Trusted-console installation output has been requested; no success is assumed.
+The live restricted status check before publication showed all three services
+active and GPIO26/20 output/high. This does not establish the installed patch.
+
+Dial v1.3.0-shower.3 remains a draft pending authenticated history UI acceptance.
+The PR's optional preview hosting failed with Pages HTTP404 in run 38152469624;
+all six build/test jobs passed, as did the exact tagged firmware CI run. No
+preview deployment success is claimed. The PRs remain unmerged.
