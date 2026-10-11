@@ -97,7 +97,7 @@ def test_display_gateway_rejects_methods_outside_its_device_contract() -> None:
         encoding="utf-8"
     )
 
-    assert nginx.count("if ($request_method != GET) { return 405; }") == 1
+    assert nginx.count("if ($request_method != GET) { return 405; }") == 2
     assert nginx.count("if ($request_method != POST) { return 405; }") == 4
     assert nginx.count('if ($request_method !~ "^(GET|PUT)$") { return 405; }') == 1
 
@@ -112,6 +112,7 @@ def test_display_gateway_exposes_exact_scoped_device_routes() -> None:
         "= /api/v1/display/status",
         "= /api/v1/display/actions/timed-shower",
         "= /api/v1/display/actions/drain",
+        "= /api/v1/display/history",
         "= /api/v1/display/weather-settings",
         "= /api/v1/display/actions/start",
         "= /api/v1/display/actions/stop",
@@ -124,6 +125,7 @@ def test_display_gateway_exposes_exact_scoped_device_routes() -> None:
         ("/api/v1/display/status", "GET"),
         ("/api/v1/display/actions/timed-shower", "POST"),
         ("/api/v1/display/actions/drain", "POST"),
+        ("/api/v1/display/history", "GET"),
         ("/api/v1/display/actions/start", "POST"),
         ("/api/v1/display/actions/stop", "POST"),
     ]

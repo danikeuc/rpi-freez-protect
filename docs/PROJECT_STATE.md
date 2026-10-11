@@ -339,3 +339,10 @@ Planning validation: `git diff --check` passed; a local Markdown-link check
 resolved all 34 relative links across the ledger, four matching design documents
 and both new plans. This is documentation evidence only; no software tests or
 runtime checks were run for these documentation-only changes.
+
+## v1.3.0 shower history release preparation - 2026-10-11
+
+Owner authorized installation, Git documentation and release. Source now adds
+[persistent history](SHOWER_HISTORY.md); see [release scope](releases/v1.3.0.md).
+666 offline tests passed before the version-label update. Deployment acceptance
+remains tied to subsequent exact-artifact receipts, not this source note.
