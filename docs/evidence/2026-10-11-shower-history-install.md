@@ -74,3 +74,13 @@ was published at 17:05:18 UTC with the same verified application SHA256. This
 supersedes the earlier pending UI/draft statements in this dated record.
 Pi 1.3.1 is still pending installation; no current software state is inferred
 from repeating the 1.3.0 receipt. Existing tags and installed settings remain unchanged.
+
+## Pi 1.3.1 publication
+
+The operator explicitly requested publication after the distinction between
+installed 1.3.0 and prepared 1.3.1 was explained.
+[Pi v1.3.1](https://github.com/danikeuc/rpi-freez-protect/releases/tag/v1.3.1)
+was published at 2026-10-11T17:09:14Z, with the unchanged tag/source and artifact
+hashes recorded above. This supersedes earlier draft status only. Installation
+and delayed-Node-RED cold-boot acceptance remain unconfirmed, explicitly stated
+in release notes. No device mutation was performed during publication.
