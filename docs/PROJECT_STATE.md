@@ -346,3 +346,10 @@ Owner authorized installation, Git documentation and release. Source now adds
 [persistent history](SHOWER_HISTORY.md); see [release scope](releases/v1.3.0.md).
 666 offline tests passed before the version-label update. Deployment acceptance
 remains tied to subsequent exact-artifact receipts, not this source note.
+
+## Pi history installed - 2026-10-11
+
+The operator supplied HISTORY_INSTALLED for package 1.3.0; both history endpoints
+returned two rows, USER_OFF/DRAIN and high/high readbacks were confirmed.
+See [exact receipt and startup fault](evidence/2026-10-11-shower-history-install.md).
+Dial installation and permanent Node-RED startup readiness repair are pending.
