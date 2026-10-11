@@ -330,7 +330,7 @@ def create_app(
                         if weather_worker is not None:
                             weather_worker.stop()
 
-    app = FastAPI(title="RPi Freeze Protect", version="1.3.0", lifespan=lifespan)
+    app = FastAPI(title="RPi Freeze Protect", version="1.3.1", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source

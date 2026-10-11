@@ -352,4 +352,18 @@ remains tied to subsequent exact-artifact receipts, not this source note.
 The operator supplied HISTORY_INSTALLED for package 1.3.0; both history endpoints
 returned two rows, USER_OFF/DRAIN and high/high readbacks were confirmed.
 See [exact receipt and startup fault](evidence/2026-10-11-shower-history-install.md).
-Dial installation and permanent Node-RED startup readiness repair are pending.
+The exact CI Dial v1.3.0-shower.3 application is installed and readback-verified;
+authenticated history UI acceptance is pending. The Node-RED startup readiness
+repair is implemented in 1.3.1 and awaits trusted-console installation.
+
+## Startup readiness patch preparation - 2026-10-11
+
+[Pi 1.3.1](releases/v1.3.1.md) uses an ExecStartPre paired-v2 DRAIN receipt gate
+before Hub startup. Only refused connections are retried; malformed/failed
+receipts stop that invocation. The existing fault latch is unchanged. Local
+verification: 685 tests, Ruff, strict mypy (27 source files), diff whitespace
+checks. Independent review closed baseline-version validation and timing-claim
+findings. Repository tests do not prove a deployed reboot with delayed Node-RED.
+The additive updater requires installed 1.3.0 and durable USER_OFF/DRAIN, makes
+verified software/database backups, and preserves settings/source checkout.
+Deployment receipt for 1.3.1 is pending; installed Pi remains 1.3.0.

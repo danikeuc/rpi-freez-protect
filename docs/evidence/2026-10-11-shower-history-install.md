@@ -13,8 +13,8 @@ Operator reported successful trusted-console installation with 24 V disconnected
 
 Installed wheel identity and deployed checkout identity are intentionally distinct.
 No flash, live AUTO transition, energized valve or power-loss test is established
-by this Pi receipt. Companion Dial tag v1.3.0-shower.3 is pending installation and
-operator acceptance. Existing release tags are preserved.
+by this Pi receipt. Companion Dial tag v1.3.0-shower.3 was subsequently installed as recorded below;
+authenticated UI acceptance remains pending. Existing release tags are preserved.
 
 ## Startup failure discovered before installation
 
@@ -26,5 +26,20 @@ active process did not mean the Node-RED HTTP bridge was ready.
 The restricted paired-GPIO diagnostic confirmed the expected P1 daemon hash and
 active service. The operator issued authenticated CLEAR_FAULT through the local
 API: DRAIN confirmation succeeded, USER_OFF was durably restored, then the
-history installer completed. A permanent startup readiness repair remains open;
+history installer completed. The permanent startup readiness repair is prepared in package 1.3.1; its Pi
+installation is pending.
 the history update must not be described as fixing this pre-existing boot race.
+
+## Companion Dial installation
+
+At 15:40 UTC, the exact CI application from run 38151787261 was installed on the
+Waveshare ESP32-S3 connected at COM3. Tag v1.3.0-shower.3 resolves to
+69cab63b252fca2a1dc25e2c3aaf9153badceb37. Application SHA256:
+50ce9f7518f8227ef576e3807e647cb64c53ecc7488ab2e868c4c2a0caf6163b.
+
+The full private 16 MiB backup was verified, application readback matched, and
+NVS/bootloader/partition/OTA metadata remained unchanged before first boot.
+A 60-second boot observation recorded one app boot and no panic/BLE init failure
+markers. A subsequent GET /admin returned HTTP200 with history markup. This
+establishes network/admin availability; authenticated user-visible history and
+new AUTO/manual transitions have not yet been directly accepted by the operator.
