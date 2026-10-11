@@ -61,3 +61,16 @@ Dial v1.3.0-shower.3 remains a draft pending authenticated history UI acceptance
 The PR's optional preview hosting failed with Pages HTTP404 in run 38152469624;
 all six build/test jobs passed, as did the exact tagged firmware CI run. No
 preview deployment success is claimed. The PRs remain unmerged.
+
+## Operator history acceptance and Dial publication
+
+On 2026-10-11 the operator repeated the existing HISTORY_INSTALLED receipt for
+Pi 1.3.0 and reported "zgodovina je" (history is visible). This confirms the
+admin history rendering check for the installed Dial artifact. It is not a new
+Pi installation receipt, a 1.3.1 receipt, or an AUTO/manual actuation test.
+
+[Dial v1.3.0-shower.3](https://github.com/danikeuc/roon-knob/releases/tag/v1.3.0-shower.3)
+was published at 17:05:18 UTC with the same verified application SHA256. This
+supersedes the earlier pending UI/draft statements in this dated record.
+Pi 1.3.1 is still pending installation; no current software state is inferred
+from repeating the 1.3.0 receipt. Existing tags and installed settings remain unchanged.
