@@ -2157,13 +2157,14 @@ def test_weather_gateway_has_only_exact_scoped_methods_and_no_admin_locations() 
         "/api/v1/display/actions/drain",
         "/api/v1/display/actions/start",
         "/api/v1/display/actions/stop",
+        "/api/v1/display/history",
         "/api/v1/display/weather-settings",
     }
     for path, block in locations.items():
         if path.endswith("weather-settings"):
             assert 'if ($request_method !~ "^(GET|PUT)$") { return 405; }' in block
         else:
-            method = "GET" if path.endswith("status") else "POST"
+            method = "GET" if path.endswith(("status", "history")) else "POST"
             assert f"if ($request_method != {method}) {{ return 405; }}" in block
         assert "proxy_pass http://127.0.0.1:8000;" in block
     assert re.search(r"location /\s*\{\s*return 404;\s*\}", gateway)

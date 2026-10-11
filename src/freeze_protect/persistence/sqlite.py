@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict, replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
@@ -162,6 +162,55 @@ class SQLiteEventStore:
                 ),
             )
 
+    def shower_history(self, offset: int = 0) -> dict[str, object]:
+        """Narrow read-only projection; insertion order survives equal timestamps.
+
+        No legacy audit rows are inferred/backfilled. A broken history is an
+        error, never an apparently empty history.
+        """
+        if type(offset) is not int or not 0 <= offset <= 1_000_000:
+            raise ValueError("invalid history offset")
+        # mode=ro prevents a read request from creating a missing database.
+        with sqlite3.connect(
+            self._database_path.resolve().as_uri() + "?mode=ro", uri=True
+        ) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """SELECT occurred_at, payload_json FROM audit_events
+                   WHERE event_type = 'shower_transition'
+                   ORDER BY rowid DESC LIMIT 11 OFFSET ?""",
+                (offset,),
+            ).fetchall()
+        items: list[dict[str, str]] = []
+        modes = {"safe_drain", "manual_timed", "automatic", "weather_assisted"}
+        operations = {
+            "STARTING", "SHUTDOWN", "FAULT", "USER_OFF", "MANUAL_ACTIVE",
+            "AUTO_SUPPLY", "MANUAL_IDLE", "SAFE_DRAIN", "FROST_PROTECTION",
+        }
+        for row in rows[:10]:
+            payload = _load_object(row["payload_json"])
+            timestamp = datetime.fromisoformat(row["occurred_at"])
+            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                raise ValueError("invalid history timestamp")
+            item = {
+                "occurred_at": timestamp.astimezone(UTC).isoformat(),
+                "mode": _str_field(payload, "mode"),
+                "operation": _str_field(payload, "operation"),
+                "command": _str_field(payload, "command"),
+                "reason": _str_field(payload, "reason"),
+            }
+            reason = item["reason"]
+            if (
+                item["mode"] not in modes or item["operation"] not in operations
+                or item["command"] not in {"DRAIN", "SUPPLY"}
+                or len(reason) > 96 or not reason.isascii()
+                or not reason.replace("_", "").isalnum()
+                or len(item["occurred_at"]) > 40
+            ):
+                raise ValueError("invalid history record")
+            items.append(item)
+        return {"items": items, "offset": offset, "has_more": len(rows) > 10}
+
     def list(self, limit: int, offset: int) -> list[AuditEvent]:
         if not 1 <= limit <= 1_000:
             raise ValueError("limit must be between 1 and 1000")
@@ -219,6 +268,8 @@ def _initialize(database_path: Path) -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_events_occurred_at
               ON audit_events (occurred_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_events_type
+              ON audit_events (event_type);
             CREATE TABLE IF NOT EXISTS runtime_metadata (
               key TEXT PRIMARY KEY,
               value TEXT NOT NULL

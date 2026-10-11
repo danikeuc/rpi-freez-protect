@@ -330,7 +330,7 @@ def create_app(
                         if weather_worker is not None:
                             weather_worker.stop()
 
-    app = FastAPI(title="RPi Freeze Protect", version="1.2.0", lifespan=lifespan)
+    app = FastAPI(title="RPi Freeze Protect", version="1.3.1", lifespan=lifespan)
     app.state.control_service = service
     app.state.relay_driver = actuator_driver
     app.state.temperature_source = temperature_source
@@ -438,6 +438,18 @@ def create_app(
             }
         )
         return payload
+
+    @app.get("/api/v1/display/history")
+    def get_shower_history(
+        _weather: None = Depends(require_weather),
+        offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
+    ) -> dict[str, object]:
+        if not isinstance(event_store, SQLiteEventStore):
+            raise HTTPException(503, "shower history unavailable")
+        try:
+            return event_store.shower_history(offset)
+        except Exception as error:  # read failure cannot operate the controller
+            raise HTTPException(503, "shower history unavailable") from error
 
     @app.get("/api/v1/display/weather-settings")
     def get_weather_settings(

@@ -339,3 +339,50 @@ Planning validation: `git diff --check` passed; a local Markdown-link check
 resolved all 34 relative links across the ledger, four matching design documents
 and both new plans. This is documentation evidence only; no software tests or
 runtime checks were run for these documentation-only changes.
+
+## v1.3.0 shower history release preparation - 2026-10-11
+
+Owner authorized installation, Git documentation and release. Source now adds
+[persistent history](SHOWER_HISTORY.md); see [release scope](releases/v1.3.0.md).
+666 offline tests passed before the version-label update. Deployment acceptance
+remains tied to subsequent exact-artifact receipts, not this source note.
+
+## Pi history installed - 2026-10-11
+
+The operator supplied HISTORY_INSTALLED for package 1.3.0; both history endpoints
+returned two rows, USER_OFF/DRAIN and high/high readbacks were confirmed.
+See [exact receipt and startup fault](evidence/2026-10-11-shower-history-install.md).
+The exact CI Dial v1.3.0-shower.3 application is installed and readback-verified;
+authenticated history UI was confirmed by the operator on 2026-10-11. The Node-RED startup readiness
+repair is installed in 1.3.1, confirmed by the trusted-console receipt below.
+
+## Startup readiness patch preparation - 2026-10-11
+
+[Pi 1.3.1](releases/v1.3.1.md) uses an ExecStartPre paired-v2 DRAIN receipt gate
+before Hub startup. Only refused connections are retried; malformed/failed
+receipts stop that invocation. The existing fault latch is unchanged. Local
+verification: 685 tests, Ruff, strict mypy (27 source files), diff whitespace
+checks. Independent review closed baseline-version validation and timing-claim
+findings. Repository tests do not prove a deployed reboot with delayed Node-RED.
+The additive updater requires installed 1.3.0 and durable USER_OFF/DRAIN, makes
+verified software/database backups, and preserves settings/source checkout.
+The operator subsequently supplied STARTUP_READINESS_INSTALLED for 1.3.1;
+both history routes returned seven rows and USER_OFF/DRAIN was retained.
+
+## Publication checkpoint - 2026-10-11
+
+Pi history v1.3.0 is published, with the exact installed wheel and installer.
+Pi v1.3.1 was published on explicit operator request on 2026-10-11;
+trusted-console installation is now confirmed for the exact released wheel.
+Dial v1.3.0-shower.3 was published after operator confirmation of visible history. See the [publication evidence](evidence/2026-10-11-shower-history-install.md#publication-checkpoint).
+Release branches are committed/pushed; PRs #24 (Pi) and #14 (Dial) are unmerged.
+
+## Pi 1.3.1 installation complete
+
+Operator receipt matches release source d89827d7e0ea8963f5ed00984c3c0070286e2831
+and wheel 90b0faa89b9afcc6304d3f8b978428da0056533c34d813e40ac7e22d4279a812.
+Both history routes returned seven rows; operation USER_OFF, command DRAIN,
+GPIO26/20 high. Subsequent restricted SSH status independently confirmed all
+three services active and both pins high. Backup: /root/freeze-before-startup-psoa_xgm.
+Source checkout remains d0dfeac61856e0ff716e700348be61709dc68505 by design;
+the installed wheel is 1.3.1. A cold boot with delayed Node-RED remains untested.

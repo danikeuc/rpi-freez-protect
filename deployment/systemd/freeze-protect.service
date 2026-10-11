@@ -1,7 +1,7 @@
 [Unit]
 Description=RPi Freeze Protect Hub
 After=network-online.target freeze-protect-pair-gpio.service node-red.service
-Wants=network-online.target
+Wants=network-online.target node-red.service
 Requires=freeze-protect-pair-gpio.service
 
 [Service]
@@ -11,6 +11,8 @@ Group=freezeprotect
 SupplementaryGroups=spi
 WorkingDirectory=/opt/rpi-freez-protect
 EnvironmentFile=/etc/rpi-freeze-protect/environment
+TimeoutStartSec=75
+ExecStartPre=/opt/rpi-freez-protect/.venv/bin/python -m freeze_protect.startup_ready
 ExecStart=/opt/rpi-freez-protect/.venv/bin/uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
