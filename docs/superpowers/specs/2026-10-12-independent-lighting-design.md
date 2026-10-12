@@ -20,7 +20,7 @@ camera is not silently disabled indefinitely.
 | Explicit manual ON and manual OFF suspend camera control | Accepted interaction proposal |
 | Manual warning, M badge on other pages, return-to-AUTO control | Accepted interaction proposal |
 | Automatic return to AUTO after one hour; configurable in admin | Accepted interaction proposal; default 3600 seconds |
-| Detection hold time | Proposed 300 seconds after last distinct accepted detection; owner has not selected the duration |
+| Detection hold time | Owner confirmed 300 seconds (5 minutes) after the last distinct accepted detection; configurable in admin |
 | Dial timed-ON duration in AUTO | Proposed same configurable hold time as camera; confirm with written spec |
 | Manual duration range | Engineering proposal: whole minutes from 1 to 120; default 60 |
 | Night-only schedule | Optional later extension; outside first implementation |
@@ -230,11 +230,10 @@ Before implementation plan is finalized, resolve:
 1. Verify the actual lamp/driver label against the reported 220 V / maximum 20 W
    total LED load; identify model/inrush, board revision, contact wiring and role
    of the light (ordinary versus safety lighting).
-2. Owner's hold duration (300 seconds is only a proposed default).
-3. Actual Protect version and sanitized POST/auth/retry/event identity sample.
-4. Exact Node-RED/Node.js versions, relevant palette, Projects status and active
+2. Actual Protect version and sanitized POST/auth/retry/event identity sample.
+3. Exact Node-RED/Node.js versions, relevant palette, Projects status and active
    flow/settings paths; repository flow is not runtime inventory.
-5. GPIO backend, OFF-before-ownership behavior, executor crash protection and
+4. GPIO backend, OFF-before-ownership behavior, executor crash protection and
    maximum lease/supervisor response bounds.
 
 The agreed product behavior is sufficient to prepare this documentation. These

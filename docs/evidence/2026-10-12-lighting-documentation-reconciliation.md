@@ -7,7 +7,7 @@ request, GPIO write, service restart, flow deployment or new release.
 | --- | --- | --- |
 | Owner conversation | Third relay independent; AUTO accepts camera and ESP; temporary manual ON/OFF with reminder and one-hour default return accepted | Canonical lighting specification sections 1,4,5 |
 | Owner load clarification, 2026-10-12 | LED lighting, maximum 20 W total at 220 V mains; reported specification, not measurement or contact-rating approval | Canonical load row and commissioning prerequisites |
-| Prior proposed hold duration | Five minutes was proposed, not selected by owner | Spec explicitly marks unconfirmed default |
+| Camera hold duration | Owner confirmed five minutes after the last detection, configurable in admin | Spec and Dial contract record the accepted 300-second default |
 | 2026-09-11 M1 board record | Waveshare RPi Relay Board, GPIO21/header40 reserved, active-low | Candidate pin map; actual revision/load unverified |
 | paired_gpio_daemon.py | PINS=(26,20); no third-relay control | New lighting owner must not change paired pin set |
 | Existing Node-RED export | 11 nodes, zero structural issues from skill inspect_flow.py | Separate ingress tab proposed; no current flow changed |
