@@ -15,6 +15,7 @@ camera is not silently disabled indefinitely.
 | Item | Status / decision |
 | --- | --- |
 | Third relay independent of shower | Owner confirmed |
+| Lighting load | Owner reports LED lighting, maximum 20 W total, 220 V mains (2026-10-12); not an electrical measurement |
 | Camera and ESP can both turn on light in AUTO | Owner confirmed |
 | Explicit manual ON and manual OFF suspend camera control | Accepted interaction proposal |
 | Manual warning, M badge on other pages, return-to-AUTO control | Accepted interaction proposal |
@@ -48,8 +49,10 @@ release, or globally clean up GPIO26/20. A failure of light control must not sen
 shower commands. Shared Pi power/CPU/network remain common failure domains;
 independent control is not redundant hardware.
 
-Before wiring or any energized test, identify board revision/jumpers, voltage,
-light/driver model, nominal and inrush current, contact rating for that load,
+The owner specifies LED lighting, maximum 20 W total at 220 V mains.
+Before wiring or any energized test, verify the supply against the actual lamp/driver
+label and identify board revision/jumpers, light/driver model, nominal and inrush
+current, contact rating for that load,
 NO/NC wiring and protective enclosure. Determine whether the relay switches the
 load directly or a suitably rated contactor/control input. For mains wiring use
 a qualified electrician. No mains wiring diagram or load suitability is claimed
@@ -224,8 +227,9 @@ fault row above; zero GPIO26/20 touches from the lighting subsystem.
 
 Before implementation plan is finalized, resolve:
 
-1. Actual lamp/driver voltage, power/inrush, board revision, contact wiring and
-   role of the light (ordinary versus safety lighting).
+1. Verify the actual lamp/driver label against the reported 220 V / maximum 20 W
+   total LED load; identify model/inrush, board revision, contact wiring and role
+   of the light (ordinary versus safety lighting).
 2. Owner's hold duration (300 seconds is only a proposed default).
 3. Actual Protect version and sanitized POST/auth/retry/event identity sample.
 4. Exact Node-RED/Node.js versions, relevant palette, Projects status and active

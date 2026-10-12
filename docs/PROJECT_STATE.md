@@ -394,8 +394,9 @@ The owner accepted an independent third relay for light control from UniFi
 Protect and ESP Dial, normal Dial ON while remaining in AUTO, explicit manual
 ON/OFF with a persistent reminder, and automatic return to AUTO after one hour
 by default. [Canonical specification](superpowers/specs/2026-10-12-independent-lighting-design.md).
-Five-minute event hold is still proposed; load voltage/power and Protect POST
-authentication/delivery profile are not known. GPIO21/header40 comes from the
+Five-minute event hold is still proposed. The owner specifies LED lighting,
+maximum 20 W total at 220 V mains (2026-10-12). The actual driver/contact
+suitability and Protect POST authentication/delivery profile remain unverified. GPIO21/header40 comes from the
 historical board record and requires actual revision/jumper verification.
 
 No lighting runtime, API, flow, firmware, GPIO or wiring change was made. The
