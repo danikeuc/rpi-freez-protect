@@ -1,6 +1,6 @@
 # RPi Freeze Protect
 
-Pi release: [v1.2.0 — weather assistance and verified DRAIN recovery](docs/releases/v1.2.0.md).
+Pi release: [v1.3.1 - persistent history and Node-RED startup readiness](docs/releases/v1.3.1.md).
 
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and
@@ -22,8 +22,8 @@ that still require physical confirmation.
 | `DRAIN` (`0` on the dial) | high / relay released | high / relay released | `Tuš` to `Izpust` |
 | `SUPPLY` (`1` on the dial) | low / relay energized | low / relay energized | `Dovod` to `Tuš` |
 
-`DRAIN` is the requested safe state. The paired GPIO daemon is the only GPIO
-writer and gives every accepted `SUPPLY` a 60-second lease that the Hub must
+`DRAIN` is the requested safe state. The paired GPIO daemon is the only
+writer of GPIO26/20 and gives every accepted `SUPPLY` a 60-second lease that the Hub must
 renew. Loss of renewal requests paired `DRAIN`. A failed DRAIN remains pending
 and is retried until both outputs verify high. Mixed GPIO states and
 single-valve commands are illegal.
@@ -76,11 +76,12 @@ automatic-mode commissioning is complete.
 
 ## Display API
 
-The candidate Nginx configuration exposes these exact paths on the trusted LAN
-(display token, or distinct restricted weather token for settings):
+The versioned Nginx configuration exposes these exact paths on the trusted LAN
+(display token, or distinct restricted weather token for settings/history):
 
 ```text
 GET  /api/v1/display/status
+GET  /api/v1/display/history
 POST /api/v1/display/actions/timed-shower
 POST /api/v1/display/actions/drain
 GET/PUT /api/v1/display/weather-settings
@@ -126,6 +127,17 @@ diagnostics remain administrator-only and are not part of display status.
 `command` is the accepted logical command, not physical position. The Hub and
 Node-RED control route stay loopback-only.
 
+## Planned independent light
+
+The owner approved controlling the third relay through UniFi Protect webhooks
+and a third Dial page. AUTO also accepts Dial ON without disabling the camera.
+Explicit manual ON/OFF has a visible M reminder and returns to AUTO after one
+hour by default. **This is a documented design, not installed functionality.**
+Read the [canonical lighting specification](docs/superpowers/specs/2026-10-12-independent-lighting-design.md)
+and [Node-RED integration contract](docs/operations/independent-lighting-node-red.md).
+Board/load and actual Protect event/auth details remain prerequisites. Shower
+GPIO26/20 and its coupled-output contract remain independent of the proposed light.
+
 ## Development
 
 Python 3.12 is required:
@@ -170,8 +182,9 @@ uvicorn freeze_protect.main:app --host 127.0.0.1 --port 8000
 | [deployment/WORKSTATION_CODEX_COMMISSIONING.md](deployment/WORKSTATION_CODEX_COMMISSIONING.md) | Restricted workstation-to-Pi access and handoff |
 | [deployment/CROWPANEL_COMMISSIONING.md](deployment/CROWPANEL_COMMISSIONING.md) | Superseded CrowPanel procedure retained for history |
 
-Files below `docs/superpowers/specs/` and `docs/superpowers/plans/` record design
-and implementation history. They are not current runbooks.
+Files below `docs/superpowers/specs/` and `docs/superpowers/plans/` contain dated
+designs/plans; their status distinguishes historical and future work. They do
+not themselves establish deployment or replace current runbooks.
 
 ## Secret and network boundary
 

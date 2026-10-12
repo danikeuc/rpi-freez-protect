@@ -1,8 +1,9 @@
 # Project state and evidence register
 
-**Repository evidence snapshot:** 2026-10-05; device observations retain their original dates
+**Documentation reconciliation:** 2026-10-12; device observations retain their original dates
 
-**Active Pi mode observed:** `weather_assisted`, `USER_OFF` / `DRAIN` (operator installation receipt, 2026-10-05; independent GPIO readback high/high).
+**Latest recorded Pi installation:** 1.3.1, `weather_assisted`, `USER_OFF` / `DRAIN`
+(operator installation receipt and restricted GPIO readback, 2026-10-11; not a new live observation on 2026-10-12).
 
 **Physical valve position:** `UNKNOWN / NOT_VERIFIED`
 
@@ -386,3 +387,21 @@ GPIO26/20 high. Subsequent restricted SSH status independently confirmed all
 three services active and both pins high. Backup: /root/freeze-before-startup-psoa_xgm.
 Source checkout remains d0dfeac61856e0ff716e700348be61709dc68505 by design;
 the installed wheel is 1.3.1. A cold boot with delayed Node-RED remains untested.
+
+## Independent lighting documentation - 2026-10-12
+
+The owner accepted an independent third relay for light control from UniFi
+Protect and ESP Dial, normal Dial ON while remaining in AUTO, explicit manual
+ON/OFF with a persistent reminder, and automatic return to AUTO after one hour
+by default. [Canonical specification](superpowers/specs/2026-10-12-independent-lighting-design.md).
+Five-minute event hold is still proposed; load voltage/power and Protect POST
+authentication/delivery profile are not known. GPIO21/header40 comes from the
+historical board record and requires actual revision/jumper verification.
+
+No lighting runtime, API, flow, firmware, GPIO or wiring change was made. The
+paired daemon still owns exactly GPIO26/20. Node-RED export inspection found
+11 nodes and zero structural issues; runtime behavior was not retested.
+Documentation drift (manual-only architecture, three routes, old release label)
+was corrected against current source and dated installation receipts.
+[Reconciliation map](evidence/2026-10-12-lighting-documentation-reconciliation.md)
+distinguishes accepted behavior, proposed architecture and missing evidence.
