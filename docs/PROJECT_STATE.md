@@ -406,3 +406,23 @@ Documentation drift (manual-only architecture, three routes, old release label)
 was corrected against current source and dated installation receipts.
 [Reconciliation map](evidence/2026-10-12-lighting-documentation-reconciliation.md)
 distinguishes accepted behavior, proposed architecture and missing evidence.
+
+## Independent lighting implementation - 2026-10-13
+
+The owner authorized software implementation. The lighting branch now contains
+a separate Python controller, durable settings/history, role-scoped API,
+leased GPIO21 executor and disabled Node-RED/gateway/systemd examples.
+No existing shower source, paired flow or installed gateway was changed.
+
+At Pi source `1c63837`, full verification passed: 739 Python tests, Ruff,
+strict mypy over 34 source modules and Python package build. Nine Node adapter
+tests and a structural flow inspection also passed. Task reviews resolved
+delayed-command fences, revision recovery and uncertain-response handling.
+These checks use fake GPIO; they establish no physical relay/contact behavior.
+The companion Dial implementation and its checks are tracked in the
+[implementation evidence](evidence/2026-10-13-independent-lighting-implementation.md).
+
+The installed Pi 1.3.1 and Dial v1.3.0-shower.3 records remain unchanged.
+Actual Protect version/authenticated POST/event identity, board/driver rating
+and power/reset behavior remain commissioning prerequisites. No new release,
+firmware upload, service activation or mains connection is included.

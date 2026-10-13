@@ -37,3 +37,10 @@ Executed local checks: all 90 relative Markdown links across the eight changed
 /new documents resolved (77 Pi, 13 Dial), and git diff --check passed in both
 repositories. The existing paired Node-RED export inspector reported 11 nodes
 and zero structural issues. No code or physical tests are claimed.
+
+## Subsequent implementation
+
+The owner authorized implementation on 2026-10-13. This document preserves the
+2026-10-12 documentation checkpoint; current source checks and unresolved
+commissioning gates are recorded in the
+[implementation evidence](2026-10-13-independent-lighting-implementation.md).

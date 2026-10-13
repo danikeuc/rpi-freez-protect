@@ -1,7 +1,9 @@
 # Independent light: UniFi webhook and ESP Dial
 
-Date: 2026-10-12. Status: approved user behavior recorded; written engineering
-specification for review. **Not implemented, installed or physically tested.**
+Date: 2026-10-12; implementation authorized 2026-10-13. Status: approved product
+contract, with software implementation tracked in the
+[implementation plan](../plans/2026-10-13-independent-lighting.md).
+**Not installed or physically tested.**
 This is the canonical lighting contract. It does not change a released artifact.
 
 ## 1. Intent and decisions
@@ -21,10 +23,10 @@ camera is not silently disabled indefinitely.
 | Manual warning, M badge on other pages, return-to-AUTO control | Accepted interaction proposal |
 | Automatic return to AUTO after one hour; configurable in admin | Accepted interaction proposal; default 3600 seconds |
 | Detection hold time | Owner confirmed 300 seconds (5 minutes) after the last distinct accepted detection; configurable in admin |
-| Dial timed-ON duration in AUTO | Proposed same configurable hold time as camera; confirm with written spec |
-| Manual duration range | Engineering proposal: whole minutes from 1 to 120; default 60 |
+| Dial timed-ON duration in AUTO | Same configurable hold time as camera; implementation ruling recorded in plan |
+| Manual duration range | Implementation range: whole minutes from 1 to 120; default 60 |
 | Night-only schedule | Optional later extension; outside first implementation |
-| Light history | Planned separate history with source and mode; never mix with shower transitions |
+| Light history | Separate history with source and mode; never mix with shower transitions |
 
 The manual warning refers to the light only. Shower weather AUTO and light AUTO
 are different state machines; neither changes the other.
@@ -148,12 +150,14 @@ page navigation, repeated polling and local display countdown do not extend it.
 - Do not reveal webhook/control secrets to browser JavaScript or raw event logs.
 - Feature hidden/disabled on old Pi capability; no fallback to a shower endpoint.
 
-## 6. Proposed protocol and UniFi profile
+## 6. Protocol and UniFi profile
 
-These are design-only route names, not existing API promises. Final schema and
-resource limits belong in the reviewed implementation plan and contract tests.
+The software API uses the following routes. Exact strict schemas, role-specific
+credentials, bounds and revision domains are in the
+[implementation plan](../plans/2026-10-13-independent-lighting.md) and contract
+tests. These routes have not been enabled on the installed gateway.
 
-| Method and proposed path | Caller / meaning |
+| Method and path | Caller / meaning |
 | --- | --- |
 | POST /api/v1/lights/events/unifi | Protect via exact Nginx/Node-RED route; camera event only |
 | GET /api/v1/lights/status | Dial; mode, state, health, revision, deadlines, last cause |
@@ -181,7 +185,7 @@ Prefer a dedicated authentication header plus allowed sender network, method,
 body-size/rate bounds and fresh event timestamps. Official docs explicitly
 mention custom headers for GET, not guaranteed support for every POST version:
 verify authenticated POST on this console. If unavailable, review an authenticated
-local adapter or compatible profile before implementation; no token-in-URL,
+local adapter or compatible profile before live activation; no token-in-URL,
 unauthenticated endpoint or GET actuation fallback. Reject missing identity/time
 rather than accepting an event without the agreed replay protection.
 
@@ -203,7 +207,7 @@ survive that process hanging.
 | --- | --- | --- | --- |
 | Camera, LAN or Dial link lost | Existing AUTO holds expire; manual override returns at its deadline; no stale replay | Local controller and executor; configured hold/manual deadlines | Offline expiry and reconnect trace |
 | Node-RED crash/hang/redeploy | No new camera actions; existing deadlines remain; Dial path still usable | Separate light controller/executor; configured deadlines | Adapter failure test; existing shared shower bridge impact recorded |
-| Light controller crash/hang | Light OFF on executor lease expiry | Separate executor; finite maximum lease to be fixed/tested before live enabling | Kill and stalled controller tests |
+| Light controller crash/hang | Light OFF on executor lease expiry | Separate executor; software maximum lease 3 seconds, physical cutoff unmeasured | Kill and stalled controller tests |
 | Light executor crash/hang | Reach OFF without relying on its cleanup | Supervisor/hardware release behavior must be established; maximum response unknown | Backend line release, supervisor and hardware evidence; live gate remains open |
 | Pi reset/reboot | No ON pulse; startup OFF; no restore of old ON intent | Board bias/boot behavior before software, then executor readiness | Pre-application capture, reset timing and mode recovery |
 | Pi supply lost/restored while relay supply remains | No unintended ON during floating/control loss | Board input bias/isolation; wiring-dependent, response time unknown | Actual power-domain test with load disconnected |
@@ -225,7 +229,7 @@ mode change races; wall-clock jump/reboot during manual override; stale UI badge
 settings save not extending deadlines; history reads causing zero writes; every
 fault row above; zero GPIO26/20 touches from the lighting subsystem.
 
-Before implementation plan is finalized, resolve:
+Before commissioning or enabling real inputs, resolve:
 
 1. Verify the actual lamp/driver label against the reported 220 V / maximum 20 W
    total LED load; identify model/inrush, board revision, contact wiring and role
@@ -233,13 +237,15 @@ Before implementation plan is finalized, resolve:
 2. Actual Protect version and sanitized POST/auth/retry/event identity sample.
 3. Exact Node-RED/Node.js versions, relevant palette, Projects status and active
    flow/settings paths; repository flow is not runtime inventory.
-4. GPIO backend, OFF-before-ownership behavior, executor crash protection and
-   maximum lease/supervisor response bounds.
+4. Verify the selected libgpiod line-21 backend, OFF-before-ownership behavior,
+   executor crash protection and measured lease/supervisor response bounds.
+   Fake-I/O tests of the three-second software lease do not close this gate.
 
-The agreed product behavior is sufficient to prepare this documentation. These
-specific evidence gaps prevent claiming wiring readiness or deployment approval.
-No implementation plan, flow deployment, GPIO access or firmware upload is part
-of this documentation task.
+The owner subsequently authorized software implementation on 2026-10-13.
+Fake-clock, fake-I/O, adapter, native UI and browser checks can proceed while
+these evidence gaps remain open. They prevent claiming wiring readiness or
+deployment approval. Flow deployment, GPIO access and firmware upload require
+a separate commissioning step.
 
 ## 9. Source map and review
 

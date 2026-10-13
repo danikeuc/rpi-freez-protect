@@ -114,19 +114,28 @@ crash/hang, controller restart and power loss/restoration. Test coverage is not
 physical proof. The current proof level and remaining deployed/physical checks
 are maintained in [PROJECT_STATE.md](PROJECT_STATE.md).
 
-## Planned independent lighting - not installed
+## Independent lighting software - not installed
 
 The [2026-10-12 lighting specification](superpowers/specs/2026-10-12-independent-lighting-design.md)
 records the accepted product behavior: independent third relay, camera and Dial
 ON in AUTO, and temporary manual ON/OFF with a one-hour default return and M
-reminder across pages. Hold time is proposed as five minutes, not owner-confirmed.
+reminder across pages. The owner confirmed a five-minute hold after the last distinct detection;
+admin can configure it. Implementation is authorized and tracked in the
+[software plan](superpowers/plans/2026-10-13-independent-lighting.md).
 
-The planned light controller and GPIO21 executor are separate from the shower
+The light controller and GPIO21 executor run separately from the shower
 Hub and GPIO26/20 owner. Node-RED adapts UniFi events only; it does not own mode,
-timers or light GPIO. Proposed routes/credentials are separate and not present
+timers or light GPIO. Lighting routes/credentials are separate and not present
 in the installed seven-path gateway. Roon/Synology need no lighting changes.
 The shared Pi/Node-RED runtime still creates common failure domains.
 
 Board/load suitability, actual Protect POST/auth/retry profile and executor
 crash/power behavior remain explicit prerequisites. See the specification for
 legal output combinations, fault outcomes, UI arbitration and acceptance scope.
+
+The Python lighting implementation is under `src/freeze_protect/lighting/`.
+It uses its own SQLite database and an explicitly provisioned revision watermark.
+The GPIO executor accepts only line 21, owns a three-second ON lease and rejects
+stale generation/fence/lease identities. Fake-I/O tests establish this software
+behavior; executor hangs and board power transitions still need bench evidence.
+Normal service startup does not recreate a missing database or restore ON.

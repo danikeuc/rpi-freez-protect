@@ -127,16 +127,19 @@ diagnostics remain administrator-only and are not part of display status.
 `command` is the accepted logical command, not physical position. The Hub and
 Node-RED control route stay loopback-only.
 
-## Planned independent light
+## Independent light implementation
 
 The owner approved controlling the third relay through UniFi Protect webhooks
 and a third Dial page. AUTO also accepts Dial ON without disabling the camera.
 Explicit manual ON/OFF has a visible M reminder and returns to AUTO after one
-hour by default. **This is a documented design, not installed functionality.**
+hour by default. The lighting branch contains the separate controller, leased GPIO21 executor
+and disabled deployment examples. **This is not installed functionality.**
 Read the [canonical lighting specification](docs/superpowers/specs/2026-10-12-independent-lighting-design.md)
 and [Node-RED integration contract](docs/operations/independent-lighting-node-red.md).
+[Software verification](docs/evidence/2026-10-13-independent-lighting-implementation.md)
+records exact source checks and the remaining device gates.
 Board/load and actual Protect event/auth details remain prerequisites. Shower
-GPIO26/20 and its coupled-output contract remain independent of the proposed light.
+GPIO26/20 and its coupled-output contract remain independent of the light controller.
 
 ## Development
 
