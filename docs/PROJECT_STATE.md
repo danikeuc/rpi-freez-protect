@@ -470,3 +470,14 @@ The source-level FSEL writer race is repaired. The installed legacy daemon
 remains an activation blocker until the reviewed migration and physical
 acceptance in the [runbook](operations/paired-gpio-migration.md) are complete.
 This record does not change installed versions or authorize activation.
+
+### Paired GPIO migration inventory - 2026-10-13
+
+Restricted helper checks confirm the old paired daemon hash33088ea9 remains
+installed, services active and GPIO26/20 high. The owner confirmed both valve
+24 V and lamp loads disconnected. Trusted-console inventory identifies Pi4
+ModelB Rev1.1/BCM2711, kernel6.18.39, canonical gpiochip0 and legacy gpiomem;
+Python3.13.5 has no gpiod in either existing interpreter. An exact gpiod2.3.0
+ARM64 wheel is verified for an isolated service environment. The two-stage
+migration installer is in preparation; there is no new installed version or
+live hardware acceptance. See [preflight evidence](evidence/2026-10-13-gpio-migration-preflight.md).

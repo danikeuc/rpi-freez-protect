@@ -38,15 +38,54 @@ References checked in this turn:
 - https://raw.githubusercontent.com/raspberrypi/linux/rpi-6.18.y/drivers/char/raspberrypi-gpiomem.c
 - https://raw.githubusercontent.com/raspberrypi/linux/rpi-6.18.y/drivers/gpio/gpiolib.c
 
+## Trusted-console inventory and isolation confirmation
+
+The user subsequently confirmed both valve 24 V supply and lamp load are
+physically disconnected and supplied READ_ONLY_INVENTORY_COMPLETE. This is
+operator evidence of isolation, not an observed relay/contact test.
+
+- Model: Raspberry Pi 4 Model B Rev 1.1; compatible raspberrypi,4-model-b and
+  brcm,bcm2711. Kernel as above; page size 4096.
+- Canonical /dev/gpiochip0, owner 0:990, mode 0660, resolves to
+  /sys/devices/platform/soc/fe200000.gpio/gpiochip0 on /sys/bus/gpio.
+  Parent driver pinctrl-bcm2835; direct and parent firmware nodes agree at
+  /sys/firmware/devicetree/base/soc/gpio@7e200000.
+- GPIO node compatible brcm,bcm2711-gpio; reg 7e200000000000b4;
+  parent address and size cells each 1. Lines20/21/26 are named GPIO20/21/26.
+- /dev/gpiochip4 resolves to the same sysfs device and is an alias; use the
+  canonical /dev/gpiochip0. The firmware expander gpiochip1 is not the target.
+- /dev/gpiomem owner 0:990, mode 0660; legacy virtual gpiomem class device;
+  platform firmware node soc/gpiomem, compatible brcm,bcm2835-gpiomem,
+  reg 7e20000000001000, parent address and size cells each 1.
+- System /usr/bin/python3 and Hub .venv/bin/python3 both report Python3.13.5;
+  neither reports installed gpiod distribution metadata.
+
+This resolves the model/mapping/dependency inventory unknowns. Fresh exact
+chip API metadata, unused lines, service interpreter access and current
+USER_OFF remain installer gates. No ownership request or MMIO write was part
+of this inventory. The [console inventory block](../operations/paired-gpio-readonly-inventory.md)
+returned the complete receipt despite garbled command echo in the pasted text.
+
+## Dependency artifact verified on workstation
+
+Choose an isolated paired-service environment, preserving the existing Hub
+venv. The official PyPI2.3.0 artifact metadata provides a compatible prebuilt
+wheel; no source build or system package upgrade is needed.
+
+- gpiod-2.3.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
+- SHA256:7fdc3f63a277f8ae193f0c9b565bbd48e525e94c39cd463acd7b06250bf26507
+- Size:103244 bytes; uploaded2025-02-19.
+- Downloaded bytes matched SHA256; archive entries have no absolute/traversal
+  paths; WHEEL tags match cp313/aarch64 and native extension ELF machine183
+  is AArch64. No target wheel was installed or executed on the workstation.
+- Source metadata: https://pypi.org/pypi/gpiod/2.3.0/json
+
 ## Next boundary
 
-Physical disconnection confirmation requested: valve24V supply and lamp mains
-load. No new physical acceptance is recorded. Detailed model/DT/sysfs and exact
-interpreter/libgpiod metadata require a trusted-console read-only inventory;
-the remote allowlist is not widened. Prepare exact installer only after that
-inventory has resolved the supported mapping and dependency plan. Retain all
-[runbook](../operations/paired-gpio-migration.md) gates, including USER_OFF/DRAIN,
-backup, migration and disconnected-load acceptance. Nothing has been activated.
-
-Prepared [trusted-console inventory block](../operations/paired-gpio-readonly-inventory.md).
-Workstation syntax/non-Pi guard passed; remote execution/output remains pending.
+The two-stage migration package is under implementation and independent review.
+The first stage prepares an isolated dependency environment and reads metadata;
+the second stage requires the first receipt plus fresh baseline/state checks,
+verified backup and DRAIN before service replacement. Neither stage enables
+lighting. Retain all [runbook](../operations/paired-gpio-migration.md) gates.
+No device installation, service change, firmware flash or physical acceptance
+has occurred in this task.
