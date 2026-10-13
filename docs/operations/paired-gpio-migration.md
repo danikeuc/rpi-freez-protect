@@ -46,6 +46,11 @@ pinctrl-bcm2835/54 or pinctrl-bcm2711/58, GPIO26/GPIO20 names and unused status.
 It then validates character-device identities against sysfs/device tree:
 Raspberry Pi BCM2835/2836/2837/2711 platform, pinctrl-bcm2835 driver, appropriate
 brcm,bcm2835-gpio or brcm,bcm2711-gpio node and the common 0x7e200000 bank.
+The opened gpiochip character-device identity resolves to a GPIO bus device
+with its own dev number, subsystem and direct of_node. Its structural platform
+parent must expose the same of_node and be bound to the exact pinctrl-bcm2835
+driver. No class-device device link is required; a conflicting parent link,
+firmware node, driver binding or bus identity is rejected before reservation.
 
 The gpiomem profile intentionally supports only the legacy
 brcm,bcm2835-gpiomem binding, one bound rpi-gpiomem platform instance, and the

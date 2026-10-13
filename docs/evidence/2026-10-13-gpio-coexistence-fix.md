@@ -70,3 +70,16 @@ python -m ruff check . and git diff --check passed. Strict mypy and package buil
 passed before the final documentation-only correction; no Python behavior or
 package metadata changed afterwards. No deployment, hardware or firmware tests
 were run. Independent review of this exact repair is the next gate.
+
+## Task review correction: GPIO-REVIEW-01
+
+Independent review found the initial validator assumed a class-style device
+parent link for a GPIO bus device. A realistic direct-of_node fixture reproduced
+the failure. The validator now checks the opened character identity, GPIO bus,
+direct firmware node and matching structural platform parent bound to the
+exact pinctrl driver. Conflicting ancestry/driver/bank metadata fails before
+reservation. Parentless legacy gpiomem validation is retained.
+Focused checks:60 passed. Required full suite:778 passed, one existing
+Starlette/httpx warning,17.07 seconds. Ruff and whitespace checks passed.
+No dependencies/package or typed src modules changed in this correction;
+build/mypy were not repeated. Physical and installed migration gates remain.

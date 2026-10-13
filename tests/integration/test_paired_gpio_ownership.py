@@ -286,8 +286,18 @@ def platform(tmp_path, monkeypatch):
     pin_driver = tmp_path / "pinctrl-bcm2835"
     pin_driver.mkdir()
     (chip_device / "driver").symlink_to(pin_driver)
-    (sys_char / "254:0").mkdir(parents=True)
-    (sys_char / "254:0" / "device").symlink_to(chip_device)
+    gpio_bus = tmp_path / "gpio-bus"
+    gpio_bus.mkdir()
+    gpio_device = chip_device / "gpiochip0"
+    gpio_device.mkdir()
+    (gpio_device / "of_node").symlink_to(chip_node)
+    (gpio_device / "subsystem").symlink_to(gpio_bus)
+    (gpio_device / "dev").write_text("254:0\n")
+    (pin_driver / chip_device.name).symlink_to(chip_device)
+    sys_char.mkdir()
+    (sys_char / "254:0").symlink_to(gpio_device)
+    # gpiolib registers a bus device, without a class parent "device" link.
+    assert not (gpio_device / "device").exists()
     memory_class = tmp_path / "gpiomem-class" / "gpiomem"
     memory_class.mkdir(parents=True)
     (memory_class / "dev").write_text("240:0\n")
@@ -302,6 +312,8 @@ def platform(tmp_path, monkeypatch):
     (memory_driver / "fe200000.gpiomem").symlink_to(bound)
     monkeypatch.setattr(daemon, "DEVICE_TREE", tree)
     monkeypatch.setattr(daemon, "SYS_DEV_CHAR", sys_char)
+    monkeypatch.setattr(daemon, "GPIO_BUS", gpio_bus, raising=False)
+    monkeypatch.setattr(daemon, "PINCTRL_DRIVER", pin_driver, raising=False)
     monkeypatch.setattr(daemon, "GPIOMEM_CLASS", memory_class, raising=False)
     monkeypatch.setattr(daemon, "GPIOMEM_DRIVER", memory_driver, raising=False)
     monkeypatch.setattr(daemon.os, "fstat",
@@ -403,3 +415,49 @@ def test_mmio_partial_open_closes_descriptor_without_register_writes(monkeypatch
     with pytest.raises((OSError, ValueError)):
         daemon.GpiomemRegisters(42)
     assert closed == [123]
+
+
+@pytest.mark.parametrize("bad", [
+    "none", "wrong-parent", "wrong-driver", "unbound-parent", "wrong-gpio-bank",
+    "conflicting-device-link", "wrong-bus", "wrong-chip-dev",
+])
+def test_gpio_bus_topology_is_checked_before_reservation(
+    platform, hardware, monkeypatch, tmp_path, bad,
+):
+    daemon, trace, _, gpiod = hardware
+    mapping, _, chip_node, memory_node, *_ = platform
+    monkeypatch.setattr(daemon, "validate_platform", mapping.validate_platform)
+    monkeypatch.setattr(gpiod.Chip, "get_info",
+                        lambda _: SimpleNamespace(name="gpiochip0",
+                                                  label="pinctrl-bcm2711", num_lines=58))
+    gpio_device = (mapping.SYS_DEV_CHAR / "254:0").resolve()
+    parent = gpio_device.parent
+    if bad == "wrong-parent":
+        (parent / "of_node").unlink()
+        (parent / "of_node").symlink_to(memory_node)
+    elif bad == "wrong-driver":
+        (parent / "driver").unlink()
+        wrong = tmp_path / "other-pinctrl"
+        wrong.mkdir()
+        (parent / "driver").symlink_to(wrong)
+    elif bad == "unbound-parent":
+        (mapping.PINCTRL_DRIVER / parent.name).unlink()
+    elif bad == "wrong-gpio-bank":
+        import struct
+        (chip_node / "reg").write_bytes(struct.pack(">II", 0x7e300000, 0xf4))
+    elif bad == "conflicting-device-link":
+        (gpio_device / "device").symlink_to(tmp_path)
+    elif bad == "wrong-bus":
+        (gpio_device / "subsystem").unlink()
+        (gpio_device / "subsystem").symlink_to(tmp_path)
+    elif bad == "wrong-chip-dev":
+        (gpio_device / "dev").write_text("254:1\n")
+    monkeypatch.setattr(daemon, "run_daemon", lambda *_: None)
+    if bad == "none":
+        assert daemon.main() == 0
+        assert trace[:4] == ["chip", "request", "map", ("write", 0x1c, 68157440)]
+        assert trace[-3:] == ["unmap", "release", "chip-close"]
+    else:
+        with pytest.raises((ValueError, OSError)):
+            daemon.main()
+        assert trace == ["chip", "chip-close"]

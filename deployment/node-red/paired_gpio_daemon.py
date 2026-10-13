@@ -76,6 +76,8 @@ class GpiomemRegisters:
 
 DEVICE_TREE = Path("/sys/firmware/devicetree/base")
 SYS_DEV_CHAR = Path("/sys/dev/char")
+GPIO_BUS = Path("/sys/bus/gpio")
+PINCTRL_DRIVER = Path("/sys/bus/platform/drivers/pinctrl-bcm2835")
 GPIOMEM_CLASS = Path("/sys/class/gpiomem/gpiomem")
 GPIOMEM_DRIVER = Path("/sys/bus/platform/drivers/rpi-gpiomem")
 
@@ -84,9 +86,29 @@ def _compatible(node: Path) -> set[str]:
     return set(node.joinpath("compatible").read_bytes().decode("ascii").split("\0"))
 
 
-def _device_node(device: int) -> Path:
-    path = SYS_DEV_CHAR / f"{os.major(device)}:{os.minor(device)}" / "device"
-    return path.resolve(strict=True)
+def _gpio_platform_device(device: int) -> Path:
+    device_id = f"{os.major(device)}:{os.minor(device)}"
+    gpio_device = (SYS_DEV_CHAR / device_id).resolve(strict=True)
+    platform_device = gpio_device.parent
+    if (
+        (gpio_device / "dev").read_text().strip() != device_id
+        or (gpio_device / "subsystem").resolve(strict=True) != GPIO_BUS.resolve(strict=True)
+        or (gpio_device / "of_node").resolve(strict=True)
+        != (platform_device / "of_node").resolve(strict=True)
+        or (platform_device / "driver").resolve(strict=True)
+        != PINCTRL_DRIVER.resolve(strict=True)
+        or (PINCTRL_DRIVER / platform_device.name).resolve(strict=True) != platform_device
+    ):
+        raise ValueError("GPIO bus identity or platform parent mismatch")
+    # The reviewed GPIO bus device has no class-device parent link. If one
+    # exists, it must not contradict the structural parent; never follow it
+    # as a fallback to a different device or driver.
+    parent_link = gpio_device / "device"
+    if (parent_link.exists() or parent_link.is_symlink()) and (
+        parent_link.resolve(strict=True) != platform_device
+    ):
+        raise ValueError("conflicting GPIO platform parent link")
+    return platform_device
 
 
 def validate_platform(chip_fd: int, chip_label: str) -> int:
@@ -106,7 +128,7 @@ def validate_platform(chip_fd: int, chip_label: str) -> int:
     memory_info = os.stat("/dev/gpiomem")
     if not stat.S_ISCHR(chip_info.st_mode) or not stat.S_ISCHR(memory_info.st_mode):
         raise ValueError("GPIO devices must be character devices")
-    chip_device = _device_node(chip_info.st_rdev)
+    chip_device = _gpio_platform_device(chip_info.st_rdev)
     # The legacy gpiomem class device has no parent. Bind it using the
     # driver's unique legacy platform instance and its registered dev number.
     memory_id = f"{os.major(memory_info.st_rdev)}:{os.minor(memory_info.st_rdev)}"
