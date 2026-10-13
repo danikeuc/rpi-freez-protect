@@ -19,7 +19,7 @@ Roon bridge and live device configuration were not changed.
 | Python sdist/wheel build | Passed; development build, not a new release artifact |
 | Node adapter suite | 9 passed, including exported Function execution |
 | Flow inspection | 4 nodes, 0 structural issues; runtime not tested |
-| Task reviews | Prior scoped reviews approved; final scoped review of last fixes pending |
+| Task reviews | Task and final scoped reviews approved for disabled source delivery |
 
 Tests use temporary databases, fake clocks and fake GPIO/transport. They cover
 AUTO hold overlap and expiry, one-hour manual inhibition, restart recovery,
@@ -82,7 +82,7 @@ Exact `8e6a9b8` Waveshare ESP32-S3 build passed with ESP-IDF v5.5.5
 The artifact was not flashed. Task 3 scoped review closed its earlier findings.
 Whole-branch review then identified browser settings-failure control loss and
 the missing explicit shared-register activation blocker; their source fixes
-and focused evidence are recorded below, with final scoped review pending.
+and focused evidence are recorded below, with final scoped review approved for disabled source delivery.
 
 ## Deployment gates
 
@@ -97,7 +97,7 @@ executor failure behavior remain unverified. Installation and physical testing
 need the separate commissioning procedure. This change did not connect loads,
 flash a Dial, restart services, publish a release or merge a branch.
 
-## Final software fix candidate — review pending
+## Final software fix candidate — review approved
 
 Dial `6a5e03ed3a1b26a61536d602c697795f2444bccb` separates browser status and settings failure handling. With fresh AUTO/ON status and settings503, the original revision/freshness remain and deliberate OFF is admitted. With fresh manual status and settings503, Back to AUTO remains usable. Unknown settings clear the settings revision and both confirmed durations; timed/manual activation is gated. The original configuration/session fences and ten-second freshness bound remain in force.
 
@@ -105,10 +105,29 @@ Focused browser RED: `settings failure preserves fresh status revision` failed w
 
     light admin desktop/mobile: settings503 preserves fresh AUTO/ON OFF and manual BackAUTO; durations/activation gated; CSRF, private tokens, no activation on save/history, manual zero/stale, old Pi, session fences, no retries PASS
 
-Exact final Dial commit build PASS with ESP-IDF5.5.5, firmware size0x22c400,13% partition free, binary SHA256 `78c0280d7f8af62f7e529c239e110c3972b2f5901db5a153a62743f940610f47`. Generated header and patch checks PASS. Native source did not change in this last wave; no broad suites were repeated. The source fixes address the remaining software findings; final scoped approval is still pending. This is a disabled software/source candidate, **not installable/enablable** while the following named architecture gate remains open.
+Exact final Dial commit build PASS with ESP-IDF5.5.5, firmware size0x22c400,13% partition free, binary SHA256 `78c0280d7f8af62f7e529c239e110c3972b2f5901db5a153a62743f940610f47`. Generated header and patch checks PASS. Native source did not change in this last wave; no broad suites were repeated. The source fixes address the remaining software findings; final scoped approval passed for disabled source delivery. This is a disabled software/source candidate, **not installable/enablable** while the following named architecture gate remains open.
 
 ### GPIO_SHARED_FSEL2_COEXISTENCE
 
 The current [paired mmap configure path](../../deployment/node-red/paired_gpio_daemon.py#L65) reads FSEL2 then writes a modified snapshot during startup/restart. GPIO20/21/26 share that register. Candidate [gpiod21 request/release](../../src/freeze_protect/lighting/executor.py#L391), including uncoordinated kernel cleanup after close/crash, can overlap this writer. Fixed per-line API ownership does not establish whole-system physical/configuration isolation. The configuration race is established from source; no electrical manifestation has been measured.
 
 Do not enable the candidate GPIO21 executor alongside the current paired mmap daemon, create `/etc/independent-light/commissioned`, or set `LIGHT_GPIO21_ENABLED=commissioned` until separately reviewed architecture removes uncoordinated shared-register updates and records startup/restart/request/release/crash regression plus physical acceptance while preserving paired atomic output/lease behavior. Initial service ordering alone cannot cover later restarts or crash release; a userspace lock alone cannot cover uncoordinated kernel cleanup. No paired backend rewrite or hardware test was performed. Existing templates/flow/gateway remain disabled and their activation comments name this blocker. See [canonical gate](../superpowers/specs/2026-10-12-independent-lighting-design.md#gpio_shared_fsel2_coexistence) and [deployment prohibition](../../deployment/lighting/README.md#gpio_shared_fsel2_coexistence).
+
+## Final review receipt
+
+Final code references: Pi `26a22ec67081a5e352a80d6c24059e8b91b9f0db`,
+Dial `6a5e03ed3a1b26a61536d602c697795f2444bccb`. The subsequent receipt commit
+changes documentation only. The whole-branch review and exactly one final fix
+wave/scoped re-review closed both P2 findings. The final reviewer independently
+checked production browser JavaScript for malformed settings cache clearing,
+settings503 OFF/BackAUTO routes, activation gating, ten-second expiry during a
+pending settings request, session reset and original generation binding. Generated
+page equality, final firmware SHA256 and patch checks passed. Broad suites were
+not redundantly repeated; no hosted CI or hardware execution is claimed.
+
+[Archived final review and scoped verdict](2026-10-13-independent-lighting-final-review.md)
+record both findings and their closure. Approval is for disabled source delivery;
+`GPIO_SHARED_FSEL2_COEXISTENCE` remains an open installation/activation blocker.
+Its resolution requires another reviewed implementation and commissioning step,
+with preserved paired output semantics. Both development branches remain local;
+no merge, push, release, install or GPIO operation was performed.

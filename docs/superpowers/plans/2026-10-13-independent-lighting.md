@@ -72,7 +72,7 @@ Controller/executor protocol: Unix stream bounded JSON <=2048 bytes, requests wi
 - [x] Add PINadmin lightsection with hold/manual sliders,modecountdown,explicitactions/history,privateconfiguration. Tests assert secretredaction,CSRF,stalesession,adminsave noON,olderPicapability andhistorysideeffectfree.
 - [x] Run test_light_dial.sh plus existing admin/valve/playlist/weather native/browser suites. Build exact Waveshare ESP-IDF target with existing toolchain if available; report missing toolchain asbuildunverified, neverflash.
 - [x] Update bothrepositorydocs currentimplementationvscommissioning,commit and taskreview.
-- [ ] Finish wholebranchreview with exactSHA and allopenhardware/profilegates.
+- [x] Finish wholebranchreview with exactSHA and allopenhardware/profilegates.
 
 ## Delivery
 
@@ -89,3 +89,6 @@ repositories. Detailed results and remaining commissioning gates are in the
 
 Task 3 implementation and scoped fix review complete at Dial `8e6a9b8`;
 focused native/browser checks and exact ESP-IDF 5.5.5 build passed.
+
+Final scoped review approved Pi `26a22ec` / Dial `6a5e03e` as disabled source delivery.
+The named `GPIO_SHARED_FSEL2_COEXISTENCE` architecture gate remains open for installation.
