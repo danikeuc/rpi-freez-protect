@@ -1,0 +1,66 @@
+[
+  {
+    "id": "lighting-unifi-tab",
+    "type": "tab",
+    "label": "Light - UniFi ingress",
+    "disabled": true,
+    "info": "Disabled pending Protect/auth/profile and commissioning. No GPIO or policy."
+  },
+  {
+    "id": "lighting-unifi-in",
+    "type": "http in",
+    "z": "lighting-unifi-tab",
+    "name": "Private ingress",
+    "url": "/lighting/unifi",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 160,
+    "y": 120,
+    "wires": [
+      [
+        "lighting-unifi-adapter"
+      ]
+    ]
+  },
+  {
+    "id": "lighting-unifi-adapter",
+    "type": "function",
+    "z": "lighting-unifi-tab",
+    "name": "Authenticate and normalize",
+    "func": "'use strict';\n// Stateless normalization only. The controller owns deduplication and policy.\nconst ID = /^[A-Za-z0-9_.:-]{1,128}$/;\nconst TOKEN = /^[\\x21-\\x7e]{32,512}$/;\nconst UTC = /^(\\d{4}-\\d{2}-\\d{2})T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?(?:Z|\\+00:00)$/;\nconst PROFILE_KEYS = ['version','event_id_path','source_id_path','occurred_at_path',\n    'event_type_path','allowed_event_types','occurred_at_format'];\nfunction pathValid(path) {\n    return Array.isArray(path) && path.length > 0 && path.length <= 8 &&\n        path.every(k => typeof k === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(k) &&\n            !['__proto__','constructor','prototype'].includes(k));\n}\nfunction field(body, path) {\n    let value = body;\n    for (const key of path) {\n        if (!value || typeof value !== 'object' ||\n            !Object.prototype.hasOwnProperty.call(value, key)) return undefined;\n        value = value[key];\n    }\n    return value;\n}\nfunction reply(msg, code, payload) {\n    msg.statusCode = code;\n    msg.headers = {'content-type':'application/json','cache-control':'no-store'};\n    msg.payload = payload;\n    return msg;\n}\nfunction error(msg, code, cause) { return reply(msg, code, {error:cause}); }\nfunction timestamp(value, format) {\n    if (format === 'unix_ms') {\n        if (!Number.isSafeInteger(value) || value < 0) return null;\n        try { return new Date(value).toISOString(); } catch (_) { return null; }\n    }\n    if (typeof value !== 'string' || value.length < 20 || value.length > 40 ||\n        !UTC.test(value)) return null;\n    const ms = Date.parse(value);\n    if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0,10) !== value.slice(0,10)) return null;\n    return value;\n}\nasync function handle(msg, config, deps) {\n    let profile;\n    try { profile = JSON.parse(config.profile); } catch (_) { return error(msg,503,'profile_unavailable'); }\n    const sources = typeof config.allowedSources === 'string' ? config.allowedSources.split(',') : [];\n    if (config.enabled !== 'commissioned' || !TOKEN.test(config.ingressToken || '') ||\n        !TOKEN.test(config.cameraToken || '') || config.ingressToken === config.cameraToken ||\n        !sources.length || !sources.every(s => ID.test(s)) || !profile || profile.version !== 1 ||\n        Object.keys(profile).length !== PROFILE_KEYS.length ||\n        !PROFILE_KEYS.every(k => Object.prototype.hasOwnProperty.call(profile,k)) ||\n        !['utc','unix_ms'].includes(profile.occurred_at_format) ||\n        !['event_id_path','source_id_path','occurred_at_path','event_type_path'].every(k => pathValid(profile[k])) ||\n        !Array.isArray(profile.allowed_event_types) || !profile.allowed_event_types.length ||\n        profile.allowed_event_types.length > 32 || !profile.allowed_event_types.every(t => ID.test(t))) {\n        return error(msg,503,'profile_unavailable');\n    }\n    const req = msg.req || {};\n    if (req.method !== 'POST') return error(msg,405,'method_rejected');\n    if (typeof req.url !== 'string' || req.url.includes('?')) return error(msg,401,'credentials_rejected');\n    const headers = req.headers || {};\n    const auth = headers.authorization;\n    const expected = 'Bearer ' + config.ingressToken;\n    if (typeof auth !== 'string' || !/^[\\x21-\\x7e ]+$/.test(auth) || auth.length !== expected.length ||\n        !deps.crypto.timingSafeEqual(Buffer.from(auth),Buffer.from(expected))) return error(msg,401,'credentials_rejected');\n    if (!/^application\\/json(?:\\s*;\\s*charset=utf-8)?$/i.test(headers['content-type'] || '')) return error(msg,415,'content_type_rejected');\n    let body = msg.payload;\n    try {\n        const raw = Buffer.isBuffer(body) ? body.toString('utf8') : typeof body === 'string' ? body : JSON.stringify(body);\n        if (typeof raw !== 'string') return error(msg,422,'event_rejected');\n        if (Buffer.byteLength(raw) > 4096 || Number(headers['content-length'] || 0) > 4096) return error(msg,413,'body_too_large');\n        if (typeof body === 'string' || Buffer.isBuffer(body)) body = JSON.parse(raw);\n    } catch (_) { return error(msg,422,'event_rejected'); }\n    if (!body || typeof body !== 'object' || Array.isArray(body)) return error(msg,422,'event_rejected');\n    const event_id = field(body,profile.event_id_path), source_id = field(body,profile.source_id_path);\n    const occurred_at = timestamp(field(body,profile.occurred_at_path),profile.occurred_at_format);\n    const type = field(body,profile.event_type_path);\n    if (typeof event_id !== 'string' || !ID.test(event_id) ||\n        typeof source_id !== 'string' || !ID.test(source_id) || !occurred_at ||\n        typeof type !== 'string' || !profile.allowed_event_types.includes(type)) return error(msg,422,'event_rejected');\n    if (!sources.includes(source_id)) return error(msg,403,'source_rejected');\n    const age = (deps.now ? deps.now() : Date.now()) - Date.parse(occurred_at);\n    if (age > 60000 || age < -5000) return error(msg,422,'event_rejected');\n    const payload = JSON.stringify({event_id,source_id,occurred_at});\n    // Caller input can never choose upstream method/host/path/headers.\n    return new Promise(resolve => {\n        let settled = false, upstream, timer;\n        const cancel = () => finish(503,{error:'controller_unavailable'});\n        function finish(code, result) {\n            if (settled) return;\n            settled = true;\n            clearTimeout(timer);\n            if (deps.pending) deps.pending.delete(cancel);\n            if (upstream) upstream.destroy();\n            resolve(reply(msg,code,result));\n        }\n        timer = setTimeout(cancel, Math.min(deps.timeoutMs || 1500,1500));\n        if (deps.pending) deps.pending.add(cancel);\n        try {\n            upstream = deps.http.request({hostname:'127.0.0.1',port:8002,\n                path:'/api/v1/lights/events/unifi',method:'POST',agent:false,\n                headers:{Authorization:'Bearer '+config.cameraToken,\n                    'Content-Type':'application/json','Content-Length':Buffer.byteLength(payload)}}, response => {\n                let size = 0, chunks = [];\n                response.on('error',cancel);\n                response.on('aborted',cancel);\n                response.on('data',chunk => {\n                    size += chunk.length;\n                    if (size > 8192) { cancel(); response.destroy(); return; }\n                    chunks.push(chunk);\n                });\n                response.on('end',() => {\n                    if (settled) return;\n                    if (response.statusCode !== 200) {\n                        const code = [401,403,409,413,422,429,503].includes(response.statusCode) ? response.statusCode : 503;\n                        finish(code,{error:code === 503 ? 'controller_unavailable' : 'controller_rejected'});\n                        return;\n                    }\n                    try {\n                        const result = JSON.parse(Buffer.concat(chunks).toString('utf8'));\n                        if (typeof result.accepted !== 'boolean' || typeof result.duplicate !== 'boolean') { cancel(); return; }\n                        // Never return raw controller errors/payload, credentials or headers.\n                        finish(200,{accepted:result.accepted,duplicate:result.duplicate});\n                    } catch (_) { cancel(); }\n                });\n            });\n            upstream.on('error',cancel);\n            upstream.end(payload);\n        } catch (_) { cancel(); }\n    });\n}\nconst config = {\n enabled:env.get('LIGHT_UNIFI_ENABLED'), ingressToken:env.get('LIGHT_UNIFI_INGRESS_TOKEN'),\n cameraToken:env.get('LIGHT_CAMERA_TOKEN'), allowedSources:env.get('LIGHT_ALLOWED_SOURCES'),\n profile:env.get('LIGHT_UNIFI_PROFILE')\n};\nconst pending = context.get('lightRequests','memory');\nhandle(msg,config,{http,crypto,pending}).then(() => {\n node.send(msg,false); node.done();\n}).catch(() => {\n error(msg,503,'adapter_unavailable'); node.send(msg,false); node.done();\n});\nreturn null;\n",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "context.set('lightRequests',new Set(),'memory');",
+    "finalize": "for (const cancel of context.get('lightRequests','memory') || []) cancel(); context.set('lightRequests',new Set(),'memory');",
+    "libs": [
+      {
+        "var": "http",
+        "module": "http"
+      },
+      {
+        "var": "crypto",
+        "module": "crypto"
+      }
+    ],
+    "x": 410,
+    "y": 120,
+    "wires": [
+      [
+        "lighting-unifi-response"
+      ]
+    ]
+  },
+  {
+    "id": "lighting-unifi-response",
+    "type": "http response",
+    "z": "lighting-unifi-tab",
+    "name": "One sanitized response",
+    "statusCode": "",
+    "headers": {},
+    "x": 680,
+    "y": 120,
+    "wires": []
+  }
+]

@@ -1,0 +1,33 @@
+[Unit]
+Description=Independent lighting policy controller
+ConditionPathExists=/etc/independent-light/commissioned
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=independent-light
+Group=independent-light
+WorkingDirectory=/opt/freeze-protect
+EnvironmentFile=/etc/independent-light/controller.env
+ExecStart=/opt/freeze-protect/.venv/bin/python -m freeze_protect.lighting.main
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=10
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET
+PrivateDevices=true
+StateDirectory=independent-light
+ReadWritePaths=/var/lib/independent-light /run/independent-light
+# Deliberately no Install section: explicit reviewed commissioning only.

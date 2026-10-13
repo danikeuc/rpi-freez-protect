@@ -1,0 +1,14 @@
+# Templates only. Keep real separate secrets in mode-0600 external files.
+LIGHT_DB_PATH=/var/lib/independent-light/independent-light.db
+LIGHT_DISPLAY_TOKEN=
+LIGHT_SETTINGS_TOKEN=
+LIGHT_CAMERA_TOKEN=
+LIGHT_ALLOWED_SOURCES=
+LIGHT_EXECUTOR_SOCKET=/run/independent-light/executor.sock
+# Only explicit commissioning enables ingress or hardware.
+LIGHT_UNIFI_ENABLED=
+LIGHT_UNIFI_INGRESS_TOKEN=
+LIGHT_UNIFI_PROFILE=
+LIGHT_GPIO21_ENABLED=
+LIGHT_GPIO_CHIP=
+LIGHT_GPIO21_ACTIVE_LOW=

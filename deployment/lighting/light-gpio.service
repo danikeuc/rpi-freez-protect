@@ -1,0 +1,36 @@
+[Unit]
+Description=Independent lighting GPIO21 lease executor
+ConditionPathExists=/etc/independent-light/commissioned
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=independent-light
+Group=independent-light
+WorkingDirectory=/opt/freeze-protect
+EnvironmentFile=/etc/independent-light/executor.env
+ExecStart=/opt/freeze-protect/.venv/bin/python -m freeze_protect.lighting.executor
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=10
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET
+RuntimeDirectory=independent-light
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
+DevicePolicy=closed
+# Commissioning must supply a reviewed DeviceAllow for the verified gpiochip.
+ReadWritePaths=/run/independent-light
+# Deliberately no Install section: explicit reviewed commissioning only.
