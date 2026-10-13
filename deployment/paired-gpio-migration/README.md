@@ -44,8 +44,9 @@ Keep the printed `/root/paired-gpio-migration.<id>` evidence directory. A succes
 means PREPARED.json was durably written, binding the exact bundle, interpreter
 and environment files, host boot, baseline and source HEAD. Preparation performs
 read-only active-service, USER_OFF, database identity, deployed-flow, GPIO level
-and platform metadata checks. It does not request lines, construct hardware
-owners, map registers, write GPIO, or change services. The exact reviewed source
+and platform metadata checks, including the existing read-only `pinctrl get`
+level checks. The candidate probe does not construct `KernelOwnedPair`, request
+lines or map MMIO. Preparation does not write GPIO or change services. The exact reviewed source
 is passed over stdin to the isolated interpreter under `nodered`, so the private
 package directory does not have to become readable to the service account.
 

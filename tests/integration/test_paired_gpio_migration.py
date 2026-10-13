@@ -158,7 +158,7 @@ def test_cutover_orders_authority_backup_and_restart(migration, monkeypatch, tmp
     monkeypatch.setattr(migration, 'live_environment', action('live-env'))
     monkeypatch.setattr(migration.c, 'flow', action('flow'))
     monkeypatch.setattr(migration.c, 'digest', lambda *a: 'abc')
-    migration.cutover(state, tmp_path)
+    migration.cutover(state, tmp_path, {})
     assert calls[:14] == ['backup', 'status', 'preserved', 'systemctl stop freeze-protect.service',
         'hub-stopped', 'drain', 'systemctl stop freeze-protect-pair-gpio.service', 'high', 'expire',
         'metadata', 'replace', 'systemctl start freeze-protect-pair-gpio.service', 'socket', 'drain']
@@ -177,9 +177,10 @@ def test_receipt_failure_stops_cutover_without_retry(migration, monkeypatch, tmp
         calls.append(args)
         return '{}' if 'DRAIN' in args else ''
     monkeypatch.setattr(migration.c, 'run', run)
-    monkeypatch.setattr(migration, 'install', lambda evidence: migration.cutover({'entries': {}}, evidence))
+    monkeypatch.setattr(migration, 'install', lambda evidence, attempt: migration.cutover({'entries': {}}, evidence, attempt))
     assert migration.execute('install', tmp_path) == 1
     assert sum('DRAIN' in command for command in calls) == 1
+    assert calls.count(['systemctl', 'stop', migration.c.HUB]) == 2
     assert not any('start' in command for command in calls)
     assert not (tmp_path / 'SUCCESS.json').exists()
 
@@ -226,7 +227,7 @@ def test_install_checks_receipt_before_preflight_or_cutover(migration, monkeypat
     monkeypatch.setattr(migration, 'preflight', lambda **kw: pytest.fail('preflight ran after bad receipt'))
     monkeypatch.setattr(migration, 'cutover', lambda *a: pytest.fail('cutover ran after bad receipt'))
     with pytest.raises(RuntimeError, match='STALE_RECEIPT'):
-        migration.install(tmp_path)
+        migration.install(tmp_path, {})
 
 
 def test_metadata_unknown_chip_is_rejected_before_request(migration, monkeypatch):
@@ -244,3 +245,191 @@ def test_unknown_host_is_rejected(migration, monkeypatch):
     monkeypatch.setattr(Path, 'read_bytes', lambda p: b'Raspberry Pi 5 Model B\0')
     with pytest.raises(RuntimeError, match='HOST_MODEL'):
         migration.host_identity()
+
+
+
+@pytest.mark.parametrize('markers', [('INSTALL_STARTED', 'SUCCESS.json'), ('INSTALL_STARTED',), ('SUCCESS.json',)])
+def test_historical_evidence_rejected_without_commands_or_evidence_changes(migration, monkeypatch, tmp_path, markers):
+    (tmp_path / 'PREPARED.json').write_text('{"daemon":"old"}')
+    for name in markers:
+        (tmp_path / name).write_text('historical evidence\n')
+    original = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    calls = []
+    monkeypatch.setattr(migration, 'verify_bundle', dict)
+    monkeypatch.setattr(migration.c, 'secure', lambda *a, **kw: None)
+    monkeypatch.setattr(migration, 'prepared_identity', lambda _: {'daemon': 'changed'})
+    monkeypatch.setattr(migration.c, 'run', lambda args, **kw: calls.append(args) or '')
+    monkeypatch.setattr(migration.c, 'active', lambda _: True)
+    monkeypatch.setattr(migration.c, 'stopped', lambda: None)
+    monkeypatch.setattr(migration.c, 'drain', lambda: calls.append(['DRAIN']))
+    assert migration.execute('install', tmp_path) == 1
+    assert calls == []
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == original
+
+
+@pytest.fixture
+def cutover_files(migration, monkeypatch, tmp_path):
+    """Real backup/SQLite/replacement operations; only host and service boundaries fake."""
+    import sqlite3
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    live = tmp_path / 'live'
+    live.mkdir()
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    daemon = live / 'daemon.py'
+    daemon.write_bytes(b'old daemon')
+    (bundle / 'paired_gpio_daemon.py').write_bytes(b'new daemon')
+    (bundle / 'paired-gpio.env').write_bytes(b'fixed environment')
+    (bundle / 'paired-gpio.conf').write_bytes(b'fixed unit override')
+    db = live / 'database.sqlite3'
+    with sqlite3.connect(db) as connection:
+        connection.execute('CREATE TABLE preserved (value TEXT)')
+        connection.execute("INSERT INTO preserved VALUES ('history')")
+    db.with_name(db.name + '.weather-identity').write_text('a' * 32)
+    preserved = live / 'environment'
+    preserved.write_bytes(b'private preserved environment')
+    state = {'entries': {}, 'settings': {'enabled': True}, 'packages': {'rpi-freeze-protect': '1.3.1'}, 'history': {}}
+    monkeypatch.setattr(migration, 'HERE', bundle)
+    monkeypatch.setattr(migration, 'DEST', daemon)
+    monkeypatch.setattr(migration, 'OLD', migration.c.digest(daemon))
+    monkeypatch.setattr(migration, 'PRESERVED', (preserved,))
+    monkeypatch.setattr(migration, 'DROPIN', live / '40-paired-gpio.conf')
+    monkeypatch.setattr(migration, 'PAIR_ENV', live / 'paired-gpio.env')
+    monkeypatch.setattr(migration, 'MARKER', live / 'paired-approved')
+    monkeypatch.setattr(migration.c, 'DB', db)
+    monkeypatch.setattr(migration.c, 'secure', lambda *a, **kw: None)
+    monkeypatch.setattr(migration, 'verify_bundle', dict)
+    monkeypatch.setattr(migration, 'prepared_identity', lambda _: {'prepared': True})
+    (evidence / 'PREPARED.json').write_text('{"prepared":true}')
+    monkeypatch.setattr(migration, 'preflight', lambda **kw: state)
+    monkeypatch.setattr(migration, 'metadata_check', lambda **kw: None)
+    monkeypatch.setattr(migration, 'preserved', lambda _: None)
+    monkeypatch.setattr(migration.c, 'status', lambda _: None)
+    monkeypatch.setattr(migration.c, 'persistent_stop', lambda: state['settings'])
+    monkeypatch.setattr(migration.c, 'pair_high', lambda: None)
+    monkeypatch.setattr(migration.time, 'sleep', lambda _: None)
+    commands = []
+    services = {migration.c.HUB: True, migration.PAIR: True}
+    def run(args, **kw):
+        commands.append(args)
+        if args[0] == 'systemctl':
+            assert args[1] == 'stop', 'failure path restarted a service'
+            services[args[2]] = False
+            return ''
+        assert args[-1] == 'DRAIN', 'unexpected operator command'
+        return '{"ok":true,"protocol_version":2,"command":"DRAIN","gpio":{"26":1,"20":1}}'
+    monkeypatch.setattr(migration.c, 'run', run)
+    monkeypatch.setattr(migration.c, 'active', lambda name: services[name])
+    def stopped():
+        assert services[migration.c.HUB] is False
+    monkeypatch.setattr(migration.c, 'stopped', stopped)
+    monkeypatch.setattr(migration, 'show', lambda service, field: '0' if not services[service] else '1')
+    return evidence, daemon, commands, services
+
+
+@pytest.mark.parametrize('fault', ['backup_file_fsync', 'backup_hash', 'backup_directory_fsync', 'marker_directory_fsync'])
+def test_durability_failure_before_cutover_never_mutates_services(migration, monkeypatch, cutover_files, fault):
+    import stat
+    evidence, daemon, commands, services = cutover_files
+    fsync = migration.os.fsync
+    digest = migration.c.digest
+    failed = False
+    def fail_fsync(fd):
+        nonlocal failed
+        is_directory = stat.S_ISDIR(migration.os.fstat(fd).st_mode)
+        current = Path('/proc/self/fd/' + str(fd)).resolve()
+        trigger = ((fault == 'backup_file_fsync' and current.name == 'before-00')
+                   or (fault == 'backup_directory_fsync' and is_directory and current == evidence)
+                   or (fault == 'marker_directory_fsync' and is_directory and current == evidence
+                       and (evidence / 'INSTALL_STARTED').exists()))
+        if trigger and not failed:
+            failed = True
+            raise OSError('injected durability failure')
+        fsync(fd)
+    def fail_digest(path):
+        nonlocal failed
+        if fault == 'backup_hash' and Path(path).name == 'before-00' and not failed:
+            failed = True
+            return 'wrong hash'
+        return digest(path)
+    monkeypatch.setattr(migration.os, 'fsync', fail_fsync)
+    monkeypatch.setattr(migration.c, 'digest', fail_digest)
+    assert migration.execute('install', evidence) == 1
+    assert failed
+    assert commands == []
+    assert services[migration.c.HUB] and services[migration.PAIR]
+    assert daemon.read_bytes() == b'old daemon'
+    assert (evidence / 'before-00').read_bytes() == b'old daemon'
+    assert (evidence / 'FAILURE.json').is_file()
+    assert not (evidence / 'SUCCESS.json').exists()
+
+
+@pytest.mark.parametrize('fault', ['daemon_directory_fsync', 'environment_replace', 'environment_readback'])
+def test_partial_replacement_keeps_hub_stopped_and_recovery_evidence(migration, monkeypatch, cutover_files, fault):
+    import stat
+    evidence, daemon, commands, services = cutover_files
+    replace = migration.os.replace
+    fsync = migration.os.fsync
+    read_bytes = Path.read_bytes
+    failed = False
+    def fail_replace(source, destination):
+        nonlocal failed
+        if fault == 'environment_replace' and destination == migration.PAIR_ENV:
+            failed = True
+            raise OSError('injected environment replacement failure')
+        return replace(source, destination)
+    def fail_fsync(fd):
+        nonlocal failed
+        if (fault == 'daemon_directory_fsync' and not failed
+                and stat.S_ISDIR(migration.os.fstat(fd).st_mode)
+                and Path('/proc/self/fd/' + str(fd)).resolve() == daemon.parent
+                and read_bytes(daemon) == b'new daemon'):
+            failed = True
+            raise OSError('injected directory fsync failure after daemon replace')
+        fsync(fd)
+    def fail_readback(path):
+        nonlocal failed
+        if fault == 'environment_readback' and path == migration.PAIR_ENV and path.exists():
+            failed = True
+            return b'corrupt environment'
+        return read_bytes(path)
+    monkeypatch.setattr(migration.os, 'replace', fail_replace)
+    monkeypatch.setattr(migration.os, 'fsync', fail_fsync)
+    monkeypatch.setattr(Path, 'read_bytes', fail_readback)
+    assert migration.execute('install', evidence) == 1
+    assert failed
+    assert not services[migration.c.HUB] and not services[migration.PAIR]
+    assert daemon.read_bytes() == b'new daemon'  # No automatic rollback.
+    assert not migration.DROPIN.exists() and not migration.MARKER.exists()
+    assert (evidence / 'before-00').read_bytes() == b'old daemon'
+    assert (evidence / 'BACKUP_COMPLETE.json').is_file()
+    assert (evidence / 'database.sqlite3').is_file()
+    assert (evidence / 'INSTALL_STARTED').is_file()
+    assert (evidence / 'FAILURE.json').is_file()
+    assert sum('DRAIN' in command for command in commands) == 1
+    assert commands.count(['systemctl', 'stop', migration.c.HUB]) == 2
+    assert (evidence / 'database.weather-identity').read_text() == 'a' * 32
+    assert not any('start' in command for command in commands)
+    assert not (evidence / 'SUCCESS.json').exists()
+
+
+def test_actual_baseline_mismatch_through_execute_does_not_mutate_services(migration, monkeypatch, tmp_path):
+    daemon = tmp_path / 'daemon.py'
+    daemon.write_bytes(b'unexpected installed daemon')
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    (evidence / 'PREPARED.json').write_text('{"prepared":true}')
+    monkeypatch.setattr(migration, 'DEST', daemon)
+    monkeypatch.setattr(migration, 'verify_bundle', dict)
+    monkeypatch.setattr(migration, 'prepared_identity', lambda _: {'prepared': True})
+    monkeypatch.setattr(migration, 'host_identity', dict)
+    monkeypatch.setattr(migration.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(migration.c, 'secure', lambda *a, **kw: None)
+    commands = []
+    monkeypatch.setattr(migration.c, 'run', lambda args, **kw: commands.append(args))
+    assert migration.execute('install', evidence) == 1
+    assert commands == []
+    assert daemon.read_bytes() == b'unexpected installed daemon'
+    assert 'BASELINE_DAEMON_CHANGED' in (evidence / 'failure-private.log').read_text()
+    assert not (evidence / 'INSTALL_STARTED').exists()

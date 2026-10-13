@@ -246,12 +246,17 @@ def prepare(evidence):
     c.durable(evidence / 'PREPARED.json', json.dumps(prepared_identity(package), sort_keys=True) + '\n')
 
 
+def evidence_used(directory):
+    return any((directory / name).exists() or (directory / name).is_symlink()
+               for name in ('INSTALL_STARTED', 'SUCCESS.json', 'FAILURE.json'))
+
+
 def verify_prepared(directory, package):
+    require(not evidence_used(directory), 'PREPARED_ALREADY_USED')
     c.secure(directory, private=True)
     c.secure(directory / 'PREPARED.json', private=True)
     require(json.loads((directory / 'PREPARED.json').read_text()) == prepared_identity(package),
             'PREPARED_IDENTITY_CHANGED')
-    require(not (directory / 'INSTALL_STARTED').exists(), 'PREPARED_ALREADY_USED')
 
 
 def backup(evidence, state):
@@ -352,11 +357,13 @@ def preserved(state):
     lighting_disabled()
 
 
-def cutover(state, evidence):
+def cutover(state, evidence, attempt):
     backup(evidence, state)
     c.status(state['entries'])
     preserved(state)
     c.durable(evidence / 'INSTALL_STARTED', 'one attempt; no automatic rollback\n')
+    # Arm only this invocation, after durable evidence and before stop may take effect.
+    attempt['cleanup_armed'] = True
     c.run(['systemctl', 'stop', c.HUB], timeout=45)
     c.stopped()
     c.drain()
@@ -388,22 +395,31 @@ def cutover(state, evidence):
         'lighting': 'disabled', 'physical_position': 'NOT_VERIFIED'}) + '\n')
 
 
-def install(evidence):
+def install(evidence, attempt):
     package = verify_bundle()
     verify_prepared(evidence, package)
     state = preflight(prepared=True)
     metadata_check(owned=False)
-    cutover(state, evidence)
+    cutover(state, evidence, attempt)
 
 
 def execute(stage, evidence):
+    # Rejected historical attempts must not alter service state or prior evidence.
+    if evidence_used(evidence):
+        print(f'PAIRED_MIGRATION_STOPPED phase={stage} code=PREPARED_ALREADY_USED evidence={evidence}', flush=True)
+        print('Keep both loads disconnected. Preserve this evidence for local review.', flush=True)
+        return 1
+    attempt = {'cleanup_armed': False}
     c.LOG = evidence / 'private.log'
     try:
-        (prepare if stage == 'prepare' else install)(evidence)
+        if stage == 'prepare':
+            prepare(evidence)
+        else:
+            install(evidence, attempt)
         print(f'PAIRED_MIGRATION_{stage.upper()}_VERIFIED evidence={evidence}', flush=True)
         return 0
     except BaseException:
-        if (evidence / 'INSTALL_STARTED').exists():
+        if attempt['cleanup_armed']:
             try:
                 c.run(['systemctl', 'stop', c.HUB], timeout=45)
                 c.stopped()
@@ -448,7 +464,7 @@ def main():
         evidence = Path(sys.argv[4])
         require(evidence.parent == Path('/root') and evidence.name.startswith('paired-gpio-migration.'), 'EVIDENCE_PATH')
         c.secure(evidence, private=True)
-        require(not (evidence / 'FAILURE.json').exists(), 'FAILED_ATTEMPT_REQUIRES_REVIEW')
+        require(not evidence_used(evidence), 'PREPARED_ALREADY_USED')
     try:
         return execute(stage, evidence)
     finally:
