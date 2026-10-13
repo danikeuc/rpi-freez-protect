@@ -6,9 +6,9 @@ LIGHT_CAMERA_TOKEN=
 LIGHT_ALLOWED_SOURCES=
 LIGHT_EXECUTOR_SOCKET=/run/independent-light/executor.sock
 # GPIO_SHARED_FSEL2_COEXISTENCE is an open activation blocker.
-# Do not set LIGHT_GPIO21_ENABLED=commissioned or create the service marker
-# with the current paired mmap daemon. Separate architecture review must
-# eliminate uncoordinated FSEL2 updates and record regression/physical evidence.
+# Do not opt in LIGHT_GPIO21_ENABLED or create the service marker
+# with the installed legacy paired mmap daemon. Candidate source repair needs
+# exact installed migration plus regression/physical acceptance evidence.
 # Initial ordering/userspace locking alone do not cover kernel cleanup.
 # Only commissioning AFTER that blocker is closed enables ingress or hardware.
 LIGHT_UNIFI_ENABLED=

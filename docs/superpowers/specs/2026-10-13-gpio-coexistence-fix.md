@@ -12,9 +12,13 @@ uncoordinated raw-memory writer. Initial service ordering or a userspace lock
 cannot cover kernel cleanup/restarts. Remove ALL userspace FSEL reads/writes from
 the paired production path; do not merely add a lock.
 
-Use libgpiod 2.x to exclusively request/hold GPIO26 and20 as outputs initially
-physical HIGH (DRAIN), active_low=false, through the same kernel configuration
-path as light21. Preserve the existing SINGLE GPSET0/GPCLR0 PAIR_MASK write and
+Use libgpiod 2.x to exclusively reserve GPIO26 and20 with AS_IS (no requested
+direction/bias/edge change), map only after ownership, preload physical HIGH
+(DRAIN) with one paired mask store, then kernel-reconfigure OUTPUT with
+active_low=false and output_value=ACTIVE through the same configuration path
+as light21. This reviewed lifecycle refinement avoids requesting sequential
+initial latch writes before the paired preload; no physical initialization
+atomicity is claimed. Preserve the existing SINGLE GPSET0/GPCLR0 PAIR_MASK write and
 GPLEV0 readback for normal paired DRAIN/SUPPLY; no sequential line writes or
 fallback. Raw register access is a deliberately restricted latch/readback backend,
 not configuration. The kernel request stays alive until all raw access is closed.

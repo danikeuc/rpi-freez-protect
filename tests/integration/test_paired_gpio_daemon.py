@@ -48,7 +48,6 @@ def test_atomic_pair_write_uses_one_masked_register_store_and_readback() -> None
     daemon = load_daemon()
     registers = FakeRegisters(daemon)
     gpio = daemon.PairedGpio(registers)
-    gpio.configure_outputs()
 
     levels = gpio.write_and_verify("SUPPLY")
 
@@ -61,7 +60,6 @@ def test_expired_supply_is_rejected_without_a_low_pair_write() -> None:
     daemon = load_daemon()
     registers = FakeRegisters(daemon)
     gpio = daemon.PairedGpio(registers)
-    gpio.configure_outputs()
     lease = daemon.SupplyLease(gpio)
 
     result = daemon.execute_request(
@@ -79,7 +77,6 @@ def test_delayed_supply_followed_by_drain_cannot_leave_the_pair_low() -> None:
     daemon = load_daemon()
     registers = FakeRegisters(daemon)
     gpio = daemon.PairedGpio(registers)
-    gpio.configure_outputs()
     lease = daemon.SupplyLease(gpio)
 
     delayed_supply = daemon.execute_request(

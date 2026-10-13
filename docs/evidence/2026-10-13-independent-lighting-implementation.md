@@ -131,3 +131,12 @@ record both findings and their closure. Approval is for disabled source delivery
 Its resolution requires another reviewed implementation and commissioning step,
 with preserved paired output semantics. Both development branches remain local;
 no merge, push, release, install or GPIO operation was performed.
+
+## Subsequent paired ownership source repair
+
+The separately authorized 2026-10-13 repair removes the raw FSEL configure path
+from candidate source. Earlier evidence describes the pre-repair source and
+unchanged installed legacy backend. See [repair evidence](2026-10-13-gpio-coexistence-fix.md)
+and [migration runbook](../operations/paired-gpio-migration.md).
+Installed migration, disconnected-load traces and all lighting/Protect gates
+remain open; no runtime activation or new physical evidence is claimed.

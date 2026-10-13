@@ -1,0 +1,15 @@
+# REVIEW TEMPLATE ONLY: not installed, no automatic activation.
+# Copy only as a reviewed override of freeze-protect-pair-gpio.service.
+[Unit]
+ConditionPathExists=/etc/freeze-protect/paired-gpio-migration-approved
+
+[Service]
+EnvironmentFile=/etc/freeze-protect/paired-gpio.env
+# The historical /usr/bin/python3 interpreter does not inherit venv packages.
+ExecStart=
+ExecStart=/opt/rpi-freez-protect/.venv/bin/python3 /opt/rpi-freez-protect/deployment/node-red/paired_gpio_daemon.py
+DevicePolicy=closed
+DeviceAllow=
+DeviceAllow=/dev/gpiomem rw
+# REQUIRED after inventory/review: add only the verified /dev/gpiochipN rw.
+# No chip is permitted by this incomplete example, so requests fail closed.

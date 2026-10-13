@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+paired-gpio = ["gpiod>=2.3,<3; sys_platform == 'linux'"]
 lighting-gpio = ["gpiod>=2.3,<3; sys_platform == 'linux'"]
 dev = [
   "build>=1.2,<2",

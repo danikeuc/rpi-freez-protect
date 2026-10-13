@@ -49,3 +49,10 @@ change. Full replacement with gpiod set_values was rejected because reviewed
 driver has no set_multiple callback. Hybrid direction ownership retains current
 atomic latch mechanism, but remains BCM-specific and needs installed-driver and
 physical acceptance. No deployed behavior changes are included.
+
+Implementation ruling: exclusive AS_IS reservation precedes MMIO mapping and
+one DRAIN preload, then kernel OUTPUT/HIGH reconfiguration and readback.
+Supported profile intentionally covers only the verified legacy BCM gpiomem
+DT binding and fails closed for absent/ambiguous sysfs mapping. The parentless
+gpiomem class node is bound through its class dev number and unique
+rpi-gpiomem platform instance. No installed-platform support is asserted.

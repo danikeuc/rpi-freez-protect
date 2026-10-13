@@ -429,6 +429,33 @@ firmware upload, service activation or mains connection is included.
 
 ### GPIO_SHARED_FSEL2_COEXISTENCE — known activation blocker
 
-Whole-branch source review found a configuration race: current paired mmap configure/startup/restart reads then writes a full FSEL2 snapshot (`deployment/node-red/paired_gpio_daemon.py:65–70`), shared by GPIO20/21/26. Candidate gpiod21 request/release and uncoordinated kernel cleanup can overlap it (`src/freeze_protect/lighting/executor.py:391–401,412–419`). The electrical manifestation remains unmeasured; fixed per-line API ownership is not whole-system physical isolation.
+**Activation remains blocked with the installed legacy paired mmap daemon.**
+GPIO20/21/26 share FSEL2; the legacy configure path can overwrite a concurrent
+kernel GPIO21 update using its stale register snapshot. The separately
+authorized repair now removes userspace FSEL access from candidate source:
+exclusive kernel reservation/configuration for GPIO26/20 surrounds restricted
+single-mask GPSET0/GPCLR0 writes and readback. See the
+[ownership migration runbook](operations/paired-gpio-migration.md) for exact profile, interpreter,
+dependency, device mapping, lifecycle and rollback requirements.
 
-Do not enable the candidate GPIO21 executor with this current paired backend, create `/etc/independent-light/commissioned`, or set `LIGHT_GPIO21_ENABLED=commissioned` while this gate is open. A separately reviewed architecture must remove uncoordinated shared-register updates and pass startup/restart/request/release/crash regressions and physical acceptance while preserving paired atomic output/lease behavior. Initial ordering and a userspace lock alone cannot cover kernel cleanup. The candidate remains disabled source delivery and **not installable/enablable** pending this blocker plus the existing hardware/Protect gates. Final scoped software review of the last fixes is pending; installed Pi/Dial records remain unchanged.
+This is a source repair, not an installed migration or physical acceptance.
+Keep lighting templates, flow and gateway disabled. Do not create
+/etc/independent-light/commissioned, set LIGHT_GPIO21_ENABLED=commissioned or
+grant light DeviceAllow until exact installed paired migration plus disconnected
+startup/request/release/crash acceptance is recorded. Kernel-only configuration
+resolves the source FSEL writer race; it does not establish atomic initial
+direction changes, crash protection, physical independence or valve position.
+The current installed Pi/Dial records and all lamp/wiring/Protect gates remain.
+Initial ordering or a userspace lock alone cannot repair the legacy writer.
+
+### Paired GPIO source repair - 2026-10-13
+
+The owner authorized this narrow architecture repair. Candidate source now
+holds an exclusive libgpiod request before raw mapping, preloads paired DRAIN,
+uses kernel output configuration and retains fixed paired latch writes until
+unmapping. Unknown platform/chip/profile/metadata or busy lines fails closed.
+The existing installed unit still uses /usr/bin/python3; new dependency/config
+and an explicit reviewed interpreter override are required before migration.
+Disabled candidate examples are supplied; existing activation assets are not
+installed or enabled. Verification is recorded in
+[repair evidence](evidence/2026-10-13-gpio-coexistence-fix.md).
