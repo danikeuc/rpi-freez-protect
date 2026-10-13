@@ -23,6 +23,8 @@ def create_app(
     executor: Output | None = None,
     allowed_sources: set[str] | None = None,
     clock: Clock | None = None,
+    *,
+    provision_new_database: bool = False,
 ) -> FastAPI:
     tokens = {
         "display": display_token,
@@ -48,6 +50,7 @@ def create_app(
             allowed_sources or set(),
             clock,
             configured,
+            provision_new_database,
         )
         app.state.light_controller = controller
 

@@ -15,7 +15,14 @@ def bearer(token):
 def test_roles_strict_dtos_and_unconfigured_refusal(tmp_path):
     clock, output = Clock(), Output()
     app = create_app(
-        tmp_path / "api.db", DISPLAY, SETTINGS, CAMERA, output, {"camera-1"}, clock
+        tmp_path / "api.db",
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
     )
     with TestClient(app) as client:
         prefix = "/api/v1/lights"
@@ -73,7 +80,14 @@ def test_roles_strict_dtos_and_unconfigured_refusal(tmp_path):
             == 413
         )
     app = create_app(
-        tmp_path / "disabled.db", DISPLAY, DISPLAY, CAMERA, output, {"camera-1"}, clock
+        tmp_path / "disabled.db",
+        DISPLAY,
+        DISPLAY,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
     )
     with TestClient(app) as client:
         s = client.get(prefix + "/status", headers=bearer(DISPLAY)).json()
@@ -93,7 +107,14 @@ def test_lifespan_worker_expires_without_any_http_mutation(tmp_path):
     clock = Clock()
     output = Output()
     app = create_app(
-        tmp_path / "worker.db", DISPLAY, SETTINGS, CAMERA, output, {"camera-1"}, clock
+        tmp_path / "worker.db",
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
     )
     with TestClient(app) as client:
         s = client.get("/api/v1/lights/status", headers=bearer(DISPLAY)).json()
@@ -117,7 +138,14 @@ def test_lifespan_worker_expires_without_any_http_mutation(tmp_path):
 def test_camera_role_timestamp_replay_and_settings_contract(tmp_path):
     clock, output = Clock(), Output()
     app = create_app(
-        tmp_path / "camera.db", DISPLAY, SETTINGS, CAMERA, output, {"camera-1"}, clock
+        tmp_path / "camera.db",
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
     )
     with TestClient(app) as client:
         prefix = "/api/v1/lights"
@@ -182,3 +210,141 @@ def test_camera_role_timestamp_replay_and_settings_contract(tmp_path):
                 ).status_code
                 == 422
             )
+
+
+def test_uncertain_action_retry_preserves_http_503(tmp_path, monkeypatch):
+    import sqlite3
+
+    clock, output = Clock(), Output()
+    app = create_app(
+        tmp_path / "uncertain-action.db",
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
+    )
+    with TestClient(app) as client:
+        controller = app.state.light_controller
+        real_save = controller.store.save
+        writes = 0
+
+        def final_commit_fails(*args, **kwargs):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise sqlite3.OperationalError("post-receipt disk failure")
+            return real_save(*args, **kwargs)
+
+        monkeypatch.setattr(controller.store, "save", final_commit_fails)
+        body = {
+            "request_id": "lost-action",
+            "expected_revision": controller.status().revision,
+            "action": "manual_on",
+        }
+        original = client.post(
+            "/api/v1/lights/actions", headers=bearer(DISPLAY), json=body
+        )
+        assert original.status_code == 503 and not output.on
+        begins = output.calls.count("begin")
+        retry = client.post(
+            "/api/v1/lights/actions", headers=bearer(DISPLAY), json=body
+        )
+        assert retry.status_code == 503
+        assert retry.json() == original.json()
+        assert output.calls.count("begin") == begins and not output.on
+
+
+def test_uncertain_event_retry_preserves_http_503(tmp_path, monkeypatch):
+    import sqlite3
+
+    clock, output = Clock(), Output()
+    app = create_app(
+        tmp_path / "uncertain-event.db",
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
+    )
+    with TestClient(app) as client:
+        controller = app.state.light_controller
+        real_save = controller.store.save
+        writes = 0
+
+        def final_commit_fails(*args, **kwargs):
+            nonlocal writes
+            writes += 1
+            if writes == 2:
+                raise sqlite3.OperationalError("post-receipt disk failure")
+            return real_save(*args, **kwargs)
+
+        monkeypatch.setattr(controller.store, "save", final_commit_fails)
+        clock.advance(0.01)
+        body = {
+            "event_id": "lost-event",
+            "source_id": "camera-1",
+            "occurred_at": clock.stamp(),
+        }
+        original = client.post(
+            "/api/v1/lights/events/unifi", headers=bearer(CAMERA), json=body
+        )
+        assert original.status_code == 503 and not output.on
+        begins = output.calls.count("begin")
+        retry = client.post(
+            "/api/v1/lights/events/unifi", headers=bearer(CAMERA), json=body
+        )
+        assert retry.status_code == 503
+        assert retry.json() == original.json()
+        assert output.calls.count("begin") == begins and not output.on
+
+
+def test_factory_default_does_not_recreate_lost_database(tmp_path):
+    clock, output = Clock(), Output()
+    path = tmp_path / "missing.db"
+    app = create_app(path, DISPLAY, SETTINGS, CAMERA, output, {"camera-1"}, clock)
+    with TestClient(app) as client:
+        state = client.get("/api/v1/lights/status", headers=bearer(DISPLAY)).json()
+        assert state["health"] == "UNAVAILABLE" and not path.exists()
+        result = client.post(
+            "/api/v1/lights/actions",
+            headers=bearer(DISPLAY),
+            json={
+                "request_id": "missing-store",
+                "expected_revision": state["revision"],
+                "action": "manual_on",
+            },
+        )
+        assert result.status_code == 503 and not output.on
+
+
+def test_one_shot_provisioning_creates_database_without_starting_runtime(
+    tmp_path, monkeypatch
+):
+    import pytest
+
+    from freeze_protect.lighting.main import run
+    from freeze_protect.lighting.store import LightStore
+
+    path = tmp_path / "provisioned.db"
+    monkeypatch.setenv("LIGHT_DB_PATH", str(path))
+    monkeypatch.setenv("LIGHT_EXECUTOR_SOCKET", "/unused/socket")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("provisioning must not start controller/executor/server")
+
+    monkeypatch.setattr("freeze_protect.lighting.main.create_app", forbidden)
+    monkeypatch.setattr("freeze_protect.lighting.main.ExecutorClient", forbidden)
+    monkeypatch.setattr("freeze_protect.lighting.main.uvicorn.run", forbidden)
+    run(["--provision-new-db"])
+    store = LightStore(path)
+    try:
+        assert store.load_revision() == 0 and store.load().revision == 0
+    finally:
+        store.close()
+    with pytest.raises(FileExistsError):
+        run(["--provision-new-db"])

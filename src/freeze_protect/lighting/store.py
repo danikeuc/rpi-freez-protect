@@ -1,22 +1,32 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .models import DurableState
+from .models import MAX_REVISION, DurableState
 
 
 class LightStore:
     """One separately owned SQLite database, short synchronous durable commits."""
 
     def __init__(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(path, check_same_thread=False, timeout=0.25)
+        if not path.is_file():
+            raise OSError("lighting database requires explicit provisioning")
+        self.connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=rw",
+            uri=True,
+            check_same_thread=False,
+            timeout=0.25,
+        )
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA synchronous=FULL")
         self.connection.executescript("""
+            CREATE TABLE IF NOT EXISTS revision_fence (
+                id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL,
+                settings_revision INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS identities (
                 kind TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL,
@@ -25,6 +35,34 @@ class LightStore:
                 id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, source TEXT NOT NULL,
                 mode TEXT NOT NULL, desired_on INTEGER NOT NULL, reason TEXT NOT NULL);
         """)
+
+    @classmethod
+    def provision(cls, path: Path) -> None:
+        """One-shot creation only. Existing databases are never replaced."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(descriptor)
+        store = cls(path)
+        try:
+            store.save(DurableState(), 0.0)
+        finally:
+            store.close()
+
+    def load_revision(self) -> int:
+        row = self.connection.execute(
+            "SELECT revision FROM revision_fence WHERE id=1"
+        ).fetchone()
+        if row is None or type(row[0]) is not int or not 0 <= row[0] <= MAX_REVISION:
+            raise ValueError("trustworthy revision fence unavailable")
+        return int(row[0])
+
+    def load_settings_revision(self) -> int:
+        row = self.connection.execute(
+            "SELECT settings_revision FROM revision_fence WHERE id=1"
+        ).fetchone()
+        if row is None or type(row[0]) is not int or not 0 <= row[0] <= MAX_REVISION:
+            raise ValueError("trustworthy settings revision fence unavailable")
+        return int(row[0])
 
     def load(self) -> DurableState:
         row = self.connection.execute("SELECT data FROM state WHERE id=1").fetchone()
@@ -45,6 +83,20 @@ class LightStore:
         history: tuple[str, str, str, bool, str] | None = None,
     ) -> None:
         with self.connection:
+            checkpoint = self.connection.execute(
+                "SELECT revision,settings_revision FROM revision_fence WHERE id=1"
+            ).fetchone()
+            if checkpoint and (
+                type(checkpoint[0]) is not int
+                or checkpoint[0] > state.revision
+                or type(checkpoint[1]) is not int
+                or checkpoint[1] > state.settings.revision
+            ):
+                raise ValueError("revision fence rollback")
+            self.connection.execute(
+                "INSERT OR REPLACE INTO revision_fence VALUES (1,?,?)",
+                (state.revision, state.settings.revision),
+            )
             self.connection.execute("DELETE FROM identities WHERE expires < ?", (now,))
             if record:
                 kind, identity, fingerprint, result = record

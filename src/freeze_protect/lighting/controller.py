@@ -52,6 +52,7 @@ class LightController:
         allowed_sources: set[str],
         clock: Clock | None = None,
         configured: bool = True,
+        provision_new_database: bool = False,
     ) -> None:
         self.lock = threading.RLock()
         self.clock = clock or SystemClock()
@@ -68,10 +69,28 @@ class LightController:
         self.executor_generation: str | None = None
         self.last_wall, self.last_mono = self.clock.time(), self.clock.monotonic()
         self.store: LightStore
-        self.state = DurableState()
+        self.state = DurableState(revision=MAX_REVISION)
+        checkpoint_loaded = loaded_state = False
         try:
+            if not database_path.is_file():
+                if not provision_new_database:
+                    self.configured = False
+                    raise OSError("lighting database requires explicit provisioning")
+                LightStore.provision(database_path)
             self.store = LightStore(database_path)
-            self.state = self.store.load()
+            self.state = DurableState(
+                revision=self.store.load_revision(),
+                settings=Settings(revision=self.store.load_settings_revision()),
+            )
+            checkpoint_loaded = True
+            loaded = self.store.load()
+            if (
+                loaded.revision != self.state.revision
+                or loaded.settings.revision != self.state.settings.revision
+            ):
+                raise ValueError("state revision does not match durable fence")
+            self.state = loaded
+            loaded_state = True
             now = self.clock.time()
             if self.state.fault or (
                 self.state.saved_at and now < self.state.saved_at - 5
@@ -92,6 +111,10 @@ class LightController:
             self._off()
             self._save("startup")
         except (OSError, sqlite3.Error, ValueError, OverflowError, LightError):
+            if checkpoint_loaded and not loaded_state:
+                self.state.settings.revision = min(
+                    MAX_REVISION, self.state.settings.revision + 1
+                )
             self._fault("startup_storage_or_executor_fault")
 
     def _stamp(self) -> str:
@@ -182,10 +205,18 @@ class LightController:
     def _lookup(
         self, kind: str, identity: str, fingerprint: str
     ) -> dict[str, Any] | None:
+        if not hasattr(self, "store"):
+            raise OSError("lighting storage unavailable")
         result = self.store.lookup(kind, identity)
         if result:
             if result[0] != fingerprint:
                 raise LightError(409, "identity_reused")
+            recorded_status = result[1].get("status", result[1])
+            if (
+                isinstance(recorded_status, dict)
+                and recorded_status.get("reason") == "intent_unconfirmed"
+            ):
+                raise LightError(503, "light_fault")
             return result[1]
         return None
 
@@ -401,6 +432,8 @@ class LightController:
             raise LightError(422, "history_bounds")
         with self.lock:
             try:
+                if not hasattr(self, "store"):
+                    raise OSError("lighting storage unavailable")
                 return {
                     "items": self.store.history(limit, offset),
                     "limit": limit,

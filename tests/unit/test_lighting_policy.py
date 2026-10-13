@@ -8,7 +8,9 @@ from freeze_protect.lighting.models import Action, Event, SettingsUpdate
 @pytest.fixture
 def rig(tmp_path):
     clock, output = Clock(), Output()
-    controller = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    controller = LightController(
+        tmp_path / "light.db", output, {"camera-1"}, clock, provision_new_database=True
+    )
     return controller, clock, output
 
 
@@ -305,8 +307,9 @@ def test_failed_post_on_commit_preserves_uncertain_id_and_requests_off(
         c.actions(request)
     assert not output.on and c.status().health == "FAULT"
     begins = output.calls.count("begin")
-    retried = c.actions(request)
-    assert retried.health == "FAULT"
+    with pytest.raises(LightError) as retry_error:
+        c.actions(request)
+    assert retry_error.value.code == 503
     assert output.calls.count("begin") == begins
 
 
@@ -353,3 +356,81 @@ def test_revision_exhaustion_never_leaves_desired_on(rig):
     with pytest.raises(LightError):
         action(c, "manual_on")
     assert not c.status().desired_on and not output.on
+
+
+def test_corrupt_state_recovery_never_reuses_captured_control_revision(rig, tmp_path):
+    c, clock, output = rig
+    action(c, "manual_off")
+    old = Action(
+        request_id="captured-unused",
+        expected_revision=c.status().revision,
+        action="timed_on",
+    )
+    with c.store.connection:
+        c.store.connection.execute("UPDATE state SET data='corrupt'")
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    assert restarted.status().health == "FAULT"
+    action(restarted, "auto", "recovery")
+    with pytest.raises(LightError) as error:
+        restarted.actions(old)
+    assert error.value.code == 409
+    assert not output.on
+
+
+def test_missing_revision_watermark_cannot_recover_or_accept_stale_action(
+    rig, tmp_path
+):
+    from freeze_protect.lighting.models import MAX_REVISION
+
+    c, clock, output = rig
+    with c.store.connection:
+        c.store.connection.execute("DELETE FROM revision_fence")
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    assert restarted.status().revision == MAX_REVISION
+    assert restarted.status().health == "FAULT"
+    with pytest.raises(LightError) as error:
+        action(restarted, "auto", "untrusted-recovery")
+    assert error.value.code == 503 and not output.on
+
+
+def test_missing_database_requires_explicit_provisioning(tmp_path):
+    path = tmp_path / "missing.db"
+    clock, output = Clock(), Output()
+    c = LightController(path, output, {"camera-1"}, clock)
+    assert not path.exists() and c.status().health == "UNAVAILABLE"
+    with pytest.raises(LightError) as error:
+        action(c, "manual_on")
+    assert error.value.code == 503 and not output.on
+
+
+def test_corrupt_state_recovery_fences_captured_settings_update(rig, tmp_path):
+    c, clock, output = rig
+    old = SettingsUpdate(
+        request_id="captured-settings",
+        expected_revision=c.settings().revision,
+        hold_seconds=180,
+        manual_seconds=300,
+    )
+    c.update_settings(
+        SettingsUpdate(
+            request_id="first-settings",
+            expected_revision=0,
+            hold_seconds=60,
+            manual_seconds=120,
+        )
+    )
+    current = old.model_copy(
+        update={
+            "request_id": "captured-current-settings",
+            "expected_revision": c.settings().revision,
+        }
+    )
+    with c.store.connection:
+        c.store.connection.execute("UPDATE state SET data='corrupt'")
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    action(restarted, "auto", "recovery")
+    for captured in (old, current):
+        with pytest.raises(LightError) as error:
+            restarted.update_settings(captured)
+        assert error.value.code == 409
+    assert not output.on

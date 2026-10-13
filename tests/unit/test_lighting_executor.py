@@ -127,9 +127,12 @@ def test_socket_fragmented_request_and_client_receipt_validation(tmp_path):
     worker = threading.Thread(target=server.serve, daemon=True)
     worker.start()
     for _ in range(100):
-        if server.path.exists():
+        try:
+            with socket.socket(socket.AF_UNIX) as readiness:
+                readiness.connect(str(server.path))
             break
-        time.sleep(0.005)
+        except (FileNotFoundError, ConnectionRefusedError):
+            time.sleep(0.005)
     try:
         client = ExecutorClient(server.path, clock)
         assert not client.off().gpio21
@@ -360,3 +363,24 @@ def test_duplicate_off_keeps_current_fence_and_old_renew_is_rejected():
     with pytest.raises(ValueError):
         executor.handle(delayed)
     assert not line.on
+
+
+def test_replayed_off_after_on_revokes_pending_begin_fence():
+    clock, line = Clock(), Line()
+    executor = LeaseExecutor(line, clock)
+    off_a = request(clock)
+    first = executor.handle(off_a)
+    pending_b = request(
+        clock, "ON", "begin", generation=first.generation, fence_id=first.fence_id
+    )
+    executor.handle(
+        request(
+            clock, "ON", "begin", generation=first.generation, fence_id=first.fence_id
+        )
+    )
+    replayed = executor.handle(off_a)
+    assert not line.on
+    with pytest.raises(ValueError):
+        executor.handle(pending_b)
+    assert not line.on
+    assert replayed.fence_id != first.fence_id

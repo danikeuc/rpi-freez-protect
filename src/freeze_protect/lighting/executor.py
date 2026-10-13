@@ -115,12 +115,14 @@ class LeaseExecutor:
         self.armed = False
         self.seen: dict[str, float] = {}
         self.off_requests: dict[str, str] = {}
+        self.last_off_request_id: str | None = None
         self.last_wall, self.last_mono = self.clock.time(), self.clock.monotonic()
         self._off()
 
     def _off(self) -> None:
         # Revoke FIRST: a failed write/ack cannot leave an eligible renewal.
         self.lease_id, self.until, self.armed, self.fence_id = None, 0.0, False, None
+        self.last_off_request_id = None
         self.line.set(False)
         if self.line.get():
             raise OSError("OFF readback mismatch")
@@ -140,6 +142,7 @@ class LeaseExecutor:
         self.tick()
         now = self.clock.time() * 1000
         prior_fence = self.fence_id
+        adjacent_off = self.last_off_request_id == request.request_id
         if request.command == "OFF":
             self._off()
         try:
@@ -166,10 +169,13 @@ class LeaseExecutor:
             self.seen[request.request_id] = mono + 10
             if request.command == "OFF":
                 self.fence_id = (
-                    prior_fence if duplicate_off and prior_fence else uuid.uuid4().hex
+                    prior_fence
+                    if duplicate_off and adjacent_off and prior_fence
+                    else uuid.uuid4().hex
                 )
                 self.off_requests[request.request_id] = request.model_dump_json()
                 self.armed = True
+                self.last_off_request_id = request.request_id
             else:
                 if (
                     request.generation != self.generation
@@ -186,6 +192,7 @@ class LeaseExecutor:
                         raise ValueError("expired or unknown lease")
                 else:
                     self.lease_id = uuid.uuid4().hex
+                self.last_off_request_id = None
                 self.until = mono + self.MAX_LEASE_SECONDS
                 self.line.set(True)
                 if not self.line.get():
