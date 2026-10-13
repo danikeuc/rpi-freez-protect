@@ -53,3 +53,9 @@ Official references:
 [endpoint security](https://nodered.org/docs/user-guide/runtime/securing-node-red),
 [message contract](https://nodered.org/docs/user-guide/messages),
 [Function lifecycle/cleanup](https://nodered.org/docs/user-guide/writing-functions).
+
+## GPIO_SHARED_FSEL2_COEXISTENCE — activation blocked
+
+Do not enable the candidate GPIO21 executor alongside the current mmap paired daemon. GPIO20/21/26 share FSEL2; the paired configure path reads/writes a whole-register snapshot while gpiod21 request/release or kernel cleanup can update the same register. Source: [paired configure](../../deployment/node-red/paired_gpio_daemon.py#L65), [gpiod request/release](../../src/freeze_protect/lighting/executor.py#L391). Per-line API requests do not synchronize that legacy writer or prove whole-system physical isolation.
+
+Keep flow/gateway/templates disabled and do not create `/etc/independent-light/commissioned` or set `LIGHT_GPIO21_ENABLED=commissioned` until separately reviewed architecture removes the uncoordinated shared-register updates and records regression/physical acceptance, including later paired restarts and executor request/release/crash cleanup. Initial service ordering or a userspace lock alone does not close the blocker. Preserve paired atomic output and lease behavior in any future backend review; no paired rewrite is part of this candidate. The [canonical blocker](../superpowers/specs/2026-10-12-independent-lighting-design.md#gpio_shared_fsel2_coexistence) and [activation instructions](../../deployment/lighting/README.md#gpio_shared_fsel2_coexistence) apply before any live commissioning.

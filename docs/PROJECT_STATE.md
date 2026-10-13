@@ -426,3 +426,9 @@ The installed Pi 1.3.1 and Dial v1.3.0-shower.3 records remain unchanged.
 Actual Protect version/authenticated POST/event identity, board/driver rating
 and power/reset behavior remain commissioning prerequisites. No new release,
 firmware upload, service activation or mains connection is included.
+
+### GPIO_SHARED_FSEL2_COEXISTENCE — known activation blocker
+
+Whole-branch source review found a configuration race: current paired mmap configure/startup/restart reads then writes a full FSEL2 snapshot (`deployment/node-red/paired_gpio_daemon.py:65–70`), shared by GPIO20/21/26. Candidate gpiod21 request/release and uncoordinated kernel cleanup can overlap it (`src/freeze_protect/lighting/executor.py:391–401,412–419`). The electrical manifestation remains unmeasured; fixed per-line API ownership is not whole-system physical isolation.
+
+Do not enable the candidate GPIO21 executor with this current paired backend, create `/etc/independent-light/commissioned`, or set `LIGHT_GPIO21_ENABLED=commissioned` while this gate is open. A separately reviewed architecture must remove uncoordinated shared-register updates and pass startup/restart/request/release/crash regressions and physical acceptance while preserving paired atomic output/lease behavior. Initial ordering and a userspace lock alone cannot cover kernel cleanup. The candidate remains disabled source delivery and **not installable/enablable** pending this blocker plus the existing hardware/Protect gates. Final scoped software review of the last fixes is pending; installed Pi/Dial records remain unchanged.

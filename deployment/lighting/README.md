@@ -20,8 +20,9 @@ They have no shower dependencies and cannot restart shower services.
 Dedicated independent-light account/DB/socket/environment files are required.
 Controller PrivateDevices=true prevents device access. Executor DevicePolicy=closed
 has no DeviceAllow: a reviewed override must permit only the verified gpiochip.
-Kernel gpiochip permissions do not isolate individual lines; the executor code's
-fixed GPIO21 interface does. Both processes share the account because socket mode 0600
+Kernel gpiochip permissions do not isolate individual lines. The executor's
+fixed GPIO21 API limits its requested line; it does not establish whole-system
+configuration or physical isolation. Both processes share the account because socket mode 0600
 is the trust boundary. Runtime directory mode 0700 must exist before controller start.
 RuntimeDirectoryPreserve=restart preserves sockets; an existing socket refuses
 startup, requiring verified OFF/recovery before removing a stale socket.
@@ -46,6 +47,14 @@ that setting would falsely imply supervision or cause a restart loop. Controller
 renews executor's 3 second lease every 0.25 seconds. Executor hang/crash line release,
 reset before software ownership and separate power restoration need hardware
 proof; unit restart/stop budgets are not contact-release guarantees.
+
+### GPIO_SHARED_FSEL2_COEXISTENCE
+
+**Do not enable the candidate GPIO21 executor alongside the current paired mmap daemon.** GPIO20,21,26 share FSEL2. The existing paired daemon reads the complete register and later writes a modified snapshot during configure/startup/restart (`deployment/node-red/paired_gpio_daemon.py:65–70`). The new gpiod line21 request/release (`src/freeze_protect/lighting/executor.py:391–401,412–419`) can overlap that uncoordinated writer, including kernel cleanup after close/crash. A stale snapshot can restore another line's prior function. This is a source-level configuration race; its electrical manifestation has not been measured.
+
+The fixed line21 API limits what the new code requests; it does not establish whole-system physical/configuration isolation. Initial service ordering cannot cover later restarts or crash release, and a userspace lock alone cannot coordinate unmodified kernel cleanup. Activation is blocked until a separately reviewed architecture eliminates uncoordinated shared-register updates and regression plus physical acceptance evidence covers startup/restart/request/release/crash behavior while preserving paired atomic output and lease behavior. No paired backend replacement is included in this candidate.
+
+Keep the service templates, flow and gateway disabled. Do not create `/etc/independent-light/commissioned`, set `LIGHT_GPIO21_ENABLED=commissioned`, or grant the executor DeviceAllow while this blocker is open. Ordinary lamp/wiring/profile gates remain additional prerequisites; they do not replace this known architecture blocker.
 
 ## Explicit profile and exact contract
 

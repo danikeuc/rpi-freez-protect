@@ -1,5 +1,9 @@
 [Unit]
 Description=Independent lighting GPIO21 lease executor
+# GPIO_SHARED_FSEL2_COEXISTENCE: do not create this marker or enable the
+# candidate executor with the current paired mmap daemon. Separate reviewed
+# architecture plus regression/physical evidence must close the FSEL2 race.
+# Startup ordering/userspace locking alone cannot coordinate kernel cleanup.
 ConditionPathExists=/etc/independent-light/commissioned
 StartLimitIntervalSec=60
 StartLimitBurst=3

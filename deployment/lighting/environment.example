@@ -5,7 +5,12 @@ LIGHT_SETTINGS_TOKEN=
 LIGHT_CAMERA_TOKEN=
 LIGHT_ALLOWED_SOURCES=
 LIGHT_EXECUTOR_SOCKET=/run/independent-light/executor.sock
-# Only explicit commissioning enables ingress or hardware.
+# GPIO_SHARED_FSEL2_COEXISTENCE is an open activation blocker.
+# Do not set LIGHT_GPIO21_ENABLED=commissioned or create the service marker
+# with the current paired mmap daemon. Separate architecture review must
+# eliminate uncoordinated FSEL2 updates and record regression/physical evidence.
+# Initial ordering/userspace locking alone do not cover kernel cleanup.
+# Only commissioning AFTER that blocker is closed enables ingress or hardware.
 LIGHT_UNIFI_ENABLED=
 LIGHT_UNIFI_INGRESS_TOKEN=
 LIGHT_UNIFI_PROFILE=

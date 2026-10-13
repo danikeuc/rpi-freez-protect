@@ -229,6 +229,14 @@ mode change races; wall-clock jump/reboot during manual override; stale UI badge
 settings save not extending deadlines; history reads causing zero writes; every
 fault row above; zero GPIO26/20 touches from the lighting subsystem.
 
+### GPIO_SHARED_FSEL2_COEXISTENCE
+
+**Do not enable the candidate GPIO21 executor alongside the current paired mmap daemon.** GPIO20,21,26 share FSEL2. The existing paired daemon reads the complete register and later writes a modified snapshot during configure/startup/restart (`deployment/node-red/paired_gpio_daemon.py:65–70`). The new gpiod line21 request/release (`src/freeze_protect/lighting/executor.py:391–401,412–419`) can overlap that uncoordinated writer, including kernel cleanup after close/crash. A stale snapshot can restore another line's prior function. This is a source-level configuration race; its electrical manifestation has not been measured.
+
+The fixed line21 API limits what the new code requests; it does not establish whole-system physical/configuration isolation. Initial service ordering cannot cover later restarts or crash release, and a userspace lock alone cannot coordinate unmodified kernel cleanup. Activation is blocked until a separately reviewed architecture eliminates uncoordinated shared-register updates and regression plus physical acceptance evidence covers startup/restart/request/release/crash behavior while preserving paired atomic output and lease behavior. No paired backend replacement is included in this candidate.
+
+Keep the service templates, flow and gateway disabled. Do not create `/etc/independent-light/commissioned`, set `LIGHT_GPIO21_ENABLED=commissioned`, or grant the executor DeviceAllow while this blocker is open. Ordinary lamp/wiring/profile gates remain additional prerequisites; they do not replace this known architecture blocker.
+
 Before commissioning or enabling real inputs, resolve:
 
 1. Verify the actual lamp/driver label against the reported 220 V / maximum 20 W
@@ -237,7 +245,10 @@ Before commissioning or enabling real inputs, resolve:
 2. Actual Protect version and sanitized POST/auth/retry/event identity sample.
 3. Exact Node-RED/Node.js versions, relevant palette, Projects status and active
    flow/settings paths; repository flow is not runtime inventory.
-4. Verify the selected libgpiod line-21 backend, OFF-before-ownership behavior,
+4. Close **GPIO_SHARED_FSEL2_COEXISTENCE** through separate architecture review and
+   recorded regression/physical acceptance; the current mmap paired daemon and
+   candidate gpiod21 executor must not be enabled together.
+5. Verify the selected libgpiod line-21 backend, OFF-before-ownership behavior,
    executor crash protection and measured lease/supervisor response bounds.
    Fake-I/O tests of the three-second software lease do not close this gate.
 
