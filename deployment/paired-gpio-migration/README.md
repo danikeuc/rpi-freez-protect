@@ -24,6 +24,18 @@ without symlinks or group/world write permissions. The package directory is0700.
 filenames. README and manifest itself are covered by outer SHA256SUMS. The
 manifest cannot choose install destinations or add executable files.
 
+The bundle's `hub.service` must be copied byte-for-byte from this directory's
+tracked `hub-baseline.service`. Its source is
+`d0dfeac61856e0ff716e700348be61709dc68505:deployment/systemd/freeze-protect.service`,
+SHA256 `9b5efc26fbee6fdfbb9d50bc1895470c046e667e2e28618134067d801c863718`.
+The prior startup-readiness installer preserved that base unit and added the
+separate `30-node-red-readiness.conf`; the migration preserves both. The current
+repository Hub unit includes its own readiness command and is not the expected
+migration baseline. Packaging must use the historical asset. The actual installed
+base unit and exact readiness dropin still require the trusted-console equality
+checks; this source provenance does not prove their installed identities. The
+baseline asset is comparison material only and is never installed by migration.
+
 The only wheel is
 `gpiod-2.3.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl`,
 SHA256 `7fdc3f63a277f8ae193f0c9b565bbd48e525e94c39cd463acd7b06250bf26507`.

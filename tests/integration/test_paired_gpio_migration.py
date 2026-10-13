@@ -433,3 +433,34 @@ def test_actual_baseline_mismatch_through_execute_does_not_mutate_services(migra
     assert daemon.read_bytes() == b'unexpected installed daemon'
     assert 'BASELINE_DAEMON_CHANGED' in (evidence / 'failure-private.log').read_text()
     assert not (evidence / 'INSTALL_STARTED').exists()
+
+
+
+def test_historical_hub_baseline_and_readiness_are_accepted(migration, monkeypatch, tmp_path):
+    baseline = DIRECTORY / 'hub-baseline.service'
+    assert baseline.is_file(), 'reviewed historical Hub baseline asset is missing'
+    import hashlib
+    assert hashlib.sha256(baseline.read_bytes()).hexdigest() == '9b5efc26fbee6fdfbb9d50bc1895470c046e667e2e28618134067d801c863718'
+    bundle = tmp_path / 'bundle'
+    bundle.mkdir()
+    (bundle / 'hub.service').write_bytes(baseline.read_bytes())
+    live = tmp_path / 'live'
+    live.mkdir()
+    unit = live / 'freeze-protect.service'
+    unit.write_bytes(baseline.read_bytes())
+    dropdir = live / 'freeze-protect.service.d'
+    dropdir.mkdir()
+    ready = dropdir / '30-node-red-readiness.conf'
+    ready.write_bytes((ROOT / 'deployment/startup-readiness/30-node-red-readiness.conf').read_bytes())
+    monkeypatch.setattr(migration, 'HERE', bundle)
+    monkeypatch.setattr(migration.c, 'secure', lambda *a, **kw: None)
+    fields = {'FragmentPath': str(unit), 'DropInPaths': str(ready), 'NeedDaemonReload': 'no'}
+    def run(args, **kwargs):
+        assert args[:3] == ['systemctl', 'show', 'freeze-protect.service']
+        assert args[-1] == '--value'
+        return fields[args[3].removeprefix('--property=')]
+    monkeypatch.setattr(migration.c, 'run', run)
+    migration.unit_check('freeze-protect.service', unit, 'hub.service', [ready])
+    unit.write_bytes((ROOT / 'deployment/systemd/freeze-protect.service').read_bytes())
+    with pytest.raises(RuntimeError, match='UNIT_CHANGED'):
+        migration.unit_check('freeze-protect.service', unit, 'hub.service', [ready])
