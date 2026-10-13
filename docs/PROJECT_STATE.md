@@ -486,3 +486,9 @@ The [two-stage package](evidence/2026-10-13-paired-gpio-migration-package.md)
 is now reviewed and ready for trusted-console prepare. Installer replay and
 partial-cutover findings are closed;815 Python tests/Ruff pass. Both operator
 prepare/install receipts are pending. No installed state or release changes.
+
+Operator prepare attempt stopped before dependency creation/service mutation:
+Hub base-unit bytes differ from the initial package. Historical baseline
+packaging correction327d8b8 is tested and independently reviewed; live unit
+and readiness-dropin identity confirmation is pending before corrected handoff.
+Installed migration is not accepted. See migration package evidence above.

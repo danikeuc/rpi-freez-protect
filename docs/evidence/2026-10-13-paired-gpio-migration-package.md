@@ -87,3 +87,39 @@ Read-only pinctrl get is permitted for the required level observation while
 candidate GPIO ownership and writes are prohibited during prepare (risk if wrong:
 an unexpected tool side effect would violate no-write preparation). The reviewed
 Restart=no migration limitation remains explicitly disclosed before install.
+
+## Operator preparation attempt - awaiting diagnosis
+
+Operator verified outer archive and all listed checksummed package assets, then
+reported PAIRED_MIGRATION_STOPPED phase=prepare with evidence
+/root/paired-gpio-migration.__qcivrj. The generic code does not identify the
+failed guard. Preparation was not accepted and install is not authorized to
+proceed from this failed receipt. No automatic retry or rollback. Prepare
+contains no service replacement; partial isolated dependency files are not
+ruled out until bounded read-only diagnosis. Both loads remain disconnected
+per the current operator confirmation.
+
+Operator bounded diagnostic: migrate.py416/243/136/92 and operator_checks.py31,
+RuntimeError; PREPARED/INSTALL_STARTED/SUCCESS and isolated VENV all false.
+This identifies the Hub base-unit byte comparison in preflight as the failing
+guard. Current packaged hub.service is7ba8f1d0a42eea506325b11c2457e07191dc4978c8618358fe76919fd12a9469.
+Historical baseline atd0dfeac and52c0815 is9b5efc26fbee6fdfbb9d50bc1895470c046e667e2e28618134067d801c863718.
+The installed startup-readiness updater preserved the base and added the
+30-node-red-readiness.conf dropin, so selecting current inline-readiness source
+for the package baseline was inappropriate. Live unit/dropin hashes and
+effective paths are requested to confirm the exact target combination before
+issuing a corrected package. The exact byte guard remains in force; no live
+unit replacement or validation bypass is proposed.
+
+Correction327d8b8cb7cce256a824513bab032d6683f9cfff adds a tracked historical
+Hub baseline and packaging provenance; runtime guards remain unchanged.
+Independent scoped review independently matched git source bytes and approved
+the correction. Tests38 focused/816 full/110 commissioning and Ruff pass, with
+the existing Starlette warning. One initial documentation-link test failed
+because a scratch quoted diff had Markdown extension; renaming it to.txt
+resolved that artifact-only failure before the final full gate.
+
+Corrected v2 archive staged locally (not issued to operator):
+paired-gpio-migration-20261013-v2.tar.gz; SHA256f4c87e6439650f80c02b2d1b17c76661c5e3d74bbf7c672eab28edadc9883513; 125765bytes.
+Exact11 manifest entries,14 safe regular archive members and all staged bytes
+verified. Await live unit/dropin hashes and effective paths before handoff.
