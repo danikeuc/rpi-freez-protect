@@ -434,3 +434,32 @@ def test_corrupt_state_recovery_fences_captured_settings_update(rig, tmp_path):
             restarted.update_settings(captured)
         assert error.value.code == 409
     assert not output.on
+
+
+@pytest.mark.parametrize("corruption", ["missing", "control", "settings"])
+def test_untrusted_revision_watermark_rejects_captured_settings_without_change(
+    rig, tmp_path, corruption
+):
+    c, clock, output = rig
+    old = SettingsUpdate(
+        request_id="captured-settings-untrusted",
+        expected_revision=c.settings().revision,
+        hold_seconds=180,
+        manual_seconds=300,
+    )
+    with c.store.connection:
+        if corruption == "missing":
+            c.store.connection.execute("DELETE FROM revision_fence")
+        elif corruption == "control":
+            c.store.connection.execute("UPDATE revision_fence SET revision='malformed'")
+        else:
+            c.store.connection.execute(
+                "UPDATE revision_fence SET settings_revision='malformed'"
+            )
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    before = restarted.settings()
+    with pytest.raises(LightError) as error:
+        restarted.update_settings(old)
+    assert error.value.code in {409, 503}
+    assert restarted.settings() == before
+    assert not output.on

@@ -348,3 +348,44 @@ def test_one_shot_provisioning_creates_database_without_starting_runtime(
         store.close()
     with pytest.raises(FileExistsError):
         run(["--provision-new-db"])
+
+
+def test_missing_watermark_api_rejects_captured_settings_without_change(tmp_path):
+    clock, output = Clock(), Output()
+    path = tmp_path / "untrusted-settings.db"
+    first = create_app(
+        path,
+        DISPLAY,
+        SETTINGS,
+        CAMERA,
+        output,
+        {"camera-1"},
+        clock,
+        provision_new_database=True,
+    )
+    with TestClient(first) as client:
+        settings = client.get(
+            "/api/v1/lights/settings", headers=bearer(SETTINGS)
+        ).json()
+        old = {
+            "request_id": "captured-untrusted-settings",
+            "expected_revision": settings["revision"],
+            "hold_seconds": 180,
+            "manual_seconds": 300,
+        }
+        with first.state.light_controller.store.connection:
+            first.state.light_controller.store.connection.execute(
+                "DELETE FROM revision_fence"
+            )
+    restarted = create_app(path, DISPLAY, SETTINGS, CAMERA, output, {"camera-1"}, clock)
+    with TestClient(restarted) as client:
+        before = client.get("/api/v1/lights/settings", headers=bearer(SETTINGS)).json()
+        result = client.put(
+            "/api/v1/lights/settings", headers=bearer(SETTINGS), json=old
+        )
+        assert result.status_code in {409, 503}
+        assert (
+            client.get("/api/v1/lights/settings", headers=bearer(SETTINGS)).json()
+            == before
+        )
+        assert not output.on

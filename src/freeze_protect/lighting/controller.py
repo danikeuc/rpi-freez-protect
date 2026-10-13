@@ -69,7 +69,9 @@ class LightController:
         self.executor_generation: str | None = None
         self.last_wall, self.last_mono = self.clock.time(), self.clock.monotonic()
         self.store: LightStore
-        self.state = DurableState(revision=MAX_REVISION)
+        self.state = DurableState(
+            revision=MAX_REVISION, settings=Settings(revision=MAX_REVISION)
+        )
         checkpoint_loaded = loaded_state = False
         try:
             if not database_path.is_file():
