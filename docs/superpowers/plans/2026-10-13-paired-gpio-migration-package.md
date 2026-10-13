@@ -14,8 +14,8 @@ trusting old hardcoded manualmode/unit-no-dropin assumptions.
 - [x] RED stage/order/failedreceipt/unknownmetadata/dependency/env-baseline tests.
 - [x] Implement narrow prepare/install and protected evidence; no hardware access here.
 - [x] GREEN fullpytest/Ruff/commissioning110 and changedshsyntax gates.
-- [ ] Independent task and final review, targeted repairs, durable docs/evidence.
-- [ ] Package/hashcheck and serve to operator; actual receipts pending.
+- [x] Independent task and final review, targeted repairs, durable docs/evidence.
+- [x] Package/hashcheck and serve to operator; actual receipts pending.
 
 Review focus: owner lifecycle; stageimport/access permissions; pending requests
 during cutover; mismatched hashes or stale prepare receipt; restore boundaries.

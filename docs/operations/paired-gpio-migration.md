@@ -151,3 +151,16 @@ Reviewed 2026-10-13; these do not identify the installed kernel:
 [libgpiod2.3 Chip](https://libgpiod.readthedocs.io/en/v2.3/python_chip.html),
 [LineRequest](https://libgpiod.readthedocs.io/en/v2.3/python_line_request.html),
 [LineSettings source](https://raw.githubusercontent.com/brgl/libgpiod/v2.3/bindings/python/gpiod/line_settings.py).
+
+## Inventoried two-stage package - 2026-10-13
+
+For the actual Pi4/BCM2711, kernel6.18.39 and Python3.13.5 inventory, use the
+[reviewed trusted-console package](../../deployment/paired-gpio-migration/README.md).
+It pins gpiod2.3.0 in an isolated paired-service venv and canonical gpiochip0.
+Preparation does not replace services; installation is a separate receipt-gated
+step. The concrete override uses Restart=no during disconnected migration;
+automatic paired-process recovery is disabled and operator recovery is required
+after a crash. The generic future template above is not an installation recipe.
+[Package verification](../evidence/2026-10-13-paired-gpio-migration-package.md)
+records815 tests and final review PASS. Actual target preparation/install and
+all subsequent physical/light activation acceptance remain pending.

@@ -53,8 +53,37 @@ in the final full run. No shell script changed.
 
 ## Delivery boundary
 
-Task review is closed; final integration review is pending. No installer package has been
-handed to the operator for execution. No target dependency preparation,
+Task review and [final integration review](2026-10-13-paired-gpio-migration-final-review.md)
+are closed: specification and quality PASS. The reviewed package is ready for
+trusted-console prepare; target execution receipts remain pending. No target dependency preparation,
 service replacement, SUPPLY, GPIO21 activation, firmware flash, release or
 physical acceptance occurred. Actual prepare/install receipts and subsequent
 separately authorized disconnected-load acceptance remain mandatory.
+
+## Package and controller disposition
+
+Artifact: paired-gpio-migration-20261013.tar.gz,125443 bytes,14 regular members.
+SHA256:afd651cd13d8b088a5dea31e427ee9844062981ef52a436e49b7d79f27e2b45a.
+Runtime manifest contains exactly11 fixed filenames and their hashes; outer
+SHA256SUMS also covers README and manifest. Text assets use LF. Archive member
+names/type and bytes match the staged files; HTTP download returned200 and the
+same exact hash. Delivery server binds workstation LAN192.168.111.30:8780,
+serves only this exact filename and has no directory listing or timed expiry.
+The workstation must remain running. No firewall or Pi access permissions changed.
+Installer source01d65ff; paired daemon source44091d6 (SHAef96336ec9fd299459adb4bc751aac4ef5bf7f992fb0757886e496851c73b51f).
+
+Controller disposition of final review exclusions: actual runtime, installation,
+rollback and physical/fault acceptance remain required operator gates. Archive
+identity is separately verified above. Unrelated lighting/Protect/Dial behavior
+retains its prior evidence and disabled-activation boundary. Unsupported profiles
+and privileged competing writers remain excluded from this narrow support
+contract. Existing final test evidence is sufficient; no additional broad suite
+or physical test is inferred. The two P3 follow-ups (bounded diagnostics and
+existing dependency warning) are tracked, not silently treated as fixed.
+
+Decisions: an isolated pinned environment preserves Hub dependencies (risk if
+wrong: service interpreter compatibility/access must fail the metadata gate).
+Read-only pinctrl get is permitted for the required level observation while
+candidate GPIO ownership and writes are prohibited during prepare (risk if wrong:
+an unexpected tool side effect would violate no-write preparation). The reviewed
+Restart=no migration limitation remains explicitly disclosed before install.

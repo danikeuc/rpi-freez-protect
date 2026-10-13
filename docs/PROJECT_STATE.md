@@ -481,3 +481,8 @@ Python3.13.5 has no gpiod in either existing interpreter. An exact gpiod2.3.0
 ARM64 wheel is verified for an isolated service environment. The two-stage
 migration installer is in preparation; there is no new installed version or
 live hardware acceptance. See [preflight evidence](evidence/2026-10-13-gpio-migration-preflight.md).
+
+The [two-stage package](evidence/2026-10-13-paired-gpio-migration-package.md)
+is now reviewed and ready for trusted-console prepare. Installer replay and
+partial-cutover findings are closed;815 Python tests/Ruff pass. Both operator
+prepare/install receipts are pending. No installed state or release changes.
