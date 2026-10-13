@@ -459,3 +459,14 @@ and an explicit reviewed interpreter override are required before migration.
 Disabled candidate examples are supplied; existing activation assets are not
 installed or enabled. Verification is recorded in
 [repair evidence](evidence/2026-10-13-gpio-coexistence-fix.md).
+
+### GPIO coexistence repair review closure — 2026-10-13
+
+Pi source44091d6 and Dial operational documentation70bc5b5 completed the
+independent task and final integration reviews. GPIO-REVIEW-01 (GPIO bus
+metadata topology) is closed;778 software tests and Ruff pass. See the
+[final review](evidence/2026-10-13-gpio-coexistence-final-review.md).
+The source-level FSEL writer race is repaired. The installed legacy daemon
+remains an activation blocker until the reviewed migration and physical
+acceptance in the [runbook](operations/paired-gpio-migration.md) are complete.
+This record does not change installed versions or authorize activation.

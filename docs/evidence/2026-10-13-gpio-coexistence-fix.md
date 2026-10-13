@@ -62,14 +62,14 @@ four fault domains remain unverified as detailed in the migration runbook.
 Actual Protect profile/authentication, lamp/contact/board suitability and
 on-device Dial acceptance remain separate requirements.
 
-## Final verification
+## Initial implementation verification
 
 After the two documented fixes: python -m pytest -q passed **770 tests** in
 16.04 seconds. One existing Starlette/httpx deprecation warning remains.
 python -m ruff check . and git diff --check passed. Strict mypy and package build
 passed before the final documentation-only correction; no Python behavior or
 package metadata changed afterwards. No deployment, hardware or firmware tests
-were run. Independent review of this exact repair is the next gate.
+were run. Independent review followed this initial verification; its correction and final disposition are recorded below.
 
 ## Task review correction: GPIO-REVIEW-01
 
@@ -83,3 +83,27 @@ Focused checks:60 passed. Required full suite:778 passed, one existing
 Starlette/httpx warning,17.07 seconds. Ruff and whitespace checks passed.
 No dependencies/package or typed src modules changed in this correction;
 build/mypy were not repeated. Physical and installed migration gates remain.
+
+## Final review and delivery disposition
+
+Implementation commit:9088c0ce027e3876fe8deb8ab83898d7f4c09827.
+Reviewed correction:44091d627fffe72f9840092996e6e1421251260f.
+Companion Dial documentation:70bc5b5bebafd69ab2222178d269ba17dd991c9d.
+Task scoped re-review closed GPIO-REVIEW-01; independent final integration
+review passed specification, quality and integration with no remaining
+actionable findings. [Durable final review](2026-10-13-gpio-coexistence-final-review.md).
+Final code checks remain778 pytest and Ruff PASS, with the existing Starlette
+warning; typed-src mypy34, package build and commissioning110 checks above
+remain applicable. Final reconciliation changes documentation only.
+
+Controller disposition of declined-to-judge items: installed inventory and
+migration, electrical/physical/fault-domain/live recovery, actual Protect and
+Dial acceptance remain mandatory pre-activation gates, not waived tests.
+Unsupported platforms/privileged competing writers remain outside the supported
+profile; no universal isolation claim is made. Unchanged unrelated product
+behavior and optional repeated suites are not reopened for this source repair.
+Prior primary-source notes used by the final reviewer are corroborated by the
+controller's direct retrieval of the official gpiomem and libgpiod sources.
+
+No hardware, installation, service activation, push, merge or release occurred.
+Both development worktrees are retained for the subsequent installation work.

@@ -28,18 +28,18 @@ optional GPIO dependency; reviewed disabled migration unit/config example under
 deployment/lighting; current lighting spec/runbook/README/evidence/PROJECT_STATE;
 companion Dial operations lighting doc only (no firmware change).
 
-- [ ] Write failing regression reproducing old FSEL lost update and requiring
+- [x] Write failing regression reproducing old FSEL lost update and requiring
   kernel-owned direction path, preserved single-mask command traces and line21
   untouched under fake concurrent kernel request/release. Test lifecycle and
   partial failures, mapping/config/unsupported rejection before writes, no fallback.
-- [ ] Run RED, implement minimal kernel ownership plus guarded register backend.
+- [x] Run RED, implement minimal kernel ownership plus guarded register backend.
   Keep real paired lease/socket regression fixtures; do not duplicate policy.
-- [ ] Verify targeted GREEN, full pytest and Ruff required by AGENTS; mypy/build
+- [x] Verify targeted GREEN, full pytest and Ruff required by AGENTS; mypy/build
   where changed package metadata requires it. No actual GPIO or fake hardware claims.
-- [ ] Add explicit migration/runbook with installed-old versus source-new distinction,
+- [x] Add explicit migration/runbook with installed-old versus source-new distinction,
   dependency/interpreter/config/device requirements, disconnected-load acceptance,
   all four fault-domain limits and rollback requiring light disabled first.
-- [ ] Commit and independent task/whole-change review; fix findings and scoped
+- [x] Commit and independent task/whole-change review; fix findings and scoped
   re-review. Reconcile docs but retain physical and actual Protect acceptance gates.
 
 ## Decisions
