@@ -492,3 +492,8 @@ Hub base-unit bytes differ from the initial package. Historical baseline
 packaging correction327d8b8 is tested and independently reviewed; live unit
 and readiness-dropin identity confirmation is pending before corrected handoff.
 Installed migration is not accepted. See migration package evidence above.
+
+Operator confirmed the historical Hub base/readiness hashes and exact effective
+paths with NeedDaemonReload=no. Corrected v2 package matches those identities
+and its HTTP hash is verified; old download is retired. New prepare receipt is
+pending. This supersedes the identity-confirmation-pending note above only.

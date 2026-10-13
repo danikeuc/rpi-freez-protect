@@ -123,3 +123,21 @@ Corrected v2 archive staged locally (not issued to operator):
 paired-gpio-migration-20261013-v2.tar.gz; SHA256f4c87e6439650f80c02b2d1b17c76661c5e3d74bbf7c672eab28edadc9883513; 125765bytes.
 Exact11 manifest entries,14 safe regular archive members and all staged bytes
 verified. Await live unit/dropin hashes and effective paths before handoff.
+
+## Live baseline confirmation and corrected handoff
+
+The operator supplied exact Hub baseSHA9b5efc26fbee6fdfbb9d50bc1895470c046e667e2e28618134067d801c863718
+and readinessSHA4287cb21410d3ae8e1b1e02fd7f0216f513ebb788389976fa124a673553face6.
+FragmentPath is the expected /etc/systemd/system/freeze-protect.service;
+DropInPaths is exactly the expected30-node-red-readiness.conf;
+NeedDaemonReload=no. This confirms the historical base-plus-dropin diagnosis.
+Both v2 packaged files were compared against these operator hashes.
+
+Corrected v2 artifact is available on workstation LAN8780. Fresh HTTP download
+returned200,125765 bytes and SHA256f4c87e6439650f80c02b2d1b17c76661c5e3d74bbf7c672eab28edadc9883513.
+The former incorrect package URL and directory listing both return404. Only the
+known workstation download helper was restarted; no Pi service was accessed or
+changed. A new protected package/evidence directory is required for preparation;
+the failed __qcivrj evidence is retained and must not be reused. The observed
+absence of the isolated venv supports a new reviewed preparation after this
+confirmed packaging correction. Actual v2 prepare/install receipts remain pending.
