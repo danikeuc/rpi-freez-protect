@@ -231,24 +231,23 @@ fault row above; zero GPIO26/20 touches from the lighting subsystem.
 
 ### GPIO_SHARED_FSEL2_COEXISTENCE
 
-**Activation remains blocked with the installed legacy paired mmap daemon.**
-GPIO20/21/26 share FSEL2; the legacy configure path can overwrite a concurrent
-kernel GPIO21 update using its stale register snapshot. The separately
-authorized repair now removes userspace FSEL access from candidate source:
-exclusive kernel reservation/configuration for GPIO26/20 surrounds restricted
-single-mask GPSET0/GPCLR0 writes and readback. See the
-[ownership migration runbook](../../operations/paired-gpio-migration.md) for exact profile, interpreter,
-dependency, device mapping, lifecycle and rollback requirements.
+**Installed migration verified on 2026-10-14; lighting acceptance remains open.**
+The exact kernel-ownership daemon and paired dropin are installed on the Pi.
+Restricted SSH confirmed the separate Hub-recovery success marker, all three
+services active and paired output/high readback. See the
+[dated recovery evidence](../../evidence/2026-10-14-device-allow-recovery.md).
 
-This is a source repair, not an installed migration or physical acceptance.
+The legacy userspace FSEL writer is no longer the recorded installed backend.
+The source repair and installed migration close that part of
+GPIO_SHARED_FSEL2_COEXISTENCE. They do not close the disconnected-load
+startup/request/release/crash trace or physical acceptance requirements.
 Keep lighting templates, flow and gateway disabled. Do not create
 /etc/independent-light/commissioned, set LIGHT_GPIO21_ENABLED=commissioned or
-grant light DeviceAllow until exact installed paired migration plus disconnected
-startup/request/release/crash acceptance is recorded. Kernel-only configuration
-resolves the source FSEL writer race; it does not establish atomic initial
-direction changes, crash protection, physical independence or valve position.
-The current installed Pi/Dial records and all lamp/wiring/Protect gates remain.
-Initial ordering or a userspace lock alone cannot repair the legacy writer.
+grant light DeviceAllow until the remaining disconnected acceptance is recorded.
+Kernel-only configuration does not establish atomic initial direction changes,
+crash protection, physical independence or valve position. Actual Protect
+profile, Node-RED runtime and lamp/wiring gates remain open.
+
 
 Before commissioning or enabling real inputs, resolve:
 
@@ -259,8 +258,8 @@ Before commissioning or enabling real inputs, resolve:
 3. Exact Node-RED/Node.js versions, relevant palette, Projects status and active
    flow/settings paths; repository flow is not runtime inventory.
 4. Close **GPIO_SHARED_FSEL2_COEXISTENCE** through separate architecture review and
-   recorded regression/physical acceptance; the installed legacy mmap paired daemon and
-   candidate gpiod21 executor must not be enabled together.
+   recorded regression/physical acceptance; installed migration is verified,
+   disconnected interleaving and physical acceptance remain pending.
 5. Verify the selected libgpiod line-21 backend, OFF-before-ownership behavior,
    executor crash protection and measured lease/supervisor response bounds.
    Fake-I/O tests of the three-second software lease do not close this gate.

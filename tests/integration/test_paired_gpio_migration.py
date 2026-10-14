@@ -464,3 +464,343 @@ def test_historical_hub_baseline_and_readiness_are_accepted(migration, monkeypat
     unit.write_bytes((ROOT / 'deployment/systemd/freeze-protect.service').read_bytes())
     with pytest.raises(RuntimeError, match='UNIT_CHANGED'):
         migration.unit_check('freeze-protect.service', unit, 'hub.service', [ready])
+
+
+@pytest.mark.parametrize('allows', [
+    '/dev/gpiomem rw\n/dev/gpiochip0 rw',
+    '/dev/gpiochip0 rw\n/dev/gpiomem rw',
+])
+def test_effective_device_allow_order_is_not_semantic(migration, monkeypatch, allows):
+    def show(service, field):
+        return {'User': 'nodered', 'Group': 'nodered', 'Restart': 'no',
+                'DevicePolicy': 'closed', 'DeviceAllow': allows,
+                'ExecStart': '{ path=' + str(migration.PAIR_VENV / 'bin/python3') +
+                ' ; argv[]=' + str(migration.PAIR_VENV / 'bin/python3') +
+                ' -I -B ' + str(migration.DEST) + ' ; }'}[field]
+    monkeypatch.setattr(migration, 'show', show)
+    migration.verify_effective_pair()
+
+
+@pytest.mark.parametrize('allows', [
+    '/dev/gpiomem rw', '/dev/gpiochip0 rw',
+    '/dev/gpiomem rw\n/dev/gpiochip0 rwm',
+    '/dev/gpiomem rw\n/dev/gpiochip0 rw\n/dev/mem rw',
+    '/dev/gpiomem rw\n/dev/gpiochip0 rw\n/dev/gpiochip0 rw',
+    '/dev/gpiomem rw /dev/gpiochip0 rw',
+])
+def test_effective_device_allow_rejects_missing_extra_or_changed_permissions(migration, monkeypatch, allows):
+    fields = {'User': 'nodered', 'Group': 'nodered', 'Restart': 'no',
+              'DevicePolicy': 'closed', 'DeviceAllow': allows}
+    monkeypatch.setattr(migration, 'show', lambda service, field: fields[field])
+    with pytest.raises(RuntimeError, match='EFFECTIVE_DEVICE_ALLOW'):
+        migration.verify_effective_pair()
+
+
+@pytest.fixture
+def recovery(migration, monkeypatch, tmp_path):
+    spec = importlib.util.spec_from_file_location('recovery_under_test', DIRECTORY / 'recover_device_allow.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    monkeypatch.setattr(module, 'EVIDENCE', evidence)
+    monkeypatch.setattr(module, 'RECOVERY', evidence / 'device-allow-recovery')
+    monkeypatch.setattr(module, 'secure', lambda p: None)
+    return module
+
+
+def test_recovery_checks_before_start_and_keeps_original_failure(recovery, migration, monkeypatch, capsys):
+    original = recovery.EVIDENCE / 'FAILURE.json'
+    original.write_text('historical failure')
+    calls = []
+    state = {'entries': {}}
+    monkeypatch.setattr(recovery, 'preflight', lambda m: calls.append('preflight') or state)
+    def start(m, s):
+        assert (recovery.RECOVERY / 'STARTED').exists()
+        assert s is state
+        calls.append('start')
+    monkeypatch.setattr(recovery, 'continue_startup', start)
+    monkeypatch.setattr(migration.c, 'digest', lambda p: 'abc')
+    assert recovery.execute(migration) == 0
+    assert calls == ['preflight', 'start']
+    assert original.read_text() == 'historical failure'
+    assert not (recovery.EVIDENCE / 'SUCCESS.json').exists()
+    receipt = json.loads((recovery.RECOVERY / 'SUCCESS.json').read_text())
+    assert receipt['command'] == 'DRAIN' and receipt['lighting'] == 'disabled'
+    with pytest.raises(RuntimeError, match='RECOVERY_ALREADY_ATTEMPTED'):
+        recovery.execute(migration)
+    assert 'PAIRED_RECOVERY_VERIFIED' in capsys.readouterr().out
+
+
+def test_recovery_preflight_failure_does_not_start_or_cleanup_services(recovery, migration, monkeypatch, capsys):
+    def fail(m):
+        raise RuntimeError('PRIVATE_secret')
+    monkeypatch.setattr(recovery, 'preflight', fail)
+    monkeypatch.setattr(migration.c, 'run', lambda *a, **k: pytest.fail('service action'))
+    assert recovery.execute(migration) == 1
+    assert not (recovery.RECOVERY / 'STARTED').exists()
+    assert (recovery.RECOVERY / 'FAILED').exists()
+    assert 'PRIVATE_secret' not in capsys.readouterr().out
+
+
+def test_recovery_drain_failure_never_starts_hub_or_retries_drain(recovery, migration, monkeypatch):
+    calls = []
+    monkeypatch.setattr(recovery, 'preflight', lambda m: {})
+    monkeypatch.setattr(migration.c, 'run', lambda args, **kw: calls.append(args))
+    monkeypatch.setattr(migration, 'wait_pair', lambda: None)
+    monkeypatch.setattr(migration.c, 'stopped', lambda: None)
+    monkeypatch.setattr(migration.c, 'active', lambda s: True)
+    def fail():
+        calls.append(['DRAIN'])
+        migration.c.DRAIN_OR_READBACK_FAILED = True
+        raise RuntimeError('DRAIN_READBACK')
+    monkeypatch.setattr(migration.c, 'drain', fail)
+    assert recovery.execute(migration) == 1
+    assert calls == [['systemctl', 'start', migration.PAIR], ['DRAIN'],
+                     ['systemctl', 'stop', migration.c.HUB]]
+    assert not (recovery.RECOVERY / 'SUCCESS.json').exists()
+
+
+def test_recovery_startup_verifies_pair_before_hub_and_preserves_data(recovery, migration, monkeypatch):
+    calls = []
+    def mark(name):
+        return lambda *a, **k: calls.append(name)
+    monkeypatch.setattr(migration.c, 'run', lambda args, **kw: calls.append(' '.join(args)))
+    for name in ('wait_pair', 'verify_running', 'preserved', 'live_environment'):
+        monkeypatch.setattr(migration, name, mark(name))
+    for name in ('drain', 'status', 'pair_high', 'flow'):
+        monkeypatch.setattr(migration.c, name, mark(name))
+    monkeypatch.setattr(migration.c, 'active', lambda s: True)
+    recovery.continue_startup(migration, {'entries': {}})
+    assert calls == ['systemctl start freeze-protect-pair-gpio.service', 'wait_pair',
+        'drain', 'verify_running', 'preserved', 'systemctl start freeze-protect.service',
+        'status', 'live_environment', 'pair_high', 'flow', 'verify_running', 'preserved']
+
+
+@pytest.mark.parametrize('change', ['host', 'venv', 'bundle', 'failure', 'success'])
+def test_recovery_rejects_changed_preparation_or_different_failure(recovery, migration, monkeypatch, change):
+    prepared = {'bundle': {}, 'host': {'boot': 'same'}, 'venv': {'file': 'sha'},
+                'daemon_before': migration.OLD, 'unit_before': migration.UNIT_SHA,
+                'readiness_before': 'sha', 'source_head': migration.BASE}
+    original = json.loads(json.dumps(prepared))
+    if change in ('host', 'venv', 'bundle'):
+        prepared[change] = {'changed': True}
+    (recovery.EVIDENCE / 'PREPARED.json').write_text(json.dumps(prepared))
+    (recovery.EVIDENCE / 'FAILURE.json').write_text(json.dumps({'phase': 'install', 'code': 'STOP_INSPECT_PRIVATE_EVIDENCE'}))
+    (recovery.EVIDENCE / 'failure-private.log').write_text('RuntimeError: ' +
+        ('OTHER_FAILURE' if change == 'failure' else 'EFFECTIVE_DEVICE_ALLOW') + '\n')
+    (recovery.EVIDENCE / 'INSTALL_STARTED').write_text('started')
+    if change == 'success':
+        (recovery.EVIDENCE / 'SUCCESS.json').write_text('{}')
+    monkeypatch.setattr(migration, 'verify_bundle', lambda: original['bundle'])
+    monkeypatch.setattr(migration, 'host_identity', lambda: original['host'])
+    monkeypatch.setattr(migration, 'validate_venv', lambda: original['venv'])
+    monkeypatch.setattr(migration.c, 'digest', lambda p: 'sha')
+    monkeypatch.setattr(migration.c, 'run', lambda *a, **k: pytest.fail('service action'))
+    with pytest.raises(RuntimeError):
+        recovery.preflight(migration)
+
+
+@pytest.mark.parametrize('pair_running', [False, True])
+@pytest.mark.parametrize('tamper', [None, 'backup', 'daemon', 'marker', 'device', 'running'])
+def test_recovery_full_preflight_requires_exact_partial_install(recovery, migration, monkeypatch, tmp_path, tamper, pair_running):
+    bundle = tmp_path / 'package'
+    bundle.mkdir()
+    live = tmp_path / 'live'
+    live.mkdir()
+    monkeypatch.setattr(recovery, 'PACKAGE', bundle)
+    monkeypatch.setattr(migration, 'HERE', bundle)
+    monkeypatch.setattr(migration, 'verify_bundle', dict)
+    monkeypatch.setattr(migration, 'host_identity', lambda: {'boot': 'same'})
+    monkeypatch.setattr(migration, 'validate_venv', lambda: {'file': 'sha'})
+    monkeypatch.setattr(migration.c, 'secure', lambda *a, **k: None)
+    for attr, name in [('DEST', 'paired_gpio_daemon.py'), ('DROPIN', 'paired-gpio.conf'), ('PAIR_ENV', 'paired-gpio.env')]:
+        (bundle / name).write_text(name)
+        (live / name).write_text(name)
+        monkeypatch.setattr(migration, attr, live / name)
+    marker = live / 'marker'
+    marker.write_text('paired migration only; lighting remains disabled\n')
+    monkeypatch.setattr(migration, 'MARKER', marker)
+    ready = live / 'readiness'
+    ready.write_text('readiness')
+    monkeypatch.setattr(migration, 'READINESS', ready)
+    monkeypatch.setattr(migration, 'PRESERVED', (ready,))
+    monkeypatch.setattr(migration.c, 'DB', live / 'database')
+    sentinel = live / 'database.weather-identity'
+    sentinel.write_text('identity')
+    e = recovery.EVIDENCE
+    (e / 'database.weather-identity').write_text('identity')
+    (e / 'database.sqlite3').write_text('private backup')
+    (e / 'before-00').write_text('old daemon')
+    (e / 'before-01').write_bytes(ready.read_bytes())
+    monkeypatch.setattr(migration, 'OLD', migration.c.digest(e / 'before-00'))
+    prepared = {'bundle': {}, 'host': {'boot': 'same'}, 'venv': {'file': 'sha'},
+                'daemon_before': migration.OLD, 'unit_before': migration.UNIT_SHA,
+                'readiness_before': migration.c.digest(ready), 'source_head': migration.BASE}
+    (e / 'PREPARED.json').write_text(json.dumps(prepared))
+    (e / 'FAILURE.json').write_text(json.dumps({'phase': 'install', 'code': 'STOP_INSPECT_PRIVATE_EVIDENCE'}))
+    (e / 'failure-private.log').write_text('RuntimeError: EFFECTIVE_DEVICE_ALLOW\n')
+    (e / 'INSTALL_STARTED').write_text('started')
+    backup = {'files': {}, 'database': migration.c.digest(e / 'database.sqlite3'),
+              'source_head': migration.BASE, 'settings': {'enabled': True},
+              'packages': {'rpi-freeze-protect': '1.3.1'}, 'history': {'history': []}}
+    for i, path in enumerate((migration.DEST, ready)):
+        backup['files'][str(path)] = {'file': f'before-{i:02d}', 'sha256': migration.c.digest(e / f'before-{i:02d}')}
+    (e / 'BACKUP_COMPLETE.json').write_text(json.dumps(backup))
+    monkeypatch.setattr(migration, 'unit_check', lambda *a: None)
+    monkeypatch.setattr(migration, 'lighting_disabled', lambda: None)
+    monkeypatch.setattr(migration.c, 'config', dict)
+    monkeypatch.setattr(migration.c, 'persistent_stop', lambda: backup['settings'])
+    monkeypatch.setattr(migration.c, 'venv_info', lambda: backup['packages'])
+    monkeypatch.setattr(migration.c, 'git', lambda *a: migration.BASE)
+    monkeypatch.setattr(migration.c, 'history_preserved', lambda rows: None)
+    for name in ('pair_high', 'flow'):
+        monkeypatch.setattr(migration.c, name, lambda: None)
+    monkeypatch.setattr(migration, 'metadata_check', lambda **k: None)
+    monkeypatch.setattr(migration, 'verify_running', lambda: None)
+    monkeypatch.setattr(migration.c, 'active', lambda s: s in ('node-red.service', 'nginx.service')
+                        or (tamper == 'running' and s == migration.c.HUB) or (pair_running and s == migration.PAIR))
+    def show(service, field):
+        return {'MainPID': '0', 'User': 'nodered', 'Group': 'nodered', 'Restart': 'no',
+                'DevicePolicy': 'closed', 'DeviceAllow': '/dev/gpiochip0 rw\n/dev/gpiomem ' + ('rwm' if tamper == 'device' else 'rw'),
+                'ExecStart': '{ path=' + str(migration.PAIR_VENV / 'bin/python3') +
+                ' ; argv[]=' + str(migration.PAIR_VENV / 'bin/python3') +
+                ' -I -B ' + str(migration.DEST) + ' ; }'}[field]
+    monkeypatch.setattr(migration, 'show', show)
+    monkeypatch.setattr(migration.c, 'run', lambda *a, **k: pytest.fail('unexpected command'))
+    if tamper == 'backup':
+        (e / 'before-00').write_text('corrupt')
+    if tamper == 'daemon':
+        migration.DEST.write_text('corrupt')
+    if tamper == 'marker':
+        marker.write_text('different')
+    if tamper:
+        with pytest.raises(RuntimeError):
+            recovery.preflight(migration, pair_running=pair_running)
+    else:
+        state = recovery.preflight(migration, pair_running=pair_running)
+        assert state['settings'] == backup['settings']
+        assert state['history'] == backup['history']
+
+
+def test_hub_startup_retries_only_refusal_then_validates_user_off(migration, monkeypatch):
+    import errno
+    import urllib.error
+    calls = []
+    outcome = {'operation': 'USER_OFF', 'command': 'DRAIN'}
+    def status(entries):
+        calls.append('read')
+        if len(calls) < 3:
+            raise urllib.error.URLError(ConnectionRefusedError(errno.ECONNREFUSED, 'Connection refused'))
+        return outcome
+    monkeypatch.setattr(migration.c, 'status', status)
+    monkeypatch.setattr(migration.c, 'active', lambda s: True)
+    monkeypatch.setattr(migration, 'show', lambda *a: '123')
+    monkeypatch.setattr(migration.time, 'sleep', lambda seconds: None)
+    assert migration.wait_hub_status({}) == outcome
+    assert calls == ['read', 'read', 'read']
+
+
+@pytest.mark.parametrize('kind', ['authorization', 'http503', 'timeout', 'dns', 'state', 'malformed'])
+def test_hub_startup_does_not_retry_other_failures(migration, monkeypatch, kind):
+    import socket
+    import urllib.error
+    error = {'authorization': urllib.error.HTTPError('http://localhost', 401, 'Unauthorized', {}, None),
+             'http503': urllib.error.HTTPError('http://localhost', 503, 'Unavailable', {}, None),
+             'timeout': urllib.error.URLError(TimeoutError()),
+             'dns': urllib.error.URLError(socket.gaierror(-2, 'name failure')),
+             'state': RuntimeError('USER_OFF_REQUIRED'), 'malformed': ValueError('invalid JSON')}[kind]
+    calls = []
+    def status(entries):
+        calls.append('read')
+        raise error
+    monkeypatch.setattr(migration.c, 'status', status)
+    monkeypatch.setattr(migration.time, 'sleep', lambda seconds: pytest.fail('unexpected retry'))
+    with pytest.raises(type(error)):
+        migration.wait_hub_status({})
+    assert calls == ['read']
+
+
+@pytest.mark.parametrize('active', [True, False])
+def test_hub_startup_refusal_is_bounded_and_stops_on_exit(migration, monkeypatch, active):
+    import errno
+    import urllib.error
+    clock = [0.0]
+    calls = []
+    def status(entries):
+        calls.append(clock[0])
+        raise urllib.error.URLError(ConnectionRefusedError(errno.ECONNREFUSED, 'Connection refused'))
+    monkeypatch.setattr(migration.c, 'status', status)
+    monkeypatch.setattr(migration.c, 'active', lambda s: active)
+    monkeypatch.setattr(migration, 'show', lambda *a: '123')
+    monkeypatch.setattr(migration.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(migration.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    with pytest.raises(RuntimeError, match='HUB_HTTP_STARTUP_TIMEOUT' if active else 'HUB_STARTUP_EXITED'):
+        migration.wait_hub_status({}, timeout=0.4)
+    assert len(calls) == (3 if active else 1)
+
+
+@pytest.fixture
+def hub_recovery(migration, tmp_path, monkeypatch):
+    spec = importlib.util.spec_from_file_location('hub_recovery_test', DIRECTORY / 'recover_hub_readiness.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    evidence = tmp_path / 'evidence'
+    evidence.mkdir()
+    previous = evidence / 'device-allow-recovery'
+    previous.mkdir()
+    (previous / 'STARTED').touch()
+    (previous / 'FAILED').touch()
+    (previous / 'failure-private.log').write_text('  File "/root/stage/recover_device_allow.py", line 146, in continue_startup\n'
+        '  File "/root/stage/operator_checks.py", line 163, in status\n'
+        'ConnectionRefusedError: [Errno 111] Connection refused\n')
+    monkeypatch.setattr(module, 'EVIDENCE', evidence)
+    monkeypatch.setattr(module, 'PREVIOUS', previous)
+    monkeypatch.setattr(module, 'RECOVERY', evidence / 'hub-readiness-recovery')
+    monkeypatch.setattr(module, 'secure', lambda path: None)
+    return module
+
+
+def test_hub_continuation_never_restarts_pair(hub_recovery, migration, monkeypatch):
+    calls = []
+    monkeypatch.setattr(migration.c, 'run', lambda args, **kw: calls.append(args))
+    for name in ('wait_hub_status', 'live_environment', 'verify_running', 'preserved'):
+        monkeypatch.setattr(migration, name, lambda *a: None)
+    for name in ('pair_high', 'flow'):
+        monkeypatch.setattr(migration.c, name, lambda: None)
+    monkeypatch.setattr(migration.c, 'active', lambda name: True)
+    hub_recovery.start_hub(migration, {'entries': {}})
+    assert calls == [['systemctl', 'start', migration.c.HUB]]
+
+
+def test_hub_recovery_preserves_prior_evidence_and_is_one_shot(hub_recovery, migration, monkeypatch):
+    from types import SimpleNamespace
+    h = hub_recovery
+    calls = []
+    monkeypatch.setattr(h, 'update_diagnostic', lambda m: calls.append('diagnostic'))
+    def preflight(m, *, pair_running):
+        assert pair_running is True
+        calls.append('preflight')
+        return {}
+    monkeypatch.setattr(h, 'start_hub', lambda m, state: calls.append('start'))
+    monkeypatch.setattr(migration.c, 'digest', lambda p: 'sha')
+    before = {p.name: p.read_bytes() for p in h.PREVIOUS.iterdir()}
+    assert h.execute(SimpleNamespace(preflight=preflight), migration) == 0
+    assert calls == ['diagnostic', 'preflight', 'start']
+    assert before == {p.name: p.read_bytes() for p in h.PREVIOUS.iterdir()}
+    assert (h.RECOVERY / 'SUCCESS.json').exists()
+    with pytest.raises(RuntimeError, match='RECOVERY_ALREADY_ATTEMPTED'):
+        h.execute(SimpleNamespace(preflight=preflight), migration)
+
+
+@pytest.mark.parametrize('change', ['cause', 'location', 'success'])
+def test_hub_recovery_rejects_unrelated_previous_failure(hub_recovery, change):
+    h = hub_recovery
+    if change == 'success':
+        (h.PREVIOUS / 'SUCCESS.json').write_text('{}')
+    else:
+        p = h.PREVIOUS / 'failure-private.log'
+        text = p.read_text().replace('ConnectionRefusedError', 'TimeoutError') if change == 'cause' else p.read_text().replace('line 146', 'line 99')
+        p.write_text(text)
+    with pytest.raises(RuntimeError):
+        h.verify_previous()

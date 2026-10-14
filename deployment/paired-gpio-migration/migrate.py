@@ -1,6 +1,7 @@
 """Two-stage trusted-console migration. Never invoke through the SSH helper."""
 # ruff: noqa: BLE001, S110
 # Interrupts enter best-effort safety cleanup; failed diagnostics cannot prevent it.
+import errno
 import fcntl
 import json
 import os
@@ -14,6 +15,7 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.error
 from contextlib import closing
 from pathlib import Path
 
@@ -317,9 +319,13 @@ def install_files():
     c.run(['systemctl', 'daemon-reload'])
     unit_check(PAIR, PAIR_UNIT, 'pair.service', [DROPIN])
     unit_check(c.HUB, c.UNIT, 'hub.service', [READINESS])
+    verify_effective_pair()
+
+
+def verify_effective_pair():
     require(show(PAIR, 'User') == 'nodered' and show(PAIR, 'Group') == 'nodered'
             and show(PAIR, 'Restart') == 'no' and show(PAIR, 'DevicePolicy') == 'closed', 'EFFECTIVE_PAIR_CONFIG')
-    require(show(PAIR, 'DeviceAllow').splitlines() == ['/dev/gpiomem rw', '/dev/gpiochip0 rw'], 'EFFECTIVE_DEVICE_ALLOW')
+    require(sorted(show(PAIR, 'DeviceAllow').splitlines()) == ['/dev/gpiochip0 rw', '/dev/gpiomem rw'], 'EFFECTIVE_DEVICE_ALLOW')
     start = show(PAIR, 'ExecStart')
     require('path=' + str(PAIR_VENV / 'bin/python3') + ' ;' in start
             and 'argv[]=' + str(PAIR_VENV / 'bin/python3') + ' -I -B ' + str(DEST) + ' ;' in start, 'EFFECTIVE_EXECSTART')
@@ -337,6 +343,24 @@ def wait_pair():
         except (FileNotFoundError, ConnectionRefusedError):
             require(time.monotonic() < deadline, 'PAIR_SOCKET_TIMEOUT')
             time.sleep(0.1)
+
+
+def wait_hub_status(entries, timeout=20):
+    """Type=simple becoming active does not mean its HTTP listener is ready."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return c.status(entries)
+        except urllib.error.URLError as exc:
+            # Retry only a refused TCP connection during startup. HTTP errors,
+            # invalid control states, authorization, timeouts and DNS errors stop.
+            reason = exc.reason
+            if not isinstance(reason, OSError) or reason.errno != errno.ECONNREFUSED:
+                raise
+            require(c.active(c.HUB) and show(c.HUB, 'MainPID').isdigit()
+                    and int(show(c.HUB, 'MainPID')) > 0, 'HUB_STARTUP_EXITED')
+            require(time.monotonic() < deadline, 'HUB_HTTP_STARTUP_TIMEOUT')
+            time.sleep(min(0.2, max(0, deadline - time.monotonic())))
 
 
 def verify_running():
@@ -380,8 +404,8 @@ def cutover(state, evidence, attempt):
     verify_running()
     preserved(state)
     c.run(['systemctl', 'start', c.HUB], timeout=85)
-    # Existing readiness ExecStartPre completes before systemctl start returns.
-    c.status(state['entries'])
+    # ExecStartPre checks Node-RED; the Hub HTTP listener becomes ready later.
+    wait_hub_status(state['entries'])
     live_environment(state['entries'])
     require(all(c.active(service) for service in c.SERVICES), 'FINAL_SERVICES')
     c.pair_high()

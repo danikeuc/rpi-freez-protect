@@ -1,5 +1,17 @@
 # Local Codex commissioning prompt
 
+## Activation checkpoint - 2026-10-14
+
+Limited maintenance access v1 was installed from package v2 and independently
+verified through a second SSH connection, including rejected command forms.
+The original four commands and exactly three maintenance forms are now allowed
+for the pinned migration; no general shell or sudo access is granted.
+[Activation evidence](../../docs/evidence/2026-10-14-maintenance-access.md)
+records the backup, temporary connection failures and subsequent successful
+Hub-readiness recovery. Original failed migration receipts remain historical.
+Earlier pending-activation wording below describes the pre-installation stage.
+
+
 Copy the following prompt into a local Codex session started from the
 workstation clone of this repository.
 
@@ -44,6 +56,22 @@ Deployment, service restarts, legacy-flow export/disable, and deployed-flow
 preflight are trusted-local-console tasks outside this allowlist. Require the
 mandatory cutover and startup output/high gates in WORKSTATION_CODEX_COMMISSIONING.md
 before acceptance; stop on any failed receipt or readback.
+
+A limited maintenance implementation is now prepared under
+deployment/maintenance-access/README.md, following the owner's later setup
+request. Do not assume it is installed. After the exact installation receipt and
+second restricted login are verified, its sole additional privileged commands
+are these exact forms (with the same dedicated SSH identity and private LAN):
+
+sudo -n /usr/local/sbin/freeze-protect-maintenance status
+sudo -n /usr/local/sbin/freeze-protect-maintenance prepare
+sudo -n /usr/local/sbin/freeze-protect-maintenance install
+
+These commands never accept paths, package URLs or service arguments. Prepare
+and install submit single-use jobs for the pinned paired-GPIO migration only;
+submission is not completion. Read status and durable receipts before advancing.
+Keep both valve 24 V and lamp mains disconnected for that maintenance window.
+This does not add shell access, generic restart, firmware or live-load testing.
 
 Keep the 24 V valve supply disconnected. Do not run SUPPLY. Stop and ask Danijel
 for explicit approval in the current conversation before beginning the 24 V

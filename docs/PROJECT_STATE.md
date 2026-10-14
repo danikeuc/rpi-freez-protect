@@ -1,6 +1,6 @@
 # Project state and evidence register
 
-**Documentation reconciliation:** 2026-10-12; device observations retain their original dates
+**Documentation reconciliation:** 2026-10-14; device observations retain their original dates
 
 **Latest recorded Pi installation:** 1.3.1, `weather_assisted`, `USER_OFF` / `DRAIN`
 (operator installation receipt and restricted GPIO readback, 2026-10-11; not a new live observation on 2026-10-12).
@@ -14,6 +14,85 @@ must never be promoted into a physical claim. The external observations below
 are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
+
+## Lighting continuation — 2026-10-14
+
+[Current handoff](evidence/2026-10-14-lighting-continuation.md) records the verified
+paired prerequisite, read-only inventory tool and remaining lighting gates.
+The third relay, camera ingress and new Dial firmware are not yet activated.
+
+## Paired GPIO migration recovered and verified - 2026-10-14
+
+The candidate kernel-ownership paired daemon is installed (SHAef96336ec), with
+isolated gpiod2.3.0 interpreter and reviewed paired dropin. Initial installation
+stopped on an order-sensitive DeviceAllow comparison; the first continuation
+then stopped because the Hub HTTP listener was not yet ready. Both defects are
+fixed in repository installer code, and their original failure records remain.
+
+A separate Hub-only continuation completed. Fresh restricted SSH confirmed its
+durable success marker, no failure marker, Hub/pair/Node-RED active and the exact
+installed candidate hashes. Independent helper readback confirms GPIO26 and
+GPIO20 both output/high. The running paired PID remained unchanged during final
+Hub recovery. Full private receipt was not exported; the reviewed continuation
+writes success only after USER_OFF, preserved state, flow, ownership and readback
+checks. [Detailed evidence](evidence/2026-10-14-device-allow-recovery.md#target-recovery-verified-over-restricted-ssh).
+
+Lighting remains disabled; third-relay activation and physical acceptance are
+pending. Both loads remain disconnected per operator confirmation. This is not
+proof of valve/lamp position or crash/power-loss protection. The paired override
+retains Restart=no; process recovery needs deliberate assessment. No release,
+commit or push is implied by this deployment checkpoint.
+
+## Limited maintenance access activated - 2026-10-14
+
+The owner subsequently asked Codex to carry out the setup. The
+[access v1 candidate](../deployment/maintenance-access/README.md) preserves the
+original four commands and adds three exact command forms for diagnostics and
+single-use preparation/installation of the pinned paired-GPIO migration. It
+provides no generic shell, package install or restart permission. Access
+installation itself does not run migration or change actuator/service state.
+The previous documentation-only entry below is historical.
+
+At the access activation checkpoint, restricted SSH inventory/status/diagnose checks succeeded: DietPi
+kernel 6.18.39+rpt-rpi-v8, checkout d0dfeac, all three checked services active,
+GPIO26/20 output/high. The installed paired daemon remains 33088ea9 and helper
+555ea7cd, matching the recorded baseline. These are electronic readbacks, not
+physical valve or light acceptance. The operator installed access package v2 (backup
+`/root/freeze-maintenance-access.c8qk1m3v`). Separate SSH inventory/status and
+two rejected command forms verified activation. Both migration jobs initially
+reported NOT_REQUESTED. Subsequent prepare and status connections timed out at
+port22 before command dispatch. Connectivity later returned and prepare was
+submitted once; last observed job was activating/start, with original services
+active. Another status connection timed out. Operator status subsequently verified prepare success at
+`/root/paired-gpio-migration.xj0q8tgi`, with all original services active.
+The install SSH connection timed out before dispatch; migrated GPIO ownership
+remains unconfirmed. A later SSH check found a partial install stopped at
+`EFFECTIVE_DEVICE_ALLOW`: candidate daemon/dropin are present, Hub and paired
+service inactive, Node-RED active. Installation is FAILED, not accepted;
+operator output confirmed correct permissions in reverse order. A tested
+[ordering fix and one-shot recovery](evidence/2026-10-14-device-allow-recovery.md)
+were prepared and the operator ran recovery. It stopped again; fresh SSH
+shows candidate paired service active, Hub inactive and Node-RED active.
+Remote diagnostics identified ConnectionRefusedError while reading Hub HTTP
+status immediately after start. A bounded HTTP readiness fix and Hub-only
+continuation are prepared; target continuation and acceptance remain pending.
+[Candidate validation and package identity](evidence/2026-10-14-maintenance-access.md)
+record the exact access activation and subsequent network interruption.
+
+## Limited maintenance access documented - 2026-10-14
+
+The owner explicitly limited this task to documentation. The
+[commissioning guide](../deployment/WORKSTATION_CODEX_COMMISSIONING.md#planned-limited-maintenance-access---documentation-decision-2026-10-14)
+now describes a future bounded interface for diagnostics, verified package
+backup/installation and necessary named-service restarts. Implementation and
+activation are pending; the four-command commissioning allowlist remains the
+current route. No SSH/sudo/helper code, device permissions or deployed service
+was changed by this documentation task. Existing physical approval gates remain
+in force. This entry is a policy record, not a new device observation or a
+successful paired-GPIO migration receipt.
+The [Pi operator guide](../deployment/PI_MAINTENANCE_ACCESS.md) adds host-specific
+read-only checks and the future backup/activation/acceptance sequence. Those
+commands have not been run on the Pi as part of this documentation task.
 
 ## Pi v1.2.0 publication preparation
 
@@ -234,7 +313,9 @@ for the candidate as described in the [operations runbook](operations/dial-admin
 - PT100/MAX31865 on SPI0 CE0 remains the production source design for a future
   separately commissioned `automatic` mode. DS18B20 is rollback code only.
 - The restricted `freezeprotect-commission` SSH identity exposes exactly
-  `inventory`, `status`, `diagnose-pair-gpio` and `drain`; it has no shell,
+  `inventory`, `status`, `diagnose-pair-gpio` and `drain`, plus the activated
+  maintenance helper's exact `status`, `prepare`, `install` forms for one pinned
+  migration; it has no shell,
   forwarding, firmware, arbitrary systemd or direct GPIO interface.
 
 ## Evidence ledger
@@ -429,24 +510,23 @@ firmware upload, service activation or mains connection is included.
 
 ### GPIO_SHARED_FSEL2_COEXISTENCE — known activation blocker
 
-**Activation remains blocked with the installed legacy paired mmap daemon.**
-GPIO20/21/26 share FSEL2; the legacy configure path can overwrite a concurrent
-kernel GPIO21 update using its stale register snapshot. The separately
-authorized repair now removes userspace FSEL access from candidate source:
-exclusive kernel reservation/configuration for GPIO26/20 surrounds restricted
-single-mask GPSET0/GPCLR0 writes and readback. See the
-[ownership migration runbook](operations/paired-gpio-migration.md) for exact profile, interpreter,
-dependency, device mapping, lifecycle and rollback requirements.
+**Installed migration verified on 2026-10-14; lighting acceptance remains open.**
+The exact kernel-ownership daemon and paired dropin are installed on the Pi.
+Restricted SSH confirmed the separate Hub-recovery success marker, all three
+services active and paired output/high readback. See the
+[dated recovery evidence](evidence/2026-10-14-device-allow-recovery.md).
 
-This is a source repair, not an installed migration or physical acceptance.
+The legacy userspace FSEL writer is no longer the recorded installed backend.
+The source repair and installed migration close that part of
+GPIO_SHARED_FSEL2_COEXISTENCE. They do not close the disconnected-load
+startup/request/release/crash trace or physical acceptance requirements.
 Keep lighting templates, flow and gateway disabled. Do not create
 /etc/independent-light/commissioned, set LIGHT_GPIO21_ENABLED=commissioned or
-grant light DeviceAllow until exact installed paired migration plus disconnected
-startup/request/release/crash acceptance is recorded. Kernel-only configuration
-resolves the source FSEL writer race; it does not establish atomic initial
-direction changes, crash protection, physical independence or valve position.
-The current installed Pi/Dial records and all lamp/wiring/Protect gates remain.
-Initial ordering or a userspace lock alone cannot repair the legacy writer.
+grant light DeviceAllow until the remaining disconnected acceptance is recorded.
+Kernel-only configuration does not establish atomic initial direction changes,
+crash protection, physical independence or valve position. Actual Protect
+profile, Node-RED runtime and lamp/wiring gates remain open.
+
 
 ### Paired GPIO source repair - 2026-10-13
 

@@ -1,6 +1,18 @@
 # Paired GPIO ownership migration candidate
 
-2026-10-13. Source repair only; no installation, service action or hardware test
+## Current target checkpoint - 2026-10-14
+
+Paired migration completed through the separate reviewed Hub-readiness recovery.
+Fresh restricted SSH verified its success marker, active services, candidate
+hashes and paired output/high readback. Original failed attempts remain recorded;
+do not rerun their one-shot commands. Lighting/physical acceptance remains pending.
+See [target evidence](../evidence/2026-10-14-device-allow-recovery.md). Earlier candidate and pending-activation
+statements below describe the preceding preparation/installation stages.
+
+
+## Historical source and migration plan — 2026-10-13
+
+At that checkpoint: source repair only; no installation, service action or hardware test
 has been performed. The installed Pi 1.3.1 record is unchanged. Its old paired
 mmap configure path remains incompatible with lighting GPIO21. Keep lighting
 units, marker, hardware opt-in, flow and gateway disabled until exact installed

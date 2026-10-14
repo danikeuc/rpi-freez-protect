@@ -1,5 +1,15 @@
 # Trusted-console paired GPIO migration
 
+## Current target checkpoint - 2026-10-14
+
+Paired migration completed through the separate reviewed Hub-readiness recovery.
+Fresh restricted SSH verified its success marker, active services, candidate
+hashes and paired output/high readback. Original failed attempts remain recorded;
+do not rerun their one-shot commands. Lighting/physical acceptance remains pending.
+See [target evidence](../../docs/evidence/2026-10-14-device-allow-recovery.md). Earlier candidate and pending-activation
+statements below describe the preceding preparation/installation stages.
+
+
 This package prepares and installs the reviewed kernel-ownership daemon for the
 inventoried Raspberry Pi 4 Model B Rev 1.1, kernel 6.18.39+rpt-rpi-v8,
 Python 3.13.5 aarch64. It requires the canonical `/dev/gpiochip0`; aliases and

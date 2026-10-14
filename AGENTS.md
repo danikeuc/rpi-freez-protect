@@ -31,6 +31,12 @@
   prompt. Do not use `freezeprotect` for SSH.
 - Do not widen the commissioning allowlist, grant a shell, add device groups,
   expose TCP 22 publicly, or bypass the forced-command dispatcher.
+- Limited maintenance access has a separately authorized implementation in
+  `deployment/maintenance-access/README.md`. Until its exact installation and
+  second restricted login are verified, use only the original four commands.
+  After activation, the only additions are the documented maintenance helper's
+  exact `status`, `prepare`, and `install` forms for its pinned migration package.
+  This exception does not permit arbitrary shell/sudo, service names or packages.
 - Root SSH is only the documented, human-supervised bootstrap/recovery path.
   Keep the recovery session open until a second restricted login succeeds.
 - Never print or commit private keys, tokens, Wi-Fi credentials, environment
