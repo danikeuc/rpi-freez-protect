@@ -148,6 +148,7 @@ def setup_run(installer, tmp_path, monkeypatch, *, failure=None):
     checks.pair_high = lambda: events.append("pair_high")
     monkeypatch.setattr(installer.tempfile, "mkdtemp", lambda **kw: str(tmp_path))
     monkeypatch.setattr(installer.signal, "signal", lambda *args: None)
+    monkeypatch.setattr(installer.os, "umask", lambda mask: 0o022)
     monkeypatch.setattr(installer, "NGINX_ENABLED", SimpleNamespace(
         symlink_to=lambda path: events.append("enable_nginx_site")))
     return events, saved
@@ -203,6 +204,7 @@ def test_provisioning_is_offline_private_separate_and_camera_only(installer, tmp
     (evidence_dir / "backup").mkdir(parents=True)
     for unit in installer.UNITS:
         (package / unit).write_text("unit")
+    (package / "wait_executor.py").write_text("readiness helper")
     constants = {"ROOT": tmp_path / "opt", "CONFIG": tmp_path / "etc",
                  "STATE": tmp_path / "state", "UNIT_DIR": tmp_path / "units"}
     constants["UNIT_DIR"].mkdir()
@@ -225,7 +227,17 @@ def test_provisioning_is_offline_private_separate_and_camera_only(installer, tmp
             Path(args[args.index("-out") + 1]).write_bytes(bytes(512))
             payloads.append(json.loads(kwargs["input_data"]))
         return ""
-    token = installer.configure(SimpleNamespace(run=run), package, evidence_dir)
+    previous_umask = os.umask(0o077)
+    try:
+        token = installer.configure(SimpleNamespace(run=run), package, evidence_dir)
+    finally:
+        os.umask(previous_umask)
+    assert constants["ROOT"].stat().st_mode & 0o777 == 0o755
+    assert (constants["ROOT"] / "venv").stat().st_mode & 0o777 == 0o755
+    helper = constants["ROOT"] / "wait_executor.py"
+    assert helper.read_text() == "readiness helper"
+    assert helper.stat().st_mode & 0o777 == 0o644
+    assert "wait_executor.py" in installer.FIXED_FILES
     env = constants["CONFIG"] / "controller.env"
     values = dict(line.split("=", 1) for line in env.read_text().splitlines())
     assert env.stat().st_mode & 0o777 == 0o600

@@ -33,7 +33,7 @@ from pathlib import Path
 FIXED_FILES = frozenset({
     "install_light.py", "operator_checks.py", "runtime-install.lock",
     "light-controller.service", "light-gpio.service", "light-camera.conf",
-    "recipient-public.pem", "README",
+    "recipient-public.pem", "README", "wait_executor.py",
 })
 PAIR_PATH = Path("/opt/rpi-freez-protect/deployment/node-red/paired_gpio_daemon.py")
 PAIR_HASH = "ef96336ec9fd299459adb4bc751aac4ef5bf7f992fb0757886e496851c73b51f"
@@ -303,6 +303,7 @@ def verify_preserved(c, baseline):
 def private_file(path, content, mode=0o600):
     descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode)
     with os.fdopen(descriptor, "wb") as stream:
+        os.fchmod(stream.fileno(), mode)
         stream.write(content.encode() if isinstance(content, str) else content)
         stream.flush()
         os.fsync(stream.fileno())
@@ -342,6 +343,7 @@ def configure(c, directory, evidence):
             "LIGHT_ACCOUNT_GROUPS")
     for path, mode in ((ROOT, 0o755), (CONFIG, 0o700), (STATE, 0o700)):
         path.mkdir(mode=mode)
+        os.chmod(path, mode)
     os.chown(STATE, user.pw_uid, group.gr_gid)
     c.run(["/usr/bin/python3", "-I", "-m", "venv", str(ROOT / "venv")], timeout=120)
     c.run([str(ROOT / "venv/bin/python"), "-I", "-m", "pip", "--isolated", "install",
@@ -352,6 +354,7 @@ def configure(c, directory, evidence):
     for path in [ROOT / "venv", *(ROOT / "venv").rglob("*")]:
         if not path.is_symlink():
             os.chmod(path, 0o755 if path.is_dir() or path.stat().st_mode & 0o111 else 0o644)
+    private_file(ROOT / "wait_executor.py", (directory / "wait_executor.py").read_bytes(), 0o644)
     tokens = {role: secrets.token_hex(32) for role in ("display", "settings", "camera")}
     require(len(set(tokens.values())) == 3, "TOKEN_COLLISION")
     environment = {
