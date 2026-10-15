@@ -19,6 +19,7 @@ camera is not silently disabled indefinitely.
 | Third relay independent of shower | Owner confirmed |
 | Lighting load | Owner reports LED lighting, maximum 20 W total, 220 V mains (2026-10-12); not an electrical measurement |
 | Camera and ESP can both turn on light in AUTO | Owner confirmed |
+| Selected camera / detection | G4 Pro (`6797d43f03968103e40003f1`), person only; owner confirmed 2026-10-15 |
 | Explicit manual ON and manual OFF suspend camera control | Accepted interaction proposal |
 | Manual warning, M badge on other pages, return-to-AUTO control | Accepted interaction proposal |
 | Automatic return to AUTO after one hour; configurable in admin | Accepted interaction proposal; default 3600 seconds |
@@ -286,3 +287,22 @@ Primary sources checked 2026-10-12:
 Board pin provenance: repository 2026-09-11 M1 weather/display specification;
 manufacturer page could not be fetched during this review, so current board
 verification remains a commissioning prerequisite.
+
+## Protect MCP source selection — 2026-10-15
+
+The owner selected G4 Pro and person detections. Read-only MCP access is installed
+and verified; see [source evidence](../../evidence/2026-10-15-protect-mcp-light-source.md).
+MCP event observations do not establish a commissioned webhook profile or an
+unattended event consumer. The automation transport and remaining activation
+gates must be verified before lighting service activation.
+
+### Selected continuous source transport
+
+The approved MCP approach now has an implemented normalized-event adapter;
+[contract and activation requirements](../../../deployment/protect-mcp/README.md).
+A VM user service polls read-only MCP independently of Codex. Its initial deployed
+mode is observation. Forwarding will use the existing camera-role light API over
+verified HTTPS; the old webhook/Node-RED ingress remains disabled. Consequently,
+webhook payload capture is not evidence required for this chosen MCP transport;
+MCP identity/freshness and reconnect acceptance are required instead. No GPIO,
+executor, wiring or disconnected coexistence gate is removed by this choice.

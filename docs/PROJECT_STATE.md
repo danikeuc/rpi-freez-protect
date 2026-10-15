@@ -15,6 +15,17 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
+## Continuous Protect MCP observation installed — 2026-10-15
+
+The approved G4 Pro/person source now has a standalone user service on linuxvm,
+independent of Codex. Enabled/running and linger verified through a separate SSH
+connection; repeated MCP polls succeeded. **Observe only:** no Pi destination or
+camera token is configured, so this does not activate the lamp. Adapter source,
+27 focused tests, independent review fixes and deployment identities are recorded
+in [adapter evidence](evidence/2026-10-15-protect-mcp-adapter.md).
+Pi light service/TLS ingress provisioning and existing disconnected hardware
+acceptance remain pending. No new firmware, relay or physical acceptance claim.
+
 ## Lighting target inventory received — 2026-10-15
 
 The operator supplied the verified read-only package output. GPIO20/26 report

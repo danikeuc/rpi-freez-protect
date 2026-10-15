@@ -1,0 +1,21 @@
+[Unit]
+Description=G4 Pro person detections via read-only Protect MCP
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/protect-light-adapter
+ExecStart=%h/.local/share/unifi-protect-mcp/venv/bin/python -I %h/.local/share/protect-light-adapter/protect_light_adapter.py --config %h/.config/protect-light-adapter/config.json
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+LockPersonality=true
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=default.target
