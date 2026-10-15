@@ -61,12 +61,12 @@
 
 **Interfaces:** Owner executes the reviewed root-console update once; Codex uses the existing restricted status command from a separate SSH connection.
 
-- [ ] Before deployment, mark package as prepared, not installed; keep old permissions and instructions truthful. Preserve existing unrelated working-tree changes.
-- [ ] Supply one verified operator command block for package retrieval/check/install. Keep the root recovery console open.
-- [ ] After the operator receipt, fetch status remotely with the existing dedicated key, BatchMode and StrictHostKeyChecking=yes. Verify helper hash, legacy fields, bench outcome and first failed phase. Verify harmless extra-argument status rejection; never invoke prepare/install as a connectivity test.
-- [ ] Record live acceptance separately from software tests; update docs only to demonstrated capability. If rejected or missing, diagnose the update without guessing GPIO behavior or retrying the bench.
-- [ ] Use the retrieved evidence to continue the separate GPIO21 root-cause task. This access update does not satisfy relay commissioning or enable camera forwarding.
+- [x] Before deployment, mark package as prepared, not installed; keep old permissions and instructions truthful. Preserve existing unrelated working-tree changes.
+- [x] Supply one verified operator command block for package retrieval/check/install. Keep the root recovery console open.
+- [x] After the operator receipt, fetch status remotely with the existing dedicated key, BatchMode and StrictHostKeyChecking=yes. Verify helper hash, legacy fields, bench outcome and first failed phase. Verify harmless extra-argument status rejection; never invoke prepare/install as a connectivity test.
+- [x] Record live acceptance separately from software tests; update docs only to demonstrated capability. If rejected or missing, diagnose the update without guessing GPIO behavior or retrying the bench.
+- [x] Use the retrieved evidence to continue the separate GPIO21 root-cause task. This access update does not satisfy relay commissioning or enable camera forwarding.
 
 ## Execution status
 
-Tasks1 and2 complete; review fixes verified,993 tests pass. Task3 package handoff pending; live acceptance requires operator installation. No remote deployment claim.
+Tasks1 and2 complete; review fixes verified,993 tests pass. Task3 complete: package installed by owner, new helper hash and READ evidence verified via separate restricted SSH; extra arguments rejected. GPIO21 crash_release failure localized. Physical acceptance and camera forwarding remain unverified/disabled.

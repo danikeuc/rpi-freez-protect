@@ -1,7 +1,7 @@
 # Navodila: oddaljena diagnostika preizkusa GPIO21
 
 Datum: 2026-10-15
-Status: koda preverjena (993 testov); paket v pripravi. Namestitev in druga SSH povezava še nista potrjeni.
+Status: NAMEŠČENO; druga omejena SSH povezava in zavrnitev dodatnih argumentov preverjeni. Diagnostiko lahko Codex bere sam. Spodnji koraki so zapis že opravljenega postopka.
 
 ## Kaj želimo doseči
 
@@ -27,7 +27,7 @@ Uporabnik je vrnil rezultat preizkusa:
 - `automation_enabled=false`
 - dokazi: `/root/light-gpio21-bench.ehy6qh3b`
 
-Končna obnovitev OFF je uspela. Faza prvotnega odstopanja še ni znana.
+Končna obnovitev OFF je uspela. Prva napaka je v fazi crash_release: GPIO21 je ob prvi meritvi po prekinitvi procesa še output/LOW. GPIO20/26 sta v vseh shranjenih meritvah output/HIGH.
 Ne brišemo označevalnika `/root/light-gpio21-commissioning.started`, ne ponavljamo
 preizkusa in ne vključujemo povezave kamera–rele pred razlago rezultata.
 GPIO odčitek ne potrjuje fizičnega položaja releja ali ventilov.

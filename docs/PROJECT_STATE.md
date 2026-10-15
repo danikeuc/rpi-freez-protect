@@ -21,16 +21,20 @@ Owner confirmed both loads disconnected and STOP; a subsequent restricted read
 showed paired outputs HIGH/HIGH. The operator then ran the bounded GPIO21 bench:
 LIGHT_LEVEL_MISMATCH, attempted_gpio21=true, final_off_readback=true,
 physical_acceptance=NOT_VERIFIED, automation_enabled=false. Evidence is retained
-at /root/light-gpio21-bench.ehy6qh3b; first failing phase is still unknown.
+at /root/light-gpio21-bench.ehy6qh3b. Remote diagnostics identify crash_release:
+the first sample after SIGKILL retained GPIO21 output/LOW; explicit final OFF
+recovery succeeded. All931 stored samples retain paired output/HIGH.
 No repeat or forwarding activation is permitted by that failed result.
 [Bench evidence](evidence/2026-10-15-light-gpio21-bench-preparation.md).
 
-A status-only helper update is prepared against the owner-reported deployed hash
+A status-only helper update was installed from the owner-reported baseline hash
 df06b46bd206dbadbbbd201aeb80529df9deb790b7df448b29e1ff2ba15c6a9c.
 It adds bounded historical GPIO21 diagnostics to the existing maintenance status
 command without changing dispatcher/sudoers or actuator authority. Tests:993 pass;
 Ruff and diff-check pass; independent review completed with both findings fixed.
-Root-console installation and separate remote acceptance are pending.
+Owner installation and separate restricted SSH acceptance are VERIFIED. New
+helper hash:2697465c2d98ab3b34be8da17f145411e900dc50765f02ff3e3a51ceb326364b.
+Extra-argument status was rejected; no expanded command or actuator authority.
 [Diagnostics preparation](evidence/2026-10-15-light-bench-diagnostics.md).
 
 ## Continuous Protect MCP observation installed — 2026-10-15

@@ -87,13 +87,13 @@ prompt, terminal capture, serial log or Git. The disconnected GPIO acceptance
 still requires explicit current-conversation approval before any timed action.
 ```
 
-## GPIO21 diagnostic update prepared — 2026-10-15
+## GPIO21 diagnostic update activated — 2026-10-15
 
-A reviewed status-only extension is prepared; it is NOT installed or remotely
-verified yet. It adds sanitized historical bench evidence to the existing exact
+The reviewed status-only extension was installed by the operator and verified
+through a separate restricted SSH connection; additional arguments were rejected. It adds sanitized historical bench evidence to the existing exact
 maintenance status command. No new SSH command, path argument, permission, device
 access, service restart or actuation is introduced. Do not invoke prepare/install
-for this update. Use the separate root-console updater and confirm a second
-restricted status read before relying on the new field.
+for this update. The new field is available through the existing status command. The separate
+root-console updater is already applied; do not rerun it.
 
 [Operator instructions](../maintenance-access/LIGHT_BENCH_DIAGNOSTICS.md).
