@@ -1,6 +1,8 @@
 # Independent light first installation —2026-10-15
 
-Prepared, not yet installed. Target trusted **root@DietPi**, Pi192.168.114.192.
+Executed successfully once: evidence `/root/independent-light-install.34wttm51`.
+**Do not repeat this first-install block on the installedPi.** The block below
+is the historical reviewed procedure. Target **root@DietPi**, Pi192.168.114.192.
 Both lamp and24V valve supplies remain disconnected. This step starts the new
 light services in OFF; it does not enable camera forwarding or prove contacts.
 Current restricted SSH helper cannot execute this package; use the existing

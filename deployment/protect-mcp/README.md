@@ -8,10 +8,13 @@ AUTO/manual modes, default 300-second hold, persisted deduplication and expiry.
 
 ## Installed checkpoint
 
-See [dated evidence](../../docs/evidence/2026-10-15-protect-mcp-adapter.md).
-The VM service is installed in **observe** mode. It reads live detections every
-five seconds, with no destination or lighting credential. It cannot switch a
-relay in this mode. GPIO21/service/gateway activation and acceptance are pending.
+The Pi light runtime is installed with initialOFF confirmed by the owner receipt.
+Camera credential and PiTLS identity were verified directly fromVM. The adapter
+now runs in **forward** mode for G4Pro/person only; startup creates a new boundary.
+Fresh-person delivery/relay acceptance remains pending. See
+[activation evidence](../../docs/evidence/2026-10-15-light-runtime-activation.md).
+The earlier [observe-mode evidence](../../docs/evidence/2026-10-15-protect-mcp-adapter.md)
+records the preparation stage.
 
 ## Admission contract
 
@@ -65,7 +68,7 @@ linuxvm. Boot configuration is enabled; a VM reboot test has not been performed.
 Stop with `systemctl --user disable --now protect-light-adapter.service`. No Pi
 state change is issued when starting or stopping this observer.
 
-## Forward activation prerequisites (not performed)
+## Forward activation contract (software activation completed; device acceptance pending)
 
 1. Complete existing disconnected GPIO21/paired-output coexistence and executor
    acceptance. Install/provision the independent light service through a reviewed
@@ -73,7 +76,7 @@ state change is issued when starting or stopping this observer.
 2. Provision a camera-only token distinct from Dial/settings/shower credentials.
    Allow only the exact selected camera ID at Pi. Do not export existing secrets.
 3. Provide a verified HTTPS route for POST `/api/v1/lights/events/unifi`, to the
-   loopback light controller8002. No such TLS route is currently commissioned.
+   loopback light controller8002. This route was installed and its certificate/authentication verified on2026-10-15.
    Existing disabled Node-RED webhook templates remain disabled; MCP uses the
    normalized camera-role API, not a fabricated Protect webhook payload.
 4. Review concrete config with mode=forward, endpoint, absolute token_file and
@@ -81,8 +84,8 @@ state change is issued when starting or stopping this observer.
    creates a new boundary and never replays observer history.
 5. Perform separately authorized bounded disconnected-load acceptance: new person,
    duplicate, manual inhibition, return to AUTO, expiry, link loss and recovery.
-   Record controller history, GPIO and physical observations separately. Fresh
-   lighting detection after activation still requires explicit activation approval.
+   Record controller history, GPIO and physical observations separately. The owner authorized connection to the disconnected light relay; new-detection
+   acceptance is now pending.
 
 The user requested implementation, not an unreviewed substitute for open device
-gates. The observer is useful preparation, not a completed light installation.
+gates. Software forwarding is active; this does not establish physical acceptance.

@@ -15,14 +15,16 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
-## Independent light installation package prepared — 2026-10-15
+## Independent light installed; camera forwarding configured — 2026-10-15
 
-A separate offline light-runtime package has passed independent review and1026
-tests and is available for the trusted Pi console. It preserves the shower environment, paired daemon and Node-RED;
-initial GPIO21 command is OFF, with camera forwarding still unconfigured.
-The VM adapter was freshly confirmed active in observe mode. This is preparation,
-not a Pi installation or physical acceptance. See the
-[preparation record](evidence/2026-10-15-light-runtime-preparation.md).
+Owner receipt confirms LIGHT_RUNTIME_INSTALLED_OFF with finalOFFreadback and
+private backup. New camera credential and pinned TLS were independently verified
+fromVM; the G4Pro person adapter is now active in forward mode. Fresh polls have
+not yet reported a new admitted event. RestrictedPi status separately confirmed
+all existing services active and pairedGPIO26/20HIGH. Physical acceptance and
+fresh-detection response remain pending. See
+[installation/activation evidence](evidence/2026-10-15-light-runtime-activation.md)
+and [reviewed package record](evidence/2026-10-15-light-runtime-preparation.md).
 
 ## Third-relay bench stopped; diagnostics update prepared — 2026-10-15
 
