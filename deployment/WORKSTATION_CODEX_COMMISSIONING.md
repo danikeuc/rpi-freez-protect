@@ -328,3 +328,14 @@ investigate without repeating SUPPLY or assuming safe physical position.
 PT100/MAX31865 commissioning is a separate requirement for `automatic` mode and
 must pass before `sensor_commissioned` can be enabled. DS18B20 is rollback code
 only.
+
+## GPIO21 diagnostic update prepared — 2026-10-15
+
+A reviewed status-only extension is prepared; it is NOT installed or remotely
+verified yet. It adds sanitized historical bench evidence to the existing exact
+maintenance status command. No new SSH command, path argument, permission, device
+access, service restart or actuation is introduced. Do not invoke prepare/install
+for this update. Use the separate root-console updater and confirm a second
+restricted status read before relying on the new field.
+
+[Operator instructions](maintenance-access/LIGHT_BENCH_DIAGNOSTICS.md).

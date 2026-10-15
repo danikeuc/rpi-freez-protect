@@ -124,3 +124,14 @@ be assessed separately from access-file recovery.
 Legal energized valve1/valve2/light combinations remain (0,0,0), (0,0,1),
 (1,1,0), (1,1,1). This migration envelope leaves lighting disabled and requires
 DRAIN high/high at its acceptance gates. No physical position is inferred.
+
+## GPIO21 diagnostic update prepared — 2026-10-15
+
+A reviewed status-only extension is prepared; it is NOT installed or remotely
+verified yet. It adds sanitized historical bench evidence to the existing exact
+maintenance status command. No new SSH command, path argument, permission, device
+access, service restart or actuation is introduced. Do not invoke prepare/install
+for this update. Use the separate root-console updater and confirm a second
+restricted status read before relying on the new field.
+
+[Operator instructions](LIGHT_BENCH_DIAGNOSTICS.md).

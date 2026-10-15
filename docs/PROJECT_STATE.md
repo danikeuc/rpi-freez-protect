@@ -15,13 +15,23 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
-## Third-relay commissioning prepared — 2026-10-15
+## Third-relay bench stopped; diagnostics update prepared — 2026-10-15
 
-Owner requests connection to the unladen third relay. Fresh status shows paired
-GPIO20/26 LOW/LOW; valve supply isolation and USER_OFF confirmation are pending.
-A bounded GPIO21 startup/ON/OFF/release/crash test is prepared for the trusted Pi
-root console; no new hardware operations or service activation have occurred.
-[Preparation and scope](evidence/2026-10-15-light-gpio21-bench-preparation.md).
+Owner confirmed both loads disconnected and STOP; a subsequent restricted read
+showed paired outputs HIGH/HIGH. The operator then ran the bounded GPIO21 bench:
+LIGHT_LEVEL_MISMATCH, attempted_gpio21=true, final_off_readback=true,
+physical_acceptance=NOT_VERIFIED, automation_enabled=false. Evidence is retained
+at /root/light-gpio21-bench.ehy6qh3b; first failing phase is still unknown.
+No repeat or forwarding activation is permitted by that failed result.
+[Bench evidence](evidence/2026-10-15-light-gpio21-bench-preparation.md).
+
+A status-only helper update is prepared against the owner-reported deployed hash
+df06b46bd206dbadbbbd201aeb80529df9deb790b7df448b29e1ff2ba15c6a9c.
+It adds bounded historical GPIO21 diagnostics to the existing maintenance status
+command without changing dispatcher/sudoers or actuator authority. Tests:993 pass;
+Ruff and diff-check pass; independent review completed with both findings fixed.
+Root-console installation and separate remote acceptance are pending.
+[Diagnostics preparation](evidence/2026-10-15-light-bench-diagnostics.md).
 
 ## Continuous Protect MCP observation installed — 2026-10-15
 

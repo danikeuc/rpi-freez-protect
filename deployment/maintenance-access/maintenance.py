@@ -3,6 +3,7 @@ import fcntl
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import stat
@@ -19,6 +20,7 @@ ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'HOME': '/root',
        'PYTHONDONTWRITEBYTECODE': '1'}
 UNITS = ('freeze-protect.service', 'freeze-protect-pair-gpio.service', 'node-red.service')
 ARTIFACTS = (
+    '/usr/local/lib/freeze-protect-maintenance-v1/maintenance.py',
     '/etc/systemd/system/freeze-protect.service',
     '/etc/systemd/system/freeze-protect.service.d/30-node-red-readiness.conf',
     '/etc/systemd/system/freeze-protect-pair-gpio.service',
@@ -284,11 +286,186 @@ def recovery_diagnostic(kind='device-allow-recovery'):
     return result
 
 
+
+LIGHT_ROOT = Path('/root')
+_ROOT_UID = 0
+LIGHT_PHASES = (
+    'startup_off', 'on', 'command_off', 'normal_release',
+    'on_before_crash', 'crash_release', 'final_owned_off', 'final_released_off',
+)
+LIGHT_RESULTS = {
+    'GPIO21_DISCONNECTED_DRIVER_PASS', 'LIGHT_LEVEL_MISMATCH',
+    'LIGHT_FUNCTION_MISMATCH', 'PAIRED_DRAIN_CHANGED', 'WORKER_TIMEOUT',
+    'WORKER_FRAME', 'WORKER_ACK', 'WORKER_EXIT_TIMEOUT', 'WORKER_EXIT',
+    'INITIAL_OFF_READBACK', 'WORKER_READBACK', 'INSPECT_PRIVATE_EVIDENCE',
+    'PREFLIGHT', 'PAIRED_BASELINE_CHANGED', 'SERVICES_REQUIRED',
+    'PAIRED_OWNERSHIP', 'GPIO21_BUSY_OR_UNKNOWN',
+}
+
+
+def _valid(value):
+    if not value:
+        raise ValueError('INVALID_LIGHT_EVIDENCE')
+
+
+def _trusted_info(info, directory=False):
+    _valid(info.st_uid == _ROOT_UID and not info.st_mode & 0o022)
+    _valid(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+
+
+def _light_root_fd():
+    """Walk trusted directory descriptors; never resolve symlinks."""
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        _trusted_info(os.fstat(fd), True)
+        for part in LIGHT_ROOT.parts[1:]:
+            new = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW |
+                          os.O_CLOEXEC, dir_fd=fd)
+            os.close(fd)
+            fd = new
+            _trusted_info(os.fstat(fd), True)
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _light_read(directory, name, limit):
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |
+                 os.O_CLOEXEC, dir_fd=directory)
+    try:
+        before = os.fstat(fd)
+        _trusted_info(before)
+        _valid(before.st_size <= limit)
+        data = bytearray()
+        while len(data) <= limit:
+            chunk = os.read(fd, min(65536, limit + 1 - len(data)))
+            if not chunk:
+                break
+            data.extend(chunk)
+        _valid(len(data) <= limit)
+        after = os.fstat(fd)
+        signature = lambda info: (info.st_dev, info.st_ino, info.st_size,
+                                  info.st_mtime_ns, info.st_ctime_ns)
+        _valid(signature(before) == signature(after))
+        return bytes(data)
+    finally:
+        os.close(fd)
+
+
+def summarize_light_bench(receipt, rows, diagnostic):
+    _valid(isinstance(receipt, dict) and isinstance(rows, list) and len(rows) <= 10000)
+    _valid(all(type(receipt.get(key)) is bool
+               for key in ('attempted_gpio21', 'final_off_readback')))
+    _valid(receipt.get('automation_enabled') is False)
+    result = receipt.get('result')
+    result = result if isinstance(result, str) and result in LIGHT_RESULTS else 'UNCLASSIFIED'
+    summary, first = {}, None
+    last_time = -1
+    for row in rows:
+        _valid(isinstance(row, dict))
+        phase, pins, stamp = row.get('phase'), row.get('pins'), row.get('monotonic')
+        _valid(isinstance(phase, str) and phase in LIGHT_PHASES)
+        _valid(type(stamp) in (int, float) and math.isfinite(stamp) and stamp >= 0 and stamp >= last_time)
+        last_time = stamp
+        _valid(isinstance(pins, dict) and set(pins) == {'20', '21', '26'})
+        for pin in pins.values():
+            _valid(isinstance(pin, dict) and set(pin) == {'level', 'function'})
+            _valid(type(pin['level']) is int and pin['level'] in (0, 1))
+            _valid(type(pin['function']) is int and pin['function'] in range(8))
+        # Reconstruct, never emit original dictionaries with unvalidated fields.
+        safe = {p: {'level': pins[p]['level'], 'function': pins[p]['function']}
+                for p in ('20', '21', '26')}
+        failure = None
+        if any(safe[p] != {'level': 1, 'function': 1} for p in ('20', '26')):
+            failure = 'PAIRED_DRAIN_CHANGED'
+        elif safe['21']['level'] != (0 if phase in ('on', 'on_before_crash') else 1):
+            failure = 'LIGHT_LEVEL_MISMATCH'
+        elif safe['21']['function'] not in ((0, 1) if phase.endswith('release') or
+                                           phase == 'final_released_off' else (1,)):
+            failure = 'LIGHT_FUNCTION_MISMATCH'
+        if failure and first is None:
+            first = {'phase': phase, 'code': failure, 'pins': safe}
+        if phase not in summary:
+            summary[phase] = {'phase': phase, 'first': safe, 'samples': 0, 'mismatches': 0}
+        summary[phase].update(last=safe)
+        summary[phase]['samples'] += 1
+        summary[phase]['mismatches'] += int(failure is not None)
+    frames, error_type = [], 'UNCLASSIFIED'
+    if diagnostic is not None:
+        _valid(isinstance(diagnostic, dict) and isinstance(diagnostic.get('frames', []), list))
+        if diagnostic.get('error_type') in ('RuntimeError', 'ValueError', 'OSError',
+                                            'TimeoutError', 'KeyboardInterrupt'):
+            error_type = diagnostic['error_type']
+        for frame in diagnostic.get('frames', [])[-12:]:
+            if (isinstance(frame, dict) and frame.get('file') in
+                    ('commission_gpio21.py', 'operator_checks.py')
+                    and type(frame.get('line')) is int and 0 < frame['line'] <= 100000):
+                frames.append({'file': frame['file'], 'line': frame['line']})
+    # A partial sequence must not be promoted to driver acceptance.
+    if result == 'GPIO21_DISCONNECTED_DRIVER_PASS':
+        _valid(set(summary) == set(LIGHT_PHASES) and first is None
+               and receipt['attempted_gpio21'] and receipt['final_off_readback'])
+    return {'code': 'READ', 'result': result,
+            'attempted_gpio21': receipt['attempted_gpio21'],
+            'final_off_readback': receipt['final_off_readback'],
+            'physical_acceptance': 'NOT_VERIFIED', 'automation_enabled': False,
+            'observation': 'HISTORICAL_SAMPLES',
+            'sample_count': len(rows), 'first_failure': first,
+            'phase_summary': list(summary.values()), 'error_type': error_type,
+            'frames': frames}
+
+
+def light_bench_diagnostic():
+    root_fd, evidence_fd = None, None
+    try:
+        root_fd = _light_root_fd()
+        try:
+            marker = _light_read(root_fd, 'light-gpio21-commissioning.started', 256)
+        except FileNotFoundError:
+            return {'code': 'NOT_REQUESTED'}
+        value = marker.decode('ascii')
+        path = Path(value)
+        _valid(path.parent == LIGHT_ROOT and
+               re.fullmatch(r'light-gpio21-bench\.[A-Za-z0-9_]+', path.name))
+        evidence_fd = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY |
+                              os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd)
+        _trusted_info(os.fstat(evidence_fd), True)
+        try:
+            raw = _light_read(evidence_fd, 'receipt.json', 32768)
+            samples = _light_read(evidence_fd, 'samples.json', 2 * 1024 * 1024)
+        except FileNotFoundError:
+            return {'code': 'INCOMPLETE'}
+        try:
+            detail = _light_read(evidence_fd, 'diagnostic.json', 32768)
+        except FileNotFoundError:
+            detail = None
+        receipt = json.loads(raw)
+        _valid(isinstance(receipt, dict) and receipt.get('evidence') == value)
+        result = summarize_light_bench(receipt, json.loads(samples),
+                                      json.loads(detail) if detail is not None else None)
+        # Detect a changed marker/receipt or rewritten samples during collection.
+        _valid(marker == _light_read(root_fd, 'light-gpio21-commissioning.started', 256)
+               and raw == _light_read(evidence_fd, 'receipt.json', 32768)
+               and samples == _light_read(evidence_fd, 'samples.json', 2 * 1024 * 1024))
+        result['evidence'] = path.name
+        return result
+    except FileNotFoundError:
+        return {'code': 'INCOMPLETE'}
+    except (OSError, ValueError, TypeError, RecursionError, OverflowError):
+        return {'code': 'UNAVAILABLE_OR_INVALID'}
+    finally:
+        for fd in (evidence_fd, root_fd):
+            if fd is not None:
+                os.close(fd)
+
+
 def diagnostic():
     result = {'access_version': 1, 'package_sha256': PACKAGE_SHA,
               'jobs': [phase_status(p) for p in ('prepare', 'install')],
               'recovery': recovery_diagnostic(),
               'hub_recovery': recovery_diagnostic('hub-readiness-recovery'),
+              'light_gpio21_bench': light_bench_diagnostic(),
               'units': {}, 'artifacts': {}}
     for unit in (*UNITS, 'freeze-protect-maintenance-prepare.service',
                  'freeze-protect-maintenance-install.service'):
