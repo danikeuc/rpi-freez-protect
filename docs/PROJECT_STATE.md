@@ -15,6 +15,14 @@ are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
 
+## Third-relay commissioning prepared — 2026-10-15
+
+Owner requests connection to the unladen third relay. Fresh status shows paired
+GPIO20/26 LOW/LOW; valve supply isolation and USER_OFF confirmation are pending.
+A bounded GPIO21 startup/ON/OFF/release/crash test is prepared for the trusted Pi
+root console; no new hardware operations or service activation have occurred.
+[Preparation and scope](evidence/2026-10-15-light-gpio21-bench-preparation.md).
+
 ## Continuous Protect MCP observation installed — 2026-10-15
 
 The approved G4 Pro/person source now has a standalone user service on linuxvm,
