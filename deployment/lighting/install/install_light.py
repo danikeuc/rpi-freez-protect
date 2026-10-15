@@ -53,6 +53,42 @@ ENDPOINT = "https://192.168.114.192:8443/api/v1/lights/events/unifi"
 SOURCE = "6797d43f03968103e40003f1"
 
 
+# Exact reviewed diagnostics only; arbitrary exception messages are never public.
+SAFE_STOP_CODES = frozenset({
+    "BENCH_EVIDENCE_IDENTITY", "BENCH_LEVEL", "BENCH_LIGHT_DIRECTION",
+    "BENCH_MARKER_PATH", "BENCH_PAIR_CHANGED", "BENCH_RECEIPT", "BENCH_SAMPLE",
+    "BENCH_SAMPLES", "BENCH_SEQUENCE", "BENCH_UNEXPECTED_MISMATCH",
+    "BOTH_LOADS_DISCONNECTED_REQUIRED", "CANONICAL_CHIP_REQUIRED",
+    "DUPLICATE_JSON_KEY", "EXECUTOR_SERVICE_INACTIVE", "EXECUTOR_SOCKET_IDENTITY",
+    "EXECUTOR_STARTUP_TIMEOUT", "EXISTING_BASELINE_CHANGED", "EXISTING_LIGHT_ACCOUNT",
+    "EXISTING_LIGHT_UNIT", "GPIO_GROUP_REQUIRED", "GPIO_IDENTITY", "HOST_MODEL",
+    "HOST_RUNTIME", "INSTALL_INTERRUPTED", "INVALID_RECORD", "LIGHT_ACCOUNT_GROUPS",
+    "LIGHT_HTTP_STATUS", "LIGHT_INITIAL_OFF_REQUIRED", "LIGHT_OFF_READBACK_FAILED",
+    "LIGHT_OWNERSHIP", "LIGHT_SERVICE_INACTIVE", "LIGHT_STARTUP_TIMEOUT",
+    "LIGHT_STATUS_SIZE", "MANIFEST_PIN_MISMATCH", "MANIFEST_PIN_REQUIRED",
+    "PACKAGE_DIRECTORY", "PACKAGE_EXTRA_FILES", "PACKAGE_FILES", "PACKAGE_HASH",
+    "PACKAGE_HASH_FORMAT", "PACKAGE_SPECIAL_FILE", "PACKAGE_SYMLINK",
+    "PAIRED_BASELINE_CHANGED", "PAIRED_OWNERSHIP", "PAIRED_PID",
+    "PAIRED_PROCESS_BASELINE", "PENDING_DAEMON_RELOAD",
+    "PREVIOUS_INSTALL_REQUIRES_REVIEW", "RECIPIENT_RSA4096_REQUIRED",
+    "ROOT_CONSOLE_REQUIRED", "SERVICES_REQUIRED", "TLS_INGRESS_POLICY",
+    "TLS_INGRESS_UNAVAILABLE", "TOKEN_COLLISION", "UNRELATED_FILE_ADDED",
+    "UNTRUSTED_DATA_PATH", "UNTRUSTED_LINK", "UNTRUSTED_NULL_DEVICE",
+    "UNTRUSTED_PATH", "DB_INTEGRITY", "DB_INVALID", "DEVELOPMENT_MODE",
+    "DUPLICATE_ENV_KEY", "DURABLE_STOP_REQUIRED", "ENV_SYNTAX", "ENV_WORLD_READABLE",
+    "HTTP_REJECTED", "IDENTITY_INVALID", "IDENTITY_MISMATCH", "INVALID_STATUS",
+    "MISSING_DISPLAY_TOKEN", "OVERSIZE_STATUS", "USER_OFF_REQUIRED",
+    "WRONG_DB", "WRONG_MODE",
+})
+
+
+def safe_stop_code(error):
+    if (type(error) is RuntimeError and len(error.args) == 1
+            and type(error.args[0]) is str and error.args[0] in SAFE_STOP_CODES):
+        return error.args[0]
+    return "LIGHT_INSTALL_FAILED"
+
+
 def require(value, code):
     if not value:
         raise RuntimeError(code)
@@ -501,7 +537,37 @@ def verify_ingress(c):
             break
 
 
-def cleanup(c, *, started):
+def remove_activation(path):
+    path.unlink(missing_ok=True)
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def cleanup(c, *, started, commissioned=False, enable_attempted=False,
+            nginx_link_created=False, outcome=None):
+    """Inhibit only this attempt before stop, including partially completed starts."""
+    if outcome is None:
+        outcome = {}
+    # Each cleanup operation is independent: a failed stop cannot retain boot activation.
+    for owned, key, path in (
+        (commissioned, "commissioned_marker_removed", CONFIG / "commissioned"),
+        (nginx_link_created, "new_nginx_link_removed", NGINX_ENABLED),
+    ):
+        if owned:
+            try:
+                remove_activation(path)
+                outcome[key] = True
+            except BaseException:
+                outcome[key] = False
+    if enable_attempted:
+        try:
+            c.run(["systemctl", "disable", *UNITS])
+            outcome["new_units_disabled"] = True
+        except BaseException:
+            outcome["new_units_disabled"] = False
     if not started:
         return False
     try:
@@ -528,6 +594,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
     os.umask(0o077)
     evidence, c, started, off = None, None, False, False
+    commissioned = enable_attempted = nginx_link_created = False
+    cleanup_outcome = {}
+    error_code = None
     stage, bench_result = "preflight", None
     result, code = 1, "LIGHT_INSTALL_FAILED"
     for name in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
@@ -558,6 +627,7 @@ def main(argv=None):
         paired_preflight(c)
         checkpoint(c, evidence, "before-start", {"initial": "OFF"})
         private_file(CONFIG / "commissioned", "Disconnected-load installation; physical acceptance pending.\n")
+        commissioned = True
         c.run(["systemctl", "daemon-reload"])
         stage = "activate"
         started = True  # Includes an ambiguous/failed start, so cleanup still stops the new units.
@@ -569,10 +639,12 @@ def main(argv=None):
         stage = "ingress"
         private_file(NGINX_AVAILABLE, (directory / "light-camera.conf").read_bytes(), 0o644)
         NGINX_ENABLED.symlink_to(NGINX_AVAILABLE)
+        nginx_link_created = True
         c.run(["nginx", "-t"])
         checkpoint(c, evidence, "before-ingress", {"endpoint": ENDPOINT})
         c.run(["systemctl", "reload", "nginx.service"])
         verify_ingress(c)
+        enable_attempted = True
         c.run(["systemctl", "enable", *UNITS])
         stage = "acceptance"
         initial_off(c, token)
@@ -580,9 +652,12 @@ def main(argv=None):
         verify_preserved(c, baseline)
         off, result, code = True, 0, "LIGHT_RUNTIME_INSTALLED_OFF"
     except BaseException as error:
-        # Exception text and HTTP request objects may contain secrets: never serialize them.
+        # Publish only an exact allowlisted constant; never serialize arbitrary text.
+        error_code = safe_stop_code(error)
         if c is not None:
-            off = cleanup(c, started=started)
+            off = cleanup(c, started=started, commissioned=commissioned,
+                          enable_attempted=enable_attempted, nginx_link_created=nginx_link_created,
+                          outcome=cleanup_outcome)
         if evidence is not None:
             try:
                 private_file(evidence / "diagnostic.json", json.dumps({
@@ -593,7 +668,8 @@ def main(argv=None):
                 }))
             except BaseException:
                 pass
-    receipt = {"result": code, "evidence": str(evidence) if evidence else None,
+    receipt = {"result": code, "error_code": error_code,
+               "failure_inhibition": cleanup_outcome if result else None, "evidence": str(evidence) if evidence else None,
                "backup": str(evidence / "backup") if evidence else None,
                "stage": stage,
                "manifest_sha256": args.manifest_sha256, "required_paired_sha256": PAIR_HASH,
@@ -605,7 +681,11 @@ def main(argv=None):
             checkpoint(c, evidence, "receipt", receipt)
         except BaseException:
             result, receipt["result"] = 1, "LIGHT_RECEIPT_WRITE_FAILED"
-            receipt["final_off_readback"] = cleanup(c, started=started)
+            receipt["error_code"] = "LIGHT_RECEIPT_WRITE_FAILED"
+            receipt["failure_inhibition"] = cleanup_outcome
+            receipt["final_off_readback"] = cleanup(c, started=started, commissioned=commissioned,
+                          enable_attempted=enable_attempted, nginx_link_created=nginx_link_created,
+                          outcome=cleanup_outcome)
     print(json.dumps(receipt, sort_keys=True))
     return result
 

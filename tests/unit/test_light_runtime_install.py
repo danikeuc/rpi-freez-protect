@@ -131,6 +131,10 @@ def setup_run(installer, tmp_path, monkeypatch, *, failure=None):
     from types import SimpleNamespace
     events = []
     saved = {}
+    configuration = tmp_path / "configuration"
+    configuration.mkdir()
+    monkeypatch.setattr(installer, "CONFIG", configuration)
+    actual_private_file = installer.private_file
     def run(args, **kwargs):
         events.append(tuple(args))
         if failure == tuple(args):
@@ -145,12 +149,21 @@ def setup_run(installer, tmp_path, monkeypatch, *, failure=None):
     for name in ("fresh_target", "paired_preflight", "backup", "verify_preserved",
                  "private_file", "initial_off", "wait_executor", "light_high", "verify_ingress"):
         monkeypatch.setattr(installer, name, lambda *a, name=name, **k: events.append(name))
+    def write_file(path, content, mode=0o600):
+        events.append("private_file")
+        if path == configuration / "commissioned":
+            actual_private_file(path, content, mode)
+    monkeypatch.setattr(installer, "private_file", write_file)
     checks.pair_high = lambda: events.append("pair_high")
     monkeypatch.setattr(installer.tempfile, "mkdtemp", lambda **kw: str(tmp_path))
     monkeypatch.setattr(installer.signal, "signal", lambda *args: None)
     monkeypatch.setattr(installer.os, "umask", lambda mask: 0o022)
+    nginx_link = tmp_path / "nginx-link"
+    def enable_site(path):
+        events.append("enable_nginx_site")
+        nginx_link.symlink_to(path)
     monkeypatch.setattr(installer, "NGINX_ENABLED", SimpleNamespace(
-        symlink_to=lambda path: events.append("enable_nginx_site")))
+        symlink_to=enable_site, unlink=nginx_link.unlink, parent=nginx_link.parent))
     return events, saved
 
 
@@ -296,3 +309,75 @@ def test_masked_units_accept_only_canonical_dev_null_target(installer):
     assert record == {"kind": stat.S_IFCHR}
     with pytest.raises(RuntimeError, match="UNTRUSTED_PATH"):
         installer.link_target_record(Path("/dev/zero"))
+
+
+@pytest.mark.parametrize("failure_phase", ["acceptance", "receipt"])
+def test_late_failure_inhibits_activation_even_if_stop_fails(installer, tmp_path, monkeypatch, capsys, failure_phase):
+    stop = ("systemctl", "stop", "light-controller.service", "light-gpio.service")
+    events, _ = setup_run(installer, tmp_path, monkeypatch, failure=stop)
+    if failure_phase == "acceptance":
+        calls = []
+        def check_off(*args):
+            calls.append(True)
+            if len(calls) == 2:
+                raise RuntimeError("LIGHT_INITIAL_OFF_REQUIRED")
+        monkeypatch.setattr(installer, "initial_off", check_off)
+    else:
+        checkpoint = installer.checkpoint
+        def record(c, evidence, name, value):
+            if name == "receipt":
+                raise OSError("SECRET")
+            checkpoint(c, evidence, name, value)
+        monkeypatch.setattr(installer, "checkpoint", record)
+    assert installer.main(["--valves-disconnected", "--lamp-disconnected",
+                           "--manifest-sha256", "a"*64]) == 1
+    assert not (installer.CONFIG / "commissioned").exists()
+    assert not (tmp_path / "nginx-link").is_symlink()
+    disable = ("systemctl", "disable", "light-gpio.service", "light-controller.service")
+    assert events.index(disable) < events.index(stop)
+    assert "SECRET" not in capsys.readouterr().out
+
+
+def test_failure_before_start_revokes_new_marker(installer, tmp_path, monkeypatch):
+    events, _ = setup_run(installer, tmp_path, monkeypatch,
+                          failure=("systemctl", "daemon-reload"))
+    assert installer.main(["--valves-disconnected", "--lamp-disconnected",
+                           "--manifest-sha256", "a"*64]) == 1
+    assert not (installer.CONFIG / "commissioned").exists()
+    assert not any(isinstance(event, tuple) and event[:2] == ("systemctl", "disable")
+                   for event in events)
+
+
+def test_preexisting_activation_survives_failed_fresh_install_gate(installer, tmp_path, monkeypatch, capsys):
+    events, _ = setup_run(installer, tmp_path, monkeypatch)
+    marker = installer.CONFIG / "commissioned"
+    marker.write_text("preexisting")
+    def fail(c):
+        raise RuntimeError("PREVIOUS_INSTALL_REQUIRES_REVIEW")
+    monkeypatch.setattr(installer, "fresh_target", fail)
+    assert installer.main(["--valves-disconnected", "--lamp-disconnected",
+                           "--manifest-sha256", "a"*64]) == 1
+    assert marker.read_text() == "preexisting"
+    assert not any(isinstance(event, tuple) and event[:2] in (
+        ("systemctl", "disable"), ("systemctl", "stop")) for event in events)
+    assert json.loads(capsys.readouterr().out)["error_code"] == "PREVIOUS_INSTALL_REQUIRES_REVIEW"
+
+
+def test_nginx_test_failure_revokes_only_new_site_link(installer, tmp_path, monkeypatch):
+    events, _ = setup_run(installer, tmp_path, monkeypatch, failure=("nginx", "-t"))
+    old_site = tmp_path / "existing-shower.conf"
+    old_site.write_text("existing")
+    old_link = tmp_path / "existing-shower-link"
+    old_link.symlink_to(old_site)
+    assert installer.main(["--valves-disconnected", "--lamp-disconnected",
+                           "--manifest-sha256", "a"*64]) == 1
+    assert not (tmp_path / "nginx-link").is_symlink()
+    assert old_link.read_text() == "existing"
+    assert ("systemctl", "reload", "nginx.service") not in events
+
+
+def test_error_codes_use_only_reviewed_exact_labels(installer):
+    assert installer.safe_stop_code(RuntimeError("PAIRED_BASELINE_CHANGED")) == "PAIRED_BASELINE_CHANGED"
+    for error in (RuntimeError("VERY_SECRET_TOKEN"), RuntimeError("PAIRED_BASELINE_CHANGED token"),
+                  ValueError("PAIRED_BASELINE_CHANGED"), RuntimeError(object())):
+        assert installer.safe_stop_code(error) == "LIGHT_INSTALL_FAILED"
