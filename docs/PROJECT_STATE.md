@@ -19,10 +19,9 @@ was transcribed from operator-supplied output and is not a live-host attestation
 
 Owner receipt confirms LIGHT_RUNTIME_INSTALLED_OFF with finalOFFreadback and
 private backup. New camera credential and pinned TLS were independently verified
-fromVM; the G4Pro person adapter is now active in forward mode. Fresh polls have
-not yet reported a new admitted event. RestrictedPi status separately confirmed
-all existing services active and pairedGPIO26/20HIGH. Physical acceptance and
-fresh-detection response remain pending. See
+fromVM; the G4Pro person adapter is now active in forward mode. A freshVM journal read confirms one new event accepted at21:38:57 localtime;
+the owner reports the third-relay/LED response. RestrictedPi status separately confirmed
+all existing services active and pairedGPIO26/20HIGH. Five-minute expiry and physical load acceptance remain pending. See
 [installation/activation evidence](evidence/2026-10-15-light-runtime-activation.md)
 and [reviewed package record](evidence/2026-10-15-light-runtime-preparation.md).
 

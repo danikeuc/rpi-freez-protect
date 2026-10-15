@@ -7,7 +7,8 @@ It uses the VM Protect MCP adapter, a camera-only HTTPS endpoint on port8443,
 and separate light services/venv. Node-RED lighting templates below remain
 inactive alternatives; they are not part of this installation. The owner now reports successful installation and VM forwarding is configured;
 see [activation evidence](../../docs/evidence/2026-10-15-light-runtime-activation.md).
-Fresh-person/relay and physical acceptance remain pending.
+Fresh-person delivery is confirmed and relay/LED response is operator-reported;
+expiry and physical load acceptance remain pending.
 
 The disconnected GPIO21 bench proved normal ON/OFF and unchanged paired HIGH
 samples, but detected retained output LOW immediately after executor SIGKILL.

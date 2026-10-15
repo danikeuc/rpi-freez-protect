@@ -54,3 +54,18 @@ No claim is made yet that an event was delivered or a real lamp switched.
 
 No source/runtime logic changed in this operational step. Prior reviewed1026-test
 record remains preparation evidence; no new test run is claimed here.
+
+## First new-person acceptance — follow-up on2026-10-15
+
+Owner replied "je sprozen" to the requested third-relay/LED response check.
+A separate fresh VM journal read confirms one admitted event at
+2026-10-15T19:38:57.375132+00:00 (21:38:57 Europe/Budapest):
+state=forwarding, fresh=1, accepted=1. Adapter remains active/running,
+MainPID73747, NRestarts0; the120-row window contains no unavailable/error states.
+Latest sampled poll19:42:38UTC has fresh0.
+
+Result: software camera-to-Pi event acceptance VERIFIED; third-relay/LED response
+OPERATOR_REPORTED. Both loads remain disconnected per the maintenance context.
+This does not prove mains lamp switching or relay contact behavior under load.
+Five-minute expiry with no new detections is still NOT_VERIFIED; duplicate,
+manual-inhibition and recovery checks retain their previous pending status.

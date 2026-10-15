@@ -11,7 +11,8 @@ AUTO/manual modes, default 300-second hold, persisted deduplication and expiry.
 The Pi light runtime is installed with initialOFF confirmed by the owner receipt.
 Camera credential and PiTLS identity were verified directly fromVM. The adapter
 now runs in **forward** mode for G4Pro/person only; startup creates a new boundary.
-Fresh-person delivery/relay acceptance remains pending. See
+One fresh-person event is confirmed accepted byPi and the owner reports the
+relay/LED response; expiry and physical load acceptance remain pending. See
 [activation evidence](../../docs/evidence/2026-10-15-light-runtime-activation.md).
 The earlier [observe-mode evidence](../../docs/evidence/2026-10-15-protect-mcp-adapter.md)
 records the preparation stage.
