@@ -254,6 +254,22 @@ def fresh_target(c):
     c.run(["nginx", "-t"])
 
 
+def link_target_record(target):
+    """Masked units use the one conventional writable device, never read it."""
+    if target == Path("/dev/null"):
+        secure(target.parent)
+        info = target.lstat()
+        require(stat.S_ISCHR(info.st_mode) and info.st_uid == 0
+                and info.st_rdev == os.makedev(1, 3), "UNTRUSTED_NULL_DEVICE")
+    else:
+        secure(target)
+        info = target.stat()
+    record = {"kind": stat.S_IFMT(info.st_mode)}
+    if stat.S_ISREG(info.st_mode):
+        record["sha256"] = digest(target)
+    return record
+
+
 def preserved_files(c):
     flow_path = Path("/mnt/dietpi_userdata/node-red/flows.json")
     paths = {c.ENV, c.UNIT, PAIR_PATH, c.DB.with_name(c.DB.name + ".weather-identity"), flow_path,
@@ -270,11 +286,7 @@ def preserved_files(c):
             secure(path.parent)
             require(path.lstat().st_uid == 0, "UNTRUSTED_LINK")
             target = path.resolve(strict=True)
-            secure(target)
-            record = {"link": os.readlink(path), "kind": stat.S_IFMT(target.stat().st_mode)}
-            if target.is_file():
-                record["sha256"] = digest(target)
-            result[str(path)] = record
+            result[str(path)] = {"link": os.readlink(path), **link_target_record(target)}
         else:
             # These application-owned data files are inspected, never executed.
             if path in (flow_path, c.DB.with_name(c.DB.name + ".weather-identity")):

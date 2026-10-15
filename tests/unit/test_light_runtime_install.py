@@ -288,3 +288,11 @@ def test_tls_acceptance_uses_pinned_ca_and_never_submits_authenticated_event(ins
     assert [request.method for request in calls] == ["POST", "GET", "GET"]
     assert all(not request.has_header("Authorization") for request in calls)
     assert calls[0].data == b"{}"
+
+
+def test_masked_units_accept_only_canonical_dev_null_target(installer):
+    import stat
+    record = installer.link_target_record(Path("/dev/null"))
+    assert record == {"kind": stat.S_IFCHR}
+    with pytest.raises(RuntimeError, match="UNTRUSTED_PATH"):
+        installer.link_target_record(Path("/dev/zero"))
