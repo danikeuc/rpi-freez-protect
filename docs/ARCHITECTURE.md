@@ -130,12 +130,15 @@ in the installed seven-path gateway. Roon/Synology need no lighting changes.
 The shared Pi/Node-RED runtime still creates common failure domains.
 
 Board/load suitability, actual Protect POST/auth/retry profile and executor
-crash/power behavior remain explicit prerequisites. See the specification for
+power behavior remain explicit prerequisites. Retained light ON after process
+crash/hang is accepted by the owner decision of2026-10-15; no independent cutoff
+is required for that light-only failure case. See the specification for
 legal output combinations, fault outcomes, UI arbitration and acceptance scope.
 
 The Python lighting implementation is under `src/freeze_protect/lighting/`.
 It uses its own SQLite database and an explicitly provisioned revision watermark.
 The GPIO executor accepts only line 21, owns a three-second ON lease and rejects
 stale generation/fence/lease identities. Fake-I/O tests establish this software
-behavior; executor hangs and board power transitions still need bench evidence.
+behavior; executor hangs are not measured but retained ON is accepted for that
+case by the owner. Board power transitions still need separate bench evidence.
 Normal service startup does not recreate a missing database or restore ON.

@@ -199,17 +199,17 @@ history, not full camera payloads, private URLs, images or credentials.
 
 ## 7. Fault outcomes and remaining proof
 
-All outcomes below are requirements, not successful physical tests. The exact
-light GPIO backend, lease and supervisor budgets are not yet measured; choose
-and test those bounds before enabling real loads. A process timer does not
-survive that process hanging.
+Outcomes below are requirements or explicitly accepted exceptions, not successful
+physical tests. The owner accepted retained light ON after a process crash/hang
+on2026-10-15; see the decision below. A timer cannot enforce a deadline while its
+process is unavailable. Other bounds and physical behaviors remain separate.
 
 | Fault domain | Required outcome | Surviving enforcement / time boundary | Evidence still required |
 | --- | --- | --- | --- |
 | Camera, LAN or Dial link lost | Existing AUTO holds expire; manual override returns at its deadline; no stale replay | Local controller and executor; configured hold/manual deadlines | Offline expiry and reconnect trace |
 | Node-RED crash/hang/redeploy | No new camera actions; existing deadlines remain; Dial path still usable | Separate light controller/executor; configured deadlines | Adapter failure test; existing shared shower bridge impact recorded |
 | Light controller crash/hang | Light OFF on executor lease expiry | Separate executor; software maximum lease 3 seconds, physical cutoff unmeasured | Kill and stalled controller tests |
-| Light executor crash/hang | Reach OFF without relying on its cleanup | Supervisor/hardware release behavior must be established; maximum response unknown | Backend line release, supervisor and hardware evidence; live gate remains open |
+| Light executor crash/hang | Retained ON until control recovery or manual intervention is accepted by owner | No independent cutoff or maximum ON duration required for this failure case | SIGKILL first release sample retained output/LOW; hang not tested; original failed fail-OFF receipt retained |
 | Pi reset/reboot | No ON pulse; startup OFF; no restore of old ON intent | Board bias/boot behavior before software, then executor readiness | Pre-application capture, reset timing and mode recovery |
 | Pi supply lost/restored while relay supply remains | No unintended ON during floating/control loss | Board input bias/isolation; wiring-dependent, response time unknown | Actual power-domain test with load disconnected |
 | Relay-board supply lost/restored | Released contact and no unexpected ON on restoration | Coil/contact wiring and passive behavior, time unknown | Contact/bias verification |
@@ -306,3 +306,32 @@ verified HTTPS; the old webhook/Node-RED ingress remains disabled. Consequently,
 webhook payload capture is not evidence required for this chosen MCP transport;
 MCP identity/freshness and reconnect acceptance are required instead. No GPIO,
 executor, wiring or disconnected coexistence gate is removed by this choice.
+
+## Owner decision: light may remain ON after process failure — 2026-10-15
+
+The owner explicitly answered "da" after being asked whether the independent
+light may remain ON after a process crash or hang until control is restored or
+a manual intervention occurs. This accepts an unbounded ON duration for this
+light failure case; the regular hold/override timer is not a guarantee while its
+enforcing process is unavailable. No independent crash/hang cutoff is required
+for this light under this decision.
+
+This is a requirement change, not a successful fail-OFF test. The original
+LIGHT_LEVEL_MISMATCH receipt and first crash_release output/LOW sample remain
+unchanged. Normal ON/OFF, final OFF recovery and sampled paired HIGH/HIGH were
+observed. Executor hang behavior is accepted as a possible retained ON state,
+not claimed to have been tested.
+
+The exception applies only to independent light GPIO21. Shower GPIO20/26 safety,
+paired transitions, deadlines and fault requirements are unchanged. Keep normal
+communication-loss expiry, explicit OFF behavior, startup OFF and prevention of
+stale command replay. No new guarantee is made for reset/boot, power domains,
+contact wiring, physical position, mains connection or remote actuation rights.
+The existing no-repeat marker must not be deleted merely to turn the old failed
+test into a pass.
+
+Camera forwarding remains disabled until service, ingress, credential and
+functional acceptance are actually completed. Crash-release automatic OFF is
+no longer a blocker by itself under this recorded owner decision.
+
+[Decision record](../../evidence/2026-10-15-light-retained-on-acceptance.md).

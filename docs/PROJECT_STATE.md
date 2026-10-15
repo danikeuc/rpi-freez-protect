@@ -24,7 +24,11 @@ physical_acceptance=NOT_VERIFIED, automation_enabled=false. Evidence is retained
 at /root/light-gpio21-bench.ehy6qh3b. Remote diagnostics identify crash_release:
 the first sample after SIGKILL retained GPIO21 output/LOW; explicit final OFF
 recovery succeeded. All931 stored samples retain paired output/HIGH.
-No repeat or forwarding activation is permitted by that failed result.
+The owner subsequently accepted retained light ON after process crash/hang;
+this removes the automatic crash-OFF requirement only for GPIO21. The original
+failed receipt remains unchanged; no blind repeat or forwarding activation is
+authorized merely by reclassifying the requirement.
+[Accepted light failure behavior](evidence/2026-10-15-light-retained-on-acceptance.md).
 [Bench evidence](evidence/2026-10-15-light-gpio21-bench-preparation.md).
 
 A status-only helper update was installed from the owner-reported baseline hash
