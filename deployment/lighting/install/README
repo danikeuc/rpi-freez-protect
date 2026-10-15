@@ -1,0 +1,30 @@
+Independent light runtime: disconnected-load first installation
+
+Target: Raspberry Pi 4 Model B Rev 1.1, aarch64, Python3.13, gpiochip0/21.
+Run from a new root-owned private directory at the trusted root@DietPi console.
+Verify the archive and manifest hashes supplied with this package before use.
+
+python3 -I -B install_light.py --valves-disconnected --lamp-disconnected --manifest-sha256 <pinned SHA256>
+
+Only newly created light services and HTTPS camera route8443 are installed.
+The shower environment, paired daemon, GPIO20/26 and Node-RED are preserved.
+All dependencies are offline and hash pinned in an isolated light-only venv.
+The initial light state must be OFF. No ON command is sent by the installer.
+The root-only evidence directory records a private baseline backup and receipt.
+On failure preserve the directory and marker; do not rerun or delete them.
+
+Accepted limitation: executor crash/hang may leave the light ON indefinitely.
+Systemd restart is operational recovery, not a guaranteed physical cutoff.
+The original LIGHT_LEVEL_MISMATCH bench result remains unchanged. Both loads
+must stay disconnected until separate physical acceptance. GPIO readback does
+not prove relay contact position or suitability of mains wiring.
+
+Camera forwarding remains unconfigured. A new camera token is generated onPi
+and exported only encrypted to the VM recipient public key under
+<evidence>/backup/provisioning/camera-token.enc. The accompanying server.crt
+is the public trust anchor for the new HTTPS endpoint. The token, endpoint
+and certificate SHA256 are inside the encrypted payload. No token is printed.
+The display/settings credentials remain root-only onPi for later provisioning.
+
+This is a first-install tool: an existing light account, units, target paths,
+or attempt marker require review. It provides no automatic rollback/retry.

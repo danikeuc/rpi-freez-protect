@@ -1,0 +1,42 @@
+[Unit]
+Description=Independent light GPIO21 executor
+ConditionPathExists=/etc/independent-light/commissioned
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=independent-light
+Group=independent-light
+SupplementaryGroups=gpio
+WorkingDirectory=/opt/independent-light
+EnvironmentFile=/etc/independent-light/executor.env
+ExecStart=/opt/independent-light/venv/bin/python -I -B -m freeze_protect.lighting.executor
+ExecStartPost=/opt/independent-light/venv/bin/python -I -B /opt/independent-light/wait_executor.py
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=15
+TimeoutStopSec=5
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+RuntimeDirectory=independent-light
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=no
+DevicePolicy=closed
+DeviceAllow=/dev/gpiochip0 rw
+ReadWritePaths=/run/independent-light
+# Restart can recover operation; retained ON after crash/hang is owner-accepted.
+# This is not an independent cutoff and does not guarantee a bounded OFF time.
+
+[Install]
+WantedBy=multi-user.target

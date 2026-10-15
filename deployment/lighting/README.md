@@ -1,7 +1,26 @@
-# Independent lighting deployment templates
+# Independent lighting deployment assets
 
-Task 2 repository assets,2026-10-13. Nothing here installs, enables, deploys or
-accesses GPIO. Canonical behavior:
+## Current installation path — 2026-10-15
+
+The reviewed first-install package is under [install/README](install/README).
+It uses the VM Protect MCP adapter, a camera-only HTTPS endpoint on port8443,
+and separate light services/venv. Node-RED lighting templates below remain
+inactive alternatives; they are not part of this installation. Package preparation
+is not target installation or physical acceptance. Camera forwarding stays in
+observe mode until credential handoff is verified.
+
+The disconnected GPIO21 bench proved normal ON/OFF and unchanged paired HIGH
+samples, but detected retained output LOW immediately after executor SIGKILL.
+The owner accepted unbounded retained ON after crash/hang for this independent
+light; see [acceptance](../../docs/evidence/2026-10-15-light-retained-on-acceptance.md).
+The original failed bench receipt is retained. No external watchdog is required
+for this accepted case. Startup OFF, ordinary leases and physical load checks
+remain requirements; shower safety is unchanged.
+
+## Original inactive template path
+
+The following describes the original 2026-10-13 templates, not the selected
+`install/` package. Canonical behavior:
 [specification](../../docs/superpowers/specs/2026-10-12-independent-lighting-design.md).
 
 ## Disabled defaults and separation
@@ -60,9 +79,9 @@ The legacy userspace FSEL writer is no longer the recorded installed backend.
 The source repair and installed migration close that part of
 GPIO_SHARED_FSEL2_COEXISTENCE. They do not close the disconnected-load
 startup/request/release/crash trace or physical acceptance requirements.
-Keep lighting templates, flow and gateway disabled. Do not create
-/etc/independent-light/commissioned, set LIGHT_GPIO21_ENABLED=commissioned or
-grant light DeviceAllow until the remaining disconnected acceptance is recorded.
+Keep the original templates and flow disabled. The dedicated `install/` package
+checks the recorded disconnected bench and owner exception before creating its
+commissioned marker and narrowly scoped DeviceAllow. Physical acceptance remains open.
 Kernel-only configuration does not establish atomic initial direction changes,
 crash protection, physical independence or valve position. Actual Protect
 profile, Node-RED runtime and lamp/wiring gates remain open.
@@ -131,7 +150,7 @@ mixed valve states forbidden, lighting never writes GPIO26/20.
 | --- | --- | --- |
 | Camera/LAN or Node-RED loss | Local controller deadlines; no queued replay | Offline trace/shared shower bridge impact |
 | Controller crash/hang | Executor lease expiry 3 seconds | Measured readback/contact cutoff |
-| Executor crash/hang | Surviving supervisor/hardware releases | Release behavior/maximum cutoff |
+| Executor crash/hang | Owner accepts retained ON; restart may recover | No guaranteed cutoff; physical contact behavior unverified |
 | Pi reset/reboot | Bias/startup OFF; never restore ON | Pre-software boot trace |
 | Pi, relay, lamp power loss/restoration | Verify each independent domain | Bias/contacts; active-command lamp restoration acceptance |
 
