@@ -1,6 +1,6 @@
 # Project state and evidence register
 
-**Documentation reconciliation:** 2026-10-14; device observations retain their original dates
+**Documentation reconciliation:** 2026-10-15; device observations retain their original dates
 
 **Latest recorded Pi installation:** 1.3.1, `weather_assisted`, `USER_OFF` / `DRAIN`
 (operator installation receipt and restricted GPIO readback, 2026-10-11; not a new live observation on 2026-10-12).
@@ -14,6 +14,16 @@ must never be promoted into a physical claim. The external observations below
 are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
+
+## Lighting target inventory received — 2026-10-15
+
+The operator supplied the verified read-only package output. GPIO20/26 report
+the paired owner; GPIO21 is unused at observation. Node-RED is active as nodered,
+with51 nodes and no enabled lighting ingress. Startup journal reports Node-RED
+5.0.7 and matching known paths; Node.js and effective settings remain unverified.
+[Exact receipt and file hashes](evidence/2026-10-15-lighting-target-inventory.md).
+The inventory request is complete; lighting activation, actual Protect profile
+and disconnected/physical acceptance remain pending.
 
 ## Lighting continuation — 2026-10-14
 

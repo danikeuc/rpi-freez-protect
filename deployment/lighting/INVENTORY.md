@@ -25,6 +25,14 @@ to the completed paired migration; it cannot run a lighting installation.
 The root-console step is necessary until a separately reviewed lighting-specific
 maintenance operation is installed. Never rerun consumed migration install jobs.
 
+## Target receipt — 2026-10-15
+
+The operator completed this inventory successfully. See the
+[receipt](../../docs/evidence/2026-10-15-lighting-target-inventory.md).
+Do not rerun it routinely: line21 was unused, paired ownership was present, and
+Node-RED had no enabled light route. Effective settings and physical acceptance
+remain unverified; the receipt distinguishes those limits.
+
 ## Remaining handoff
 
 1. Inventory actual Node-RED runtime, effective settings and active flow.
