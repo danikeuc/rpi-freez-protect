@@ -718,3 +718,7 @@ Owner follow-up confirms +37.945s wall-clock step at2026-10-17 01:25:40UTC, succ
 ## 2026-10-18 — Continuous time synchronization installed
 
 Operator receipt confirms mode 4 and synchronized time, backup `/root/freeze-time-sync.9qom636c`. Independent restricted SSH verifies light MANUAL_OFF/OK/OFF and shower MANUAL_DRAIN/user_off; Hub, paired GPIO and Node-RED active. No actuation during verification. [Installation evidence](evidence/2026-10-18-continuous-time-sync-installed.md). Cold-boot and physical acceptance remain NOT_TESTED; historical shower HTTP 503 cause remains unresolved. No upgrades or reboot performed.
+
+## Release v1.4.0 published — 2026-10-18
+
+Tag v1.4.0 targets 94973c48448f43fd733847108fb27ec30cb0064c. All 1,176 Python tests, Ruff, mypy, nine Node-RED tests and GitHub repository checks pass. Published wheel Python bytes match tagged source, and downloaded release assets pass SHA256SUMS. No Pi upgrade was performed by publication. Companion Dial candidate is v1.4.0-sauna.2; exact CI firmware acceptance is tracked on Dial PR16 and its release receipt. The earlier .1 candidate was not released.
