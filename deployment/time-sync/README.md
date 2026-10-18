@@ -24,6 +24,23 @@ Success must report CONTINUOUS_TIME_SYNC_INSTALLED, synchronized=true, lightMANU
 
 Any failure stops with its last phase and backup path. No automatic retry/rollback. Failed-after-stop may leave controllers stopped; keep loads disconnected and inspect root-private failed.json. Never remove the marker merely to repeat installation. If time went backwards or inhibition expired, do not rewrite durable timers to bypass validation.
 
+## Late synchronization after a failed startup gate
+
+If the first readiness attempt fails, systemd does not automatically requeue either controller when synchronization succeeds later. The controllers stay stopped until a trusted-console operator checks the state and starts them. Keep both loads disconnected during this recovery.
+
+At the root console, inspect the services and synchronization first:
+
+    systemctl show freeze-protect-time-ready.service light-controller.service freeze-protect.service -p Id -p ActiveState -p SubState -p Result --no-pager
+    timedatectl show -p NTPSynchronized
+
+If synchronization reports `yes`, retry the bounded gate once and require `active/exited` before starting the controllers:
+
+    systemctl restart freeze-protect-time-ready.service
+    systemctl start freeze-protect.service
+    systemctl start light-controller.service
+
+Stop if the gate fails again or either controller fails to start. Before restoring any load, verify both services are active, the shower requests DRAIN, and paired GPIO20/26 readback is HIGH/HIGH. A service or GPIO readback does not prove physical valve position or lamp state. This recovery does not authorize ON or SUPPLY.
+
 ## Recovery
 
 Before install backup captures original dietpi.txt bytes/metadata, controller databases and weather identity; prior time-service state is enabled/inactive. The original controllers' source and units are not overwritten. On a reviewed rollback, keep controllers stopped and loads disconnected, confirm current files still match this package, restore only the single time mode/config from backup without overwriting unrelated edits, remove only the four newly installed files, daemon-reload, and restore prior time-service state. Verify durable USER_OFF/MANUAL_OFF and HIGH readbacks before any controller restart. Do not restore stale database snapshots as a routine rollback or start controllers with invalid timestamps. Recovery needs an exact reviewed state; no blind rollback command is supplied.
