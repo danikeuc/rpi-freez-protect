@@ -1,0 +1,6 @@
+# REVIEW TEMPLATE ONLY. Empty fields intentionally prevent startup.
+# Exact accepted profile after installed platform/driver verification:
+# PAIRED_GPIO_PROFILE=bcm2835-gpiomem-v1
+PAIRED_GPIO_PROFILE=
+# Exact verified BCM bank, not a guessed gpiochip index:
+PAIRED_GPIO_CHIP=

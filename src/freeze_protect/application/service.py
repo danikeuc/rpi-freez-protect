@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from math import ceil, isfinite
 from threading import Event, RLock, Thread
 from time import monotonic
@@ -112,6 +112,7 @@ class ControlService:
         self._weather_coordinator = weather_coordinator
         self._weather_store = weather_store
         self._weather_started = False
+        self._history_key: tuple[str, str] | None = None
 
     @property
     def settings(self) -> SafetySettings:
@@ -152,6 +153,11 @@ class ControlService:
             if not self._send(ActuatorCommand.DRAIN, force=True):
                 return self._fault("startup_drain_failed")
             if not self._append_event("startup_drain", {"command": "DRAIN"}):
+                return self._last_decision
+            self._history_key = None
+            if not self._record_shower_transition(
+                Decision(ControllerState.STARTING, ActuatorCommand.DRAIN, "startup_drain")
+            ):
                 return self._last_decision
             if self._mode is ControlMode.WEATHER_ASSISTED:
                 return self._startup_weather()
@@ -466,7 +472,7 @@ class ControlService:
             if decision.command is ActuatorCommand.SUPPLY:
                 self._best_effort_drain()
             return self._fault("relay_driver_error")
-        self._set_decision(decision)
+        decision = self._set_decision(decision)
         if not self._append_event(
             "automatic_decision",
             {
@@ -575,7 +581,9 @@ class ControlService:
         self._append_event("fault", {"reason": reason})
         return self._last_decision
 
-    def _set_decision(self, decision: Decision) -> Decision:
+    def _set_decision(
+        self, decision: Decision, *, history_operation: str | None = None
+    ) -> Decision:
         if (
             self._persistence_fault_latched
             and decision.state is not ControllerState.FAULT
@@ -583,7 +591,42 @@ class ControlService:
             return self._last_decision
         self._state = decision.state
         self._last_decision = decision
-        return decision
+        self._record_shower_transition(decision, operation=history_operation)
+        return self._last_decision
+
+    def _record_shower_transition(
+        self, decision: Decision, *, operation: str | None = None
+    ) -> bool:
+        # Derived solely from the already selected decision; no fresh sensor,
+        # weather, timer or actuator calls are allowed in history recording.
+        operation = operation or (
+            "FAULT" if decision.state is ControllerState.FAULT
+            else "SHUTDOWN" if decision.reason == "shutdown_drain"
+            else "STARTING" if decision.state is ControllerState.STARTING
+            else "USER_OFF" if decision.reason == "user_off"
+            else "MANUAL_ACTIVE" if decision.state is ControllerState.TIMED_SHOWER
+            else "AUTO_SUPPLY" if decision.state in (
+                ControllerState.AUTO_SUPPLY, ControllerState.NORMAL
+            )
+            else "MANUAL_IDLE" if decision.state is ControllerState.MANUAL_DRAIN
+            else decision.state.value
+        )
+        key = operation, decision.command.value
+        if key == self._history_key:
+            return True
+        # Reason is a bounded controller code, never arbitrary exception text.
+        reason = decision.reason
+        if not reason.isascii() or not reason.replace("_", "").isalnum():
+            reason = "other"
+        if not self._append_event("shower_transition", {
+            "mode": self._mode.value,
+            "operation": operation,
+            "command": decision.command.value,
+            "reason": reason[:96],
+        }):
+            return False
+        self._history_key = key
+        return True
 
     def handle_persistence_failure(self) -> Decision:
         with self._lock:
@@ -595,7 +638,11 @@ class ControlService:
             self._event_store.append(
                 AuditEvent(
                     id=str(uuid4()),
-                    occurred_at=self._clock(),
+                    occurred_at=(
+                        self._clock().astimezone(UTC)
+                        if event_type == "shower_transition"
+                        else self._clock()
+                    ),
                     event_type=event_type,
                     payload=payload,
                 )
@@ -812,7 +859,16 @@ class ControlService:
         if self._is_faulted() or record.fault_inhibited:
             return self._last_decision
         return self._set_decision(
-            Decision(ControllerState.MANUAL_DRAIN, ActuatorCommand.DRAIN, reason)
+            Decision(
+                ControllerState.MANUAL_DRAIN,
+                ActuatorCommand.DRAIN,
+                reason,
+            ),
+            history_operation=(
+                "USER_OFF"
+                if record.user_off and reason != "shutdown_drain"
+                else None
+            ),
         )
 
     @staticmethod

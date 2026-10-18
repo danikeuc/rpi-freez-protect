@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from typing import Protocol, Self, cast
 from urllib.error import HTTPError, URLError
@@ -13,6 +14,38 @@ from freeze_protect.application.ports import AdapterError
 from freeze_protect.domain.models import ActuatorCommand, ActuatorReceipt, SupplyAction
 
 PROTOCOL_VERSION = 2
+_LOG = logging.getLogger(__name__)
+_BRIDGE_REASONS = {
+    "bridge is not ready in verified DRAIN": "bridge_not_ready",
+    "SUPPLY request expired": "request_expired",
+    "SUPPLY lease state rejects action": "lease_rejected",
+    "paired GPIO executor stderr": "executor_stderr",
+    "paired GPIO executor failed": "executor_failed",
+    "paired GPIO readback not confirmed": "readback_unconfirmed",
+    "executor returned invalid JSON": "executor_invalid_json",
+    "daemon receipt protocol or readback mismatch": "daemon_receipt_mismatch",
+    "protocol version mismatch": "protocol_mismatch",
+}
+
+
+def _http_failure(error: HTTPError) -> str:
+    # Error bodies can contain arbitrary/private text. Persist only fixed codes.
+    code = "unclassified"
+    try:
+        raw = error.read(4097)
+        if len(raw) <= 4096:
+            payload = json.loads(raw)
+            if isinstance(payload, dict) and isinstance(payload.get("error"), str):
+                code = _BRIDGE_REASONS.get(payload["error"], "unclassified")
+    except (OSError, ValueError):
+        pass
+    finally:
+        error.close()
+    status = error.code if type(error.code) is int and 100 <= error.code <= 599 else 0
+    _LOG.warning(
+        "actuator_failure node_red http_status=%s bridge_reason=%s", status, code
+    )
+    return f"Node-RED request failed: http_status={status} bridge_reason={code}"
 
 
 class _Response(Protocol):
@@ -81,7 +114,9 @@ class NodeRedActuatorDriver:
                 payload = json.loads(response.read().decode("utf-8"))
         except AdapterError:
             raise
-        except (HTTPError, URLError, OSError) as error:
+        except HTTPError as error:
+            raise AdapterError(_http_failure(error)) from error
+        except (URLError, OSError) as error:
             raise AdapterError(f"Node-RED request failed: {error}") from error
         except (
             UnicodeDecodeError,

@@ -38,9 +38,12 @@ jobs:
           python -m mypy src
       - name: Build package
         run: python -m build
+      - name: Lighting ingress regressions
+        run: node --test tests/node-red/test_lighting_adapter.cjs
       - name: Deployment asset syntax
         run: |
           python -m json.tool deployment/node-red/freeze-protect-paired-relay.json >/dev/null
+          python -m json.tool deployment/lighting/lighting-flow.json >/dev/null
           node --check deployment/node-red/preflight-no-legacy-gpio.js
           for file in \
             deployment/workstation-codex/bootstrap-freezeprotect-access.sh \

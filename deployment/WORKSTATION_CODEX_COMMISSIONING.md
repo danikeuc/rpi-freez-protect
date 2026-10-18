@@ -1,5 +1,17 @@
 # Workstation Codex commissioning
 
+## Activation checkpoint - 2026-10-14
+
+Limited maintenance access v1 was installed from package v2 and independently
+verified through a second SSH connection, including rejected command forms.
+The original four commands and exactly three maintenance forms are now allowed
+for the pinned migration; no general shell or sudo access is granted.
+[Activation evidence](../docs/evidence/2026-10-14-maintenance-access.md)
+records the backup, temporary connection failures and subsequent successful
+Hub-readiness recovery. Original failed migration receipts remain historical.
+Earlier pending-activation wording below describes the pre-installation stage.
+
+
 Weather/playlist candidate procedure: [weather operations](../docs/operations/weather-assisted-shower.md) and [exact repository validation](../docs/evidence/2026-10-03-weather-plan-validation.md). Existing physical/SSH gates remain mandatory. Later candidate staging keeps manual_timed and weather disabled; back up the matching SQLite weather-identity sentinel with its database when present. These source changes do not authorize deployment, timed commands, 24 V connection or flash.
 
 This guide defines the workstation-led commissioning route. Use only the
@@ -12,6 +24,61 @@ the current session. Keep Pi SSH private-LAN-only; do not expose it publicly.
 The bootstrap allows the commissioning account only from the trusted
 workstation LAN `192.168.111.0/24` and Pi LAN `192.168.114.0/24`;
 do not add a router port-forward for TCP 22.
+
+## Planned limited maintenance access - documentation decision, 2026-10-14
+
+**Status: original documentation decision; limited implementation prepared,
+activation pending.** Danijel first requested documentation only and subsequently
+asked Codex to carry out the setup. The scoped implementation is described in
+[maintenance access v1](maintenance-access/README.md): fixed diagnostics and the
+pinned paired-GPIO migration, with no general install or restart interface.
+This is not a Pi installation receipt; current remote permissions remain the
+original four commands until verified activation. The broader intended route
+below remains design guidance for later separately reviewed extensions.
+
+The intended workflow lets Codex collect diagnostics and carry out an already
+authorized maintenance task directly from the workstation, reducing operator
+copy/paste. A separately reviewed implementation and activation is required.
+Until then, the existing four exact helper subcommands remain the complete
+remote allowlist: `inventory`, `status`, `diagnose-pair-gpio`, and `drain`.
+Other installation and recovery steps still use the trusted local console.
+
+Pi operator instructions: [limited maintenance access](PI_MAINTENANCE_ACCESS.md).
+The guide separates currently executable read-only checks from the planned
+activation procedure.
+
+The future maintenance interface should provide these bounded operations:
+
+- Read predefined service status, artifact identities and sanitized diagnostics.
+  Return useful failure codes without credentials, environment contents or
+  unrestricted journal output.
+- Back up and install an explicitly selected, reviewed package after verifying
+  its expected hash, target device, installed baseline and required idle state.
+  Preserve unrelated configuration and record the backup and result.
+- Restart only the named services required by that authorized installation or
+  recovery procedure, then verify readiness and the required GPIO state.
+
+Use the dedicated key and forced-command dispatcher over the private LAN.
+Define exact operations, validated arguments and permitted paths before
+activation; do not provide an arbitrary shell, arbitrary sudo, arbitrary file
+access, port forwarding or direct device-group membership. Retain host-key
+verification and secret handling. A failed operation must leave a diagnostic
+receipt and stop for assessment; it must not trigger a blind retry or rollback.
+
+Physical approval remains separate. Maintenance must respect the procedure's
+load-disconnection and DRAIN/light-OFF gates; it must not silently re-enable
+weather AUTO or resume an actuator action after restart. Valve SUPPLY, a timed
+shower, lamp activation, reconnecting the 24 V valve supply or lamp mains, and
+physical acceptance tests retain their explicit authorization gates. A GPIO
+readback still does not prove the physical valve or lamp state.
+
+Before this route is used, its separate implementation task must verify allowed
+and rejected commands, backup/recovery behavior and a second restricted login,
+and record exactly which version and permissions were activated. Update
+[`AGENTS.md`](../AGENTS.md), the
+[local Codex prompt](workstation-codex/CODEX_COMMISSIONING_PROMPT.md) and the
+[project state register](../docs/PROJECT_STATE.md) against that activation
+receipt. This documentation change alone does not satisfy those requirements.
 
 ## 1. Windows workstation prerequisites
 
@@ -261,3 +328,35 @@ investigate without repeating SUPPLY or assuming safe physical position.
 PT100/MAX31865 commissioning is a separate requirement for `automatic` mode and
 must pass before `sensor_commissioned` can be enabled. DS18B20 is rollback code
 only.
+
+## GPIO21 diagnostic update activated — 2026-10-15
+
+The reviewed status-only extension was installed by the operator and verified
+through a separate restricted SSH connection; additional arguments were rejected. It adds sanitized historical bench evidence to the existing exact
+maintenance status command. No new SSH command, path argument, permission, device
+access, service restart or actuation is introduced. Do not invoke prepare/install
+for this update. The new field is available through the existing status command. The separate
+root-console updater is already applied; do not rerun it.
+
+[Operator instructions](maintenance-access/LIGHT_BENCH_DIAGNOSTICS.md).
+
+## Controller diagnostics extension prepared — 2026-10-18
+
+At the owner's request to remove repeated diagnostic copy/paste, a bounded
+status-only extension is prepared in
+[controller diagnostics](maintenance-access/CONTROLLER_DIAGNOSTICS.md).
+After verified root-console installation and a second restricted SSH check,
+the existing maintenance `status` command may return the fixed controller
+status/history fields and categorized journal described there. No new command
+form, arbitrary shell/sudo, installation, restart or actuator authority is added.
+Activation remains pending; preparation alone does not change Pi permissions.
+
+## Activation verified — 2026-10-18
+
+Owner reported installation complete. Two separate restricted SSH status requests
+succeeded and returned diagnostic_version1 and the exact candidate helper hash
+dd390a553688b1dc208d2f871e5b3fd17d7cf5ef8cff272f23ac055bc0691a92.
+The form `status extra` was independently rejected by the forced dispatcher.
+Controller diagnostics are now available through the existing status command.
+No shell, generic deployment/restart or actuator authority was added.
+This supersedes pending-activation wording in the preparation record.

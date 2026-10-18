@@ -1,8 +1,9 @@
 # Project state and evidence register
 
-**Repository evidence snapshot:** 2026-10-05; device observations retain their original dates
+**Documentation reconciliation:** 2026-10-15; device observations retain their original dates
 
-**Active Pi mode observed:** `weather_assisted`, `USER_OFF` / `DRAIN` (operator installation receipt, 2026-10-05; independent GPIO readback high/high).
+**Latest recorded Pi installation:** 1.3.1, `weather_assisted`, `USER_OFF` / `DRAIN`
+(operator installation receipt and restricted GPIO readback, 2026-10-11; not a new live observation on 2026-10-12).
 
 **Physical valve position:** `UNKNOWN / NOT_VERIFIED`
 
@@ -13,6 +14,142 @@ must never be promoted into a physical claim. The external observations below
 are backed by the redacted
 [commissioning record](evidence/2026-09-30-commissioning-observations.md), which
 was transcribed from operator-supplied output and is not a live-host attestation.
+
+## Independent light installed; camera forwarding configured — 2026-10-15
+
+Owner receipt confirms LIGHT_RUNTIME_INSTALLED_OFF with finalOFFreadback and
+private backup. New camera credential and pinned TLS were independently verified
+fromVM; the G4Pro person adapter is now active in forward mode. A freshVM journal read confirms one new event accepted at21:38:57 localtime;
+the owner reports the third-relay/LED response. RestrictedPi status separately confirmed
+all existing services active and pairedGPIO26/20HIGH. Five-minute expiry and physical load acceptance remain pending. See
+[installation/activation evidence](evidence/2026-10-15-light-runtime-activation.md)
+and [reviewed package record](evidence/2026-10-15-light-runtime-preparation.md).
+
+## Third-relay bench stopped; diagnostics update prepared — 2026-10-15
+
+Owner confirmed both loads disconnected and STOP; a subsequent restricted read
+showed paired outputs HIGH/HIGH. The operator then ran the bounded GPIO21 bench:
+LIGHT_LEVEL_MISMATCH, attempted_gpio21=true, final_off_readback=true,
+physical_acceptance=NOT_VERIFIED, automation_enabled=false. Evidence is retained
+at /root/light-gpio21-bench.ehy6qh3b. Remote diagnostics identify crash_release:
+the first sample after SIGKILL retained GPIO21 output/LOW; explicit final OFF
+recovery succeeded. All931 stored samples retain paired output/HIGH.
+The owner subsequently accepted retained light ON after process crash/hang;
+this removes the automatic crash-OFF requirement only for GPIO21. The original
+failed receipt remains unchanged; no blind repeat or forwarding activation is
+authorized merely by reclassifying the requirement.
+[Accepted light failure behavior](evidence/2026-10-15-light-retained-on-acceptance.md).
+[Bench evidence](evidence/2026-10-15-light-gpio21-bench-preparation.md).
+
+A status-only helper update was installed from the owner-reported baseline hash
+df06b46bd206dbadbbbd201aeb80529df9deb790b7df448b29e1ff2ba15c6a9c.
+It adds bounded historical GPIO21 diagnostics to the existing maintenance status
+command without changing dispatcher/sudoers or actuator authority. Tests:993 pass;
+Ruff and diff-check pass; independent review completed with both findings fixed.
+Owner installation and separate restricted SSH acceptance are VERIFIED. New
+helper hash:2697465c2d98ab3b34be8da17f145411e900dc50765f02ff3e3a51ceb326364b.
+Extra-argument status was rejected; no expanded command or actuator authority.
+[Diagnostics preparation](evidence/2026-10-15-light-bench-diagnostics.md).
+
+## Continuous Protect MCP observation installed — 2026-10-15
+
+The approved G4 Pro/person source now has a standalone user service on linuxvm,
+independent of Codex. Enabled/running and linger verified through a separate SSH
+connection; repeated MCP polls succeeded. **Observe only:** no Pi destination or
+camera token is configured, so this does not activate the lamp. Adapter source,
+27 focused tests, independent review fixes and deployment identities are recorded
+in [adapter evidence](evidence/2026-10-15-protect-mcp-adapter.md).
+Pi light service/TLS ingress provisioning and existing disconnected hardware
+acceptance remain pending. No new firmware, relay or physical acceptance claim.
+
+## Lighting target inventory received — 2026-10-15
+
+The operator supplied the verified read-only package output. GPIO20/26 report
+the paired owner; GPIO21 is unused at observation. Node-RED is active as nodered,
+with51 nodes and no enabled lighting ingress. Startup journal reports Node-RED
+5.0.7 and matching known paths; Node.js and effective settings remain unverified.
+[Exact receipt and file hashes](evidence/2026-10-15-lighting-target-inventory.md).
+The inventory request is complete; lighting activation, actual Protect profile
+and disconnected/physical acceptance remain pending.
+
+## Lighting continuation — 2026-10-14
+
+[Current handoff](evidence/2026-10-14-lighting-continuation.md) records the verified
+paired prerequisite, read-only inventory tool and remaining lighting gates.
+The third relay, camera ingress and new Dial firmware are not yet activated.
+
+## Paired GPIO migration recovered and verified - 2026-10-14
+
+The candidate kernel-ownership paired daemon is installed (SHAef96336ec), with
+isolated gpiod2.3.0 interpreter and reviewed paired dropin. Initial installation
+stopped on an order-sensitive DeviceAllow comparison; the first continuation
+then stopped because the Hub HTTP listener was not yet ready. Both defects are
+fixed in repository installer code, and their original failure records remain.
+
+A separate Hub-only continuation completed. Fresh restricted SSH confirmed its
+durable success marker, no failure marker, Hub/pair/Node-RED active and the exact
+installed candidate hashes. Independent helper readback confirms GPIO26 and
+GPIO20 both output/high. The running paired PID remained unchanged during final
+Hub recovery. Full private receipt was not exported; the reviewed continuation
+writes success only after USER_OFF, preserved state, flow, ownership and readback
+checks. [Detailed evidence](evidence/2026-10-14-device-allow-recovery.md#target-recovery-verified-over-restricted-ssh).
+
+Lighting remains disabled; third-relay activation and physical acceptance are
+pending. Both loads remain disconnected per operator confirmation. This is not
+proof of valve/lamp position or crash/power-loss protection. The paired override
+retains Restart=no; process recovery needs deliberate assessment. No release,
+commit or push is implied by this deployment checkpoint.
+
+## Limited maintenance access activated - 2026-10-14
+
+The owner subsequently asked Codex to carry out the setup. The
+[access v1 candidate](../deployment/maintenance-access/README.md) preserves the
+original four commands and adds three exact command forms for diagnostics and
+single-use preparation/installation of the pinned paired-GPIO migration. It
+provides no generic shell, package install or restart permission. Access
+installation itself does not run migration or change actuator/service state.
+The previous documentation-only entry below is historical.
+
+At the access activation checkpoint, restricted SSH inventory/status/diagnose checks succeeded: DietPi
+kernel 6.18.39+rpt-rpi-v8, checkout d0dfeac, all three checked services active,
+GPIO26/20 output/high. The installed paired daemon remains 33088ea9 and helper
+555ea7cd, matching the recorded baseline. These are electronic readbacks, not
+physical valve or light acceptance. The operator installed access package v2 (backup
+`/root/freeze-maintenance-access.c8qk1m3v`). Separate SSH inventory/status and
+two rejected command forms verified activation. Both migration jobs initially
+reported NOT_REQUESTED. Subsequent prepare and status connections timed out at
+port22 before command dispatch. Connectivity later returned and prepare was
+submitted once; last observed job was activating/start, with original services
+active. Another status connection timed out. Operator status subsequently verified prepare success at
+`/root/paired-gpio-migration.xj0q8tgi`, with all original services active.
+The install SSH connection timed out before dispatch; migrated GPIO ownership
+remains unconfirmed. A later SSH check found a partial install stopped at
+`EFFECTIVE_DEVICE_ALLOW`: candidate daemon/dropin are present, Hub and paired
+service inactive, Node-RED active. Installation is FAILED, not accepted;
+operator output confirmed correct permissions in reverse order. A tested
+[ordering fix and one-shot recovery](evidence/2026-10-14-device-allow-recovery.md)
+were prepared and the operator ran recovery. It stopped again; fresh SSH
+shows candidate paired service active, Hub inactive and Node-RED active.
+Remote diagnostics identified ConnectionRefusedError while reading Hub HTTP
+status immediately after start. A bounded HTTP readiness fix and Hub-only
+continuation are prepared; target continuation and acceptance remain pending.
+[Candidate validation and package identity](evidence/2026-10-14-maintenance-access.md)
+record the exact access activation and subsequent network interruption.
+
+## Limited maintenance access documented - 2026-10-14
+
+The owner explicitly limited this task to documentation. The
+[commissioning guide](../deployment/WORKSTATION_CODEX_COMMISSIONING.md#planned-limited-maintenance-access---documentation-decision-2026-10-14)
+now describes a future bounded interface for diagnostics, verified package
+backup/installation and necessary named-service restarts. Implementation and
+activation are pending; the four-command commissioning allowlist remains the
+current route. No SSH/sudo/helper code, device permissions or deployed service
+was changed by this documentation task. Existing physical approval gates remain
+in force. This entry is a policy record, not a new device observation or a
+successful paired-GPIO migration receipt.
+The [Pi operator guide](../deployment/PI_MAINTENANCE_ACCESS.md) adds host-specific
+read-only checks and the future backup/activation/acceptance sequence. Those
+commands have not been run on the Pi as part of this documentation task.
 
 ## Pi v1.2.0 publication preparation
 
@@ -233,7 +370,9 @@ for the candidate as described in the [operations runbook](operations/dial-admin
 - PT100/MAX31865 on SPI0 CE0 remains the production source design for a future
   separately commissioned `automatic` mode. DS18B20 is rollback code only.
 - The restricted `freezeprotect-commission` SSH identity exposes exactly
-  `inventory`, `status`, `diagnose-pair-gpio` and `drain`; it has no shell,
+  `inventory`, `status`, `diagnose-pair-gpio` and `drain`, plus the activated
+  maintenance helper's exact `status`, `prepare`, `install` forms for one pinned
+  migration; it has no shell,
   forwarding, firmware, arbitrary systemd or direct GPIO interface.
 
 ## Evidence ledger
@@ -339,3 +478,247 @@ Planning validation: `git diff --check` passed; a local Markdown-link check
 resolved all 34 relative links across the ledger, four matching design documents
 and both new plans. This is documentation evidence only; no software tests or
 runtime checks were run for these documentation-only changes.
+
+## v1.3.0 shower history release preparation - 2026-10-11
+
+Owner authorized installation, Git documentation and release. Source now adds
+[persistent history](SHOWER_HISTORY.md); see [release scope](releases/v1.3.0.md).
+666 offline tests passed before the version-label update. Deployment acceptance
+remains tied to subsequent exact-artifact receipts, not this source note.
+
+## Pi history installed - 2026-10-11
+
+The operator supplied HISTORY_INSTALLED for package 1.3.0; both history endpoints
+returned two rows, USER_OFF/DRAIN and high/high readbacks were confirmed.
+See [exact receipt and startup fault](evidence/2026-10-11-shower-history-install.md).
+The exact CI Dial v1.3.0-shower.3 application is installed and readback-verified;
+authenticated history UI was confirmed by the operator on 2026-10-11. The Node-RED startup readiness
+repair is installed in 1.3.1, confirmed by the trusted-console receipt below.
+
+## Startup readiness patch preparation - 2026-10-11
+
+[Pi 1.3.1](releases/v1.3.1.md) uses an ExecStartPre paired-v2 DRAIN receipt gate
+before Hub startup. Only refused connections are retried; malformed/failed
+receipts stop that invocation. The existing fault latch is unchanged. Local
+verification: 685 tests, Ruff, strict mypy (27 source files), diff whitespace
+checks. Independent review closed baseline-version validation and timing-claim
+findings. Repository tests do not prove a deployed reboot with delayed Node-RED.
+The additive updater requires installed 1.3.0 and durable USER_OFF/DRAIN, makes
+verified software/database backups, and preserves settings/source checkout.
+The operator subsequently supplied STARTUP_READINESS_INSTALLED for 1.3.1;
+both history routes returned seven rows and USER_OFF/DRAIN was retained.
+
+## Publication checkpoint - 2026-10-11
+
+Pi history v1.3.0 is published, with the exact installed wheel and installer.
+Pi v1.3.1 was published on explicit operator request on 2026-10-11;
+trusted-console installation is now confirmed for the exact released wheel.
+Dial v1.3.0-shower.3 was published after operator confirmation of visible history. See the [publication evidence](evidence/2026-10-11-shower-history-install.md#publication-checkpoint).
+Release branches are committed/pushed; PRs #24 (Pi) and #14 (Dial) are unmerged.
+
+## Pi 1.3.1 installation complete
+
+Operator receipt matches release source d89827d7e0ea8963f5ed00984c3c0070286e2831
+and wheel 90b0faa89b9afcc6304d3f8b978428da0056533c34d813e40ac7e22d4279a812.
+Both history routes returned seven rows; operation USER_OFF, command DRAIN,
+GPIO26/20 high. Subsequent restricted SSH status independently confirmed all
+three services active and both pins high. Backup: /root/freeze-before-startup-psoa_xgm.
+Source checkout remains d0dfeac61856e0ff716e700348be61709dc68505 by design;
+the installed wheel is 1.3.1. A cold boot with delayed Node-RED remains untested.
+
+## Independent lighting documentation - 2026-10-12
+
+The owner accepted an independent third relay for light control from UniFi
+Protect and ESP Dial, normal Dial ON while remaining in AUTO, explicit manual
+ON/OFF with a persistent reminder, and automatic return to AUTO after one hour
+by default. [Canonical specification](superpowers/specs/2026-10-12-independent-lighting-design.md).
+The owner confirmed a five-minute camera hold after the last detection, configurable in admin. The owner specifies LED lighting,
+maximum 20 W total at 220 V mains (2026-10-12). The actual driver/contact
+suitability and Protect POST authentication/delivery profile remain unverified. GPIO21/header40 comes from the
+historical board record and requires actual revision/jumper verification.
+
+No lighting runtime, API, flow, firmware, GPIO or wiring change was made. The
+paired daemon still owns exactly GPIO26/20. Node-RED export inspection found
+11 nodes and zero structural issues; runtime behavior was not retested.
+Documentation drift (manual-only architecture, three routes, old release label)
+was corrected against current source and dated installation receipts.
+[Reconciliation map](evidence/2026-10-12-lighting-documentation-reconciliation.md)
+distinguishes accepted behavior, proposed architecture and missing evidence.
+
+## Independent lighting implementation - 2026-10-13
+
+The owner authorized software implementation. The lighting branch now contains
+a separate Python controller, durable settings/history, role-scoped API,
+leased GPIO21 executor and disabled Node-RED/gateway/systemd examples.
+No existing shower source, paired flow or installed gateway was changed.
+
+At Pi source `1c63837`, full verification passed: 739 Python tests, Ruff,
+strict mypy over 34 source modules and Python package build. Nine Node adapter
+tests and a structural flow inspection also passed. Task reviews resolved
+delayed-command fences, revision recovery and uncertain-response handling.
+These checks use fake GPIO; they establish no physical relay/contact behavior.
+The companion Dial implementation and its checks are tracked in the
+[implementation evidence](evidence/2026-10-13-independent-lighting-implementation.md).
+
+The installed Pi 1.3.1 and Dial v1.3.0-shower.3 records remain unchanged.
+Actual Protect version/authenticated POST/event identity, board/driver rating
+and power/reset behavior remain commissioning prerequisites. No new release,
+firmware upload, service activation or mains connection is included.
+
+### GPIO_SHARED_FSEL2_COEXISTENCE — known activation blocker
+
+**Installed migration verified on 2026-10-14; lighting acceptance remains open.**
+The exact kernel-ownership daemon and paired dropin are installed on the Pi.
+Restricted SSH confirmed the separate Hub-recovery success marker, all three
+services active and paired output/high readback. See the
+[dated recovery evidence](evidence/2026-10-14-device-allow-recovery.md).
+
+The legacy userspace FSEL writer is no longer the recorded installed backend.
+The source repair and installed migration close that part of
+GPIO_SHARED_FSEL2_COEXISTENCE. They do not close the disconnected-load
+startup/request/release/crash trace or physical acceptance requirements.
+Keep lighting templates, flow and gateway disabled. Do not create
+/etc/independent-light/commissioned, set LIGHT_GPIO21_ENABLED=commissioned or
+grant light DeviceAllow until the remaining disconnected acceptance is recorded.
+Kernel-only configuration does not establish atomic initial direction changes,
+crash protection, physical independence or valve position. Actual Protect
+profile, Node-RED runtime and lamp/wiring gates remain open.
+
+
+### Paired GPIO source repair - 2026-10-13
+
+The owner authorized this narrow architecture repair. Candidate source now
+holds an exclusive libgpiod request before raw mapping, preloads paired DRAIN,
+uses kernel output configuration and retains fixed paired latch writes until
+unmapping. Unknown platform/chip/profile/metadata or busy lines fails closed.
+The existing installed unit still uses /usr/bin/python3; new dependency/config
+and an explicit reviewed interpreter override are required before migration.
+Disabled candidate examples are supplied; existing activation assets are not
+installed or enabled. Verification is recorded in
+[repair evidence](evidence/2026-10-13-gpio-coexistence-fix.md).
+
+### GPIO coexistence repair review closure — 2026-10-13
+
+Pi source44091d6 and Dial operational documentation70bc5b5 completed the
+independent task and final integration reviews. GPIO-REVIEW-01 (GPIO bus
+metadata topology) is closed;778 software tests and Ruff pass. See the
+[final review](evidence/2026-10-13-gpio-coexistence-final-review.md).
+The source-level FSEL writer race is repaired. The installed legacy daemon
+remains an activation blocker until the reviewed migration and physical
+acceptance in the [runbook](operations/paired-gpio-migration.md) are complete.
+This record does not change installed versions or authorize activation.
+
+### Paired GPIO migration inventory - 2026-10-13
+
+Restricted helper checks confirm the old paired daemon hash33088ea9 remains
+installed, services active and GPIO26/20 high. The owner confirmed both valve
+24 V and lamp loads disconnected. Trusted-console inventory identifies Pi4
+ModelB Rev1.1/BCM2711, kernel6.18.39, canonical gpiochip0 and legacy gpiomem;
+Python3.13.5 has no gpiod in either existing interpreter. An exact gpiod2.3.0
+ARM64 wheel is verified for an isolated service environment. The two-stage
+migration installer is in preparation; there is no new installed version or
+live hardware acceptance. See [preflight evidence](evidence/2026-10-13-gpio-migration-preflight.md).
+
+The [two-stage package](evidence/2026-10-13-paired-gpio-migration-package.md)
+is now reviewed and ready for trusted-console prepare. Installer replay and
+partial-cutover findings are closed;815 Python tests/Ruff pass. Both operator
+prepare/install receipts are pending. No installed state or release changes.
+
+Operator prepare attempt stopped before dependency creation/service mutation:
+Hub base-unit bytes differ from the initial package. Historical baseline
+packaging correction327d8b8 is tested and independently reviewed; live unit
+and readiness-dropin identity confirmation is pending before corrected handoff.
+Installed migration is not accepted. See migration package evidence above.
+
+Operator confirmed the historical Hub base/readiness hashes and exact effective
+paths with NeedDaemonReload=no. Corrected v2 package matches those identities
+and its HTTP hash is verified; old download is retired. New prepare receipt is
+pending. This supersedes the identity-confirmation-pending note above only.
+
+## Controller diagnostic access prepared — 2026-10-18
+
+Owner requested autonomous investigation without repeated copy/paste. A status-only
+extension is prepared for the existing restricted helper; current installed hash
+2697465c was independently confirmed over SSH. Activation is pending. See
+[scope and activation](../deployment/maintenance-access/CONTROLLER_DIAGNOSTICS.md).
+No new Pi permission, controller recovery, relay activation or physical acceptance
+is claimed by package preparation.
+
+## Activation verified — 2026-10-18
+
+Owner reported installation complete. Two separate restricted SSH status requests
+succeeded and returned diagnostic_version1 and the exact candidate helper hash
+dd390a553688b1dc208d2f871e5b3fd17d7cf5ef8cff272f23ac055bc0691a92.
+The form `status extra` was independently rejected by the forced dispatcher.
+Controller diagnostics are now available through the existing status command.
+No shell, generic deployment/restart or actuator authority was added.
+This supersedes pending-activation wording in the preparation record.
+
+## Controller OFF recovery prepared — 2026-10-18
+
+The verified diagnostic access shows reachable controllers with latched faults.
+A tested light manual_off recovery patch and bounded root-console recovery package
+are prepared; installation remains pending. See [scope, verification and limits](evidence/2026-10-18-controller-off-recovery.md). This does not establish the original
+clock/relay failure cause or physical acceptance.
+
+## Controller OFF recovery installed — 2026-10-18
+
+Operator installation receipt and an independent restricted SSH check confirm
+light MANUAL_OFF/OK/OFF and shower MANUAL_DRAIN/user_off, with Hub, paired daemon
+and Node-RED active. The original relay error was HTTP503; its underlying cause
+and the light clock-fault source remain unresolved. See [acceptance evidence](evidence/2026-10-18-controller-off-recovery.md).
+
+## Fault diagnosis continued — 2026-10-18
+
+Source-level diagnostic gaps were reproduced and a local instrumentation candidate
+was prepared. Pi runtime remains the verified OFF recovery installation. See
+[findings and deployment boundary](evidence/2026-10-18-controller-fault-diagnostics.md).
+The original incident cause remains unconfirmed; no timeout policy was relaxed.
+
+### Controller fault diagnostic installer prepared — 2026-10-18
+
+Bounded two-file root-console installer and 16 installer checks prepared in
+[diagnostics runbook](../deployment/lighting/diagnostics/README.md). Full suite
+1,132 PASS and Ruff PASS. Runtime remains the independently verified recovery
+baseline; diagnostic installation NOT performed. No cause resolution claimed.
+Existing restricted SSH remains status-only for this task.
+
+### Controller fault diagnostics installed — 2026-10-18
+
+Operator installation receipt matches both prepared source hashes; backup
+/root/controller-fault-diagnostics.3xvxe5ia. Independent restricted SSH confirms
+shower USER_OFF/MANUAL_DRAIN and light MANUAL_OFF/OK/OFF after restart.
+[Acceptance evidence](evidence/2026-10-18-controller-fault-diagnostics.md).
+Supersedes the prepared-only entry. Original fault cause NOT_RESOLVED; physical
+acceptance NOT_TESTED. No changes to SSH permissions or automatic fault clearing.
+
+### DietPi system snapshot reviewed — 2026-10-18
+
+[System diagnostic](evidence/2026-10-18-dietpi-system-diagnostic.md): no present
+RAM/disk/load exhaustion, failed units or reported throttling flags. Three
+clock-change journal matches make periodic clock correction a relevant
+unconfirmed lead for prior light failure. WiFi cumulative drops need interval
+evidence before attributing connectivity loss. NTP properties absent due to
+collector argument bug; corrected locally, actual time-sync mode pending.
+No host configuration changed.
+
+### Startup and software follow-up — 2026-10-18
+
+[Follow-up evidence](evidence/2026-10-18-startup-software-followup.md): current restricted SSH reports shower USER_OFF/DRAIN and light AUTO/OK/OFF after manual expiry. Cached simulation finds55 upgrades and2 not upgraded; holds and Node runtime identity remain incomplete. CONFIG_NTP_MODE=2 is confirmed by operator output, superseding the earlier pending note. A bounded read-only clock/startup follow-up is prepared; no host configuration, restart policy, packages or GPIO changed. Original fault cause remains unconfirmed.
+
+### Clock-step correlation established — 2026-10-18
+
+Owner follow-up confirms +37.945s wall-clock step at2026-10-17 01:25:40UTC, successful synchronization36.309ms before the historical light clock_or_lease_fault. Strongly supported trigger for that incident; shower HTTP503 cause remains unresolved. Node-RED5.0.7/Node.js26.8.1 identified from current-boot logs; no package holds. Two cached upgrade exclusions are Raspberry Pi kernel metapackages. See [follow-up receipt](evidence/2026-10-18-startup-software-followup.md). No host changes.
+
+### Continuous time synchronization prepared — 2026-10-18
+
+[Maintenance package](../deployment/time-sync/README.md) preserves runtime clock protection and NTP servers, changes mode2to4, and adds a bounded time-ready startup dependency to both controllers. Trusted-console installation and both loads disconnected required. Repository tests only; NOT_INSTALLED, cold-boot and physical acceptance NOT_TESTED. No Node-RED restart policy, package upgrades or SSH permission changes.
+
+
+## 2026-10-18 — Continuous time synchronization installed
+
+Operator receipt confirms mode 4 and synchronized time, backup `/root/freeze-time-sync.9qom636c`. Independent restricted SSH verifies light MANUAL_OFF/OK/OFF and shower MANUAL_DRAIN/user_off; Hub, paired GPIO and Node-RED active. No actuation during verification. [Installation evidence](evidence/2026-10-18-continuous-time-sync-installed.md). Cold-boot and physical acceptance remain NOT_TESTED; historical shower HTTP 503 cause remains unresolved. No upgrades or reboot performed.
+
+## Release v1.4.0 published — 2026-10-18
+
+Tag v1.4.0 targets 94973c48448f43fd733847108fb27ec30cb0064c. All 1,176 Python tests, Ruff, mypy, nine Node-RED tests and GitHub repository checks pass. Published wheel Python bytes match tagged source, and downloaded release assets pass SHA256SUMS. No Pi upgrade was performed by publication. Companion Dial candidate is v1.4.0-sauna.2; exact CI firmware acceptance is tracked on Dial PR16 and its release receipt. The earlier .1 candidate was not released.

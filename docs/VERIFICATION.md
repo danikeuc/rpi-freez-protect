@@ -26,6 +26,8 @@ python -m mypy src
 python -m build
 python -m json.tool deployment/node-red/freeze-protect-paired-relay.json >/dev/null
 node --check deployment/node-red/preflight-no-legacy-gpio.js
+node --test tests/node-red/test_lighting_adapter.cjs
+python -m json.tool deployment/lighting/lighting-flow.json >/dev/null
 sh -n deployment/workstation-codex/bootstrap-freezeprotect-access.sh
 sh -n deployment/workstation-codex/freeze-protect-commission
 sh -n deployment/workstation-codex/freeze-protect-commission-ssh-dispatch
@@ -86,3 +88,17 @@ Use these labels in reviews and release notes:
 - **VERIFIED (physical):** directly observed at the installation.
 - **INFERRED:** strongly suggested but not directly observed.
 - **UNKNOWN / NOT_VERIFIED:** evidence is missing or insufficient.
+
+## Independent lighting checks
+
+The lighting Python tests use fake clocks, temporary SQLite stores and fake
+GPIO transports. They cover separate camera/Dial holds, manual expiry, durable
+request identities, revision corruption, lease expiry and delayed commands.
+The Node adapter tests exercise the same Function source embedded in the
+exported flow. Disabled deployment examples require a reviewed Protect profile
+and separate commissioning before enabling.
+
+In the companion Dial checkout, run `scripts/test_light_dial.sh` and the
+existing valve/admin/playlist tests, then the light admin browser regression
+and exact Waveshare target build. A successful native test or firmware build
+is not a physical GPIO/contact or end-to-end Protect observation.

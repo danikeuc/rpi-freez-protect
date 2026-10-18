@@ -572,3 +572,33 @@ def test_forecast_codes_preserve_authoritative_freshness_on_failure(client, fail
         assert weather[field] == fresh[field]
     assert status["command"] == "DRAIN"
     assert client.app.state.relay_driver.commands == before
+
+
+def test_shower_history_scoped_readonly_pagination(client, app, monkeypatch):
+    path = "/api/v1/display/history"
+    for headers in ({}, DISPLAY, ADMIN):
+        assert client.get(path, headers=headers).status_code == 401
+    for offset in ("-1", "1000001", "oops", "1.5"):
+        assert client.get(path, params={"offset": offset}, headers=WEATHER).status_code == 422
+    before = list(app.state.control_service._actuator_driver.commands)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("history must not consult live control state")
+    monkeypatch.setattr(app.state.control_service, "status", forbidden)
+    response = client.get(path, headers=WEATHER)
+    assert response.status_code == 200
+    assert set(response.json()) == {"items", "offset", "has_more"}
+    assert len(response.content) < 4096
+    assert app.state.control_service._actuator_driver.commands == before
+
+
+def test_shower_history_failure_is_503_without_actuation(client, app, monkeypatch):
+    from freeze_protect.persistence.sqlite import SQLiteEventStore
+
+    before = list(app.state.relay_driver.commands)
+    def broken(*args, **kwargs):
+        raise OSError("private database error")
+    monkeypatch.setattr(SQLiteEventStore, "shower_history", broken)
+    response = client.get("/api/v1/display/history", headers=WEATHER)
+    assert response.status_code == 503
+    assert "private" not in response.text
+    assert app.state.relay_driver.commands == before

@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import math
 import mmap
 import os
+import re
 import socket
+import stat
 import struct
 import sys
 import time
@@ -20,7 +23,6 @@ from typing import Any, Protocol
 
 PINS = (26, 20)
 PAIR_MASK = sum(1 << pin for pin in PINS)
-FSEL2 = 0x08
 GPSET0 = 0x1C
 GPCLR0 = 0x28
 GPLEV0 = 0x34
@@ -38,36 +40,229 @@ class Registers(Protocol):
 
 
 class GpiomemRegisters:
-    def __init__(self, device_path: str = "/dev/gpiomem") -> None:
-        self._fd = os.open(device_path, os.O_RDWR | os.O_SYNC)
-        self._memory = mmap.mmap(
-            self._fd,
-            mmap.PAGESIZE,
-            flags=mmap.MAP_SHARED,
-            prot=mmap.PROT_READ | mmap.PROT_WRITE,
-        )
+    """Only paired latch stores and level reads; never GPIO configuration."""
+
+    def __init__(self, expected_device: int) -> None:
+        self._fd = os.open("/dev/gpiomem", os.O_RDWR | os.O_SYNC | os.O_CLOEXEC)
+        try:
+            info = os.fstat(self._fd)
+            if not stat.S_ISCHR(info.st_mode) or info.st_rdev != expected_device:
+                raise ValueError("gpiomem identity changed after validation")
+            self._memory = mmap.mmap(
+                self._fd,
+                mmap.PAGESIZE,
+                flags=mmap.MAP_SHARED,
+                prot=mmap.PROT_READ | mmap.PROT_WRITE,
+            )
+        except BaseException:
+            os.close(self._fd)
+            raise
 
     def read32(self, offset: int) -> int:
-        return struct.unpack_from("<I", self._memory, offset)[0]
+        if offset != GPLEV0:
+            raise ValueError("only paired level readback is permitted")
+        return struct.unpack_from("<I", self._memory, offset)[0] & PAIR_MASK
 
     def write32(self, offset: int, value: int) -> None:
+        if offset not in (GPSET0, GPCLR0) or value != PAIR_MASK:
+            raise ValueError("only a fixed paired latch write is permitted")
         struct.pack_into("<I", self._memory, offset, value)
 
     def close(self) -> None:
+        # If unmapping fails, retain ownership; the caller must not release lines.
         self._memory.close()
         os.close(self._fd)
+
+
+DEVICE_TREE = Path("/sys/firmware/devicetree/base")
+SYS_DEV_CHAR = Path("/sys/dev/char")
+GPIO_BUS = Path("/sys/bus/gpio")
+PINCTRL_DRIVER = Path("/sys/bus/platform/drivers/pinctrl-bcm2835")
+GPIOMEM_CLASS = Path("/sys/class/gpiomem/gpiomem")
+GPIOMEM_DRIVER = Path("/sys/bus/platform/drivers/rpi-gpiomem")
+
+
+def _compatible(node: Path) -> set[str]:
+    return set(node.joinpath("compatible").read_bytes().decode("ascii").split("\0"))
+
+
+def _gpio_platform_device(device: int) -> Path:
+    device_id = f"{os.major(device)}:{os.minor(device)}"
+    gpio_device = (SYS_DEV_CHAR / device_id).resolve(strict=True)
+    platform_device = gpio_device.parent
+    if (
+        (gpio_device / "dev").read_text().strip() != device_id
+        or (gpio_device / "subsystem").resolve(strict=True) != GPIO_BUS.resolve(strict=True)
+        or (gpio_device / "of_node").resolve(strict=True)
+        != (platform_device / "of_node").resolve(strict=True)
+        or (platform_device / "driver").resolve(strict=True)
+        != PINCTRL_DRIVER.resolve(strict=True)
+        or (PINCTRL_DRIVER / platform_device.name).resolve(strict=True) != platform_device
+    ):
+        raise ValueError("GPIO bus identity or platform parent mismatch")
+    # The reviewed GPIO bus device has no class-device parent link. If one
+    # exists, it must not contradict the structural parent; never follow it
+    # as a fallback to a different device or driver.
+    parent_link = gpio_device / "device"
+    if (parent_link.exists() or parent_link.is_symlink()) and (
+        parent_link.resolve(strict=True) != platform_device
+    ):
+        raise ValueError("conflicting GPIO platform parent link")
+    return platform_device
+
+
+def validate_platform(chip_fd: int, chip_label: str) -> int:
+    """Bind opened gpiochip and fixed gpiomem device to the same BCM GPIO bank.
+
+    Missing sysfs/DT metadata is unsupported, not permission to guess a mapping.
+    """
+    compatible = _compatible(DEVICE_TREE)
+    supported = {"brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2837", "brcm,bcm2711"}
+    if (
+        not compatible.intersection(supported)
+        or "brcm,bcm2712" in compatible
+        or not any(item.startswith("raspberrypi,") for item in compatible)
+    ):
+        raise ValueError("unsupported BCM platform")
+    chip_info = os.fstat(chip_fd)
+    memory_info = os.stat("/dev/gpiomem")
+    if not stat.S_ISCHR(chip_info.st_mode) or not stat.S_ISCHR(memory_info.st_mode):
+        raise ValueError("GPIO devices must be character devices")
+    chip_device = _gpio_platform_device(chip_info.st_rdev)
+    # The legacy gpiomem class device has no parent. Bind it using the
+    # driver's unique legacy platform instance and its registered dev number.
+    memory_id = f"{os.major(memory_info.st_rdev)}:{os.minor(memory_info.st_rdev)}"
+    if (
+        (GPIOMEM_CLASS / "dev").read_text().strip() != memory_id
+        or (SYS_DEV_CHAR / memory_id).resolve(strict=True) != GPIOMEM_CLASS.resolve(strict=True)
+    ):
+        raise ValueError("gpiomem character device identity mismatch")
+    bound = [path for path in GPIOMEM_DRIVER.iterdir() if (path / "of_node").exists()]
+    if len(bound) != 1:
+        raise ValueError("missing or ambiguous gpiomem platform driver")
+    chip_node = (chip_device / "of_node").resolve(strict=True)
+    memory_node = (bound[0] / "of_node").resolve(strict=True)
+    if chip_node.parent != memory_node.parent:
+        raise ValueError("GPIO chip and gpiomem buses differ")
+    parent = chip_node.parent
+    if (
+        (parent / "#address-cells").read_bytes() != struct.pack(">I", 1)
+        or (parent / "#size-cells").read_bytes() != struct.pack(">I", 1)
+    ):
+        raise ValueError("unsupported GPIO device-tree addressing")
+    expected = "brcm,bcm2711-gpio" if chip_label == "pinctrl-bcm2711" else "brcm,bcm2835-gpio"
+    if (
+        expected not in _compatible(chip_node)
+        or "brcm,bcm2835-gpiomem" not in _compatible(memory_node)
+        or (chip_device / "driver").resolve(strict=True).name != "pinctrl-bcm2835"
+    ):
+        raise ValueError("unsupported GPIO driver or bank")
+    for node in (chip_node, memory_node):
+        reg = (node / "reg").read_bytes()
+        if len(reg) != 8 or struct.unpack(">II", reg)[0] != 0x7E200000:
+            raise ValueError("GPIO register bank does not match gpiomem")
+    if struct.unpack(">II", (memory_node / "reg").read_bytes())[1] < mmap.PAGESIZE:
+        raise ValueError("gpiomem register range is too small")
+    return memory_info.st_rdev
+
+
+# On an unexpected failed unmap, keep strong references until process exit.
+# Releasing a live request while MMIO remains mapped would break ownership.
+_UNCLOSED_HARDWARE: list[Any] = []
+
+
+class KernelOwnedPair:
+    """Hold exclusive kernel ownership throughout every raw register access."""
+
+    def __init__(self, chip_path: str, profile: str) -> None:
+        if profile != "bcm2835-gpiomem-v1" or not re.fullmatch(
+            r"/dev/gpiochip[0-9]+", chip_path
+        ):
+            raise ValueError("explicit verified paired GPIO chip/profile required")
+        gpiod = importlib.import_module("gpiod")
+        version = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", gpiod.__version__)
+        if version is None or not (2, 3) <= tuple(map(int, version.groups()[:2])) < (3, 0):
+            raise RuntimeError("paired GPIO requires libgpiod Python >=2.3,<3")
+        line = importlib.import_module("gpiod.line")
+        self.chip = gpiod.Chip(chip_path)
+        self.request: Any = None
+        self.registers: GpiomemRegisters | None = None
+        self.gpio: PairedGpio | None = None
+        try:
+            info = self.chip.get_info()
+            profiles = {"pinctrl-bcm2835": 54, "pinctrl-bcm2711": 58}
+            if profiles.get(info.label) != info.num_lines or info.name != Path(chip_path).name:
+                raise ValueError("unsupported GPIO chip metadata")
+            for pin in PINS:
+                metadata = self.chip.get_line_info(pin)
+                if metadata.offset != pin or metadata.name != f"GPIO{pin}" or metadata.used:
+                    raise ValueError("paired line identity mismatch or already owned")
+            memory_device = validate_platform(self.chip.fd, info.label)
+            # AS_IS reserves both lines without an initial sequential value write.
+            self.request = self.chip.request_lines(
+                consumer="freeze-protect-pair",
+                config={PINS: gpiod.LineSettings(
+                    direction=line.Direction.AS_IS,
+                    bias=line.Bias.AS_IS,
+                    edge_detection=line.Edge.NONE,
+                    active_low=False,
+                )},
+            )
+            self.registers = GpiomemRegisters(memory_device)
+            self.gpio = PairedGpio(self.registers)
+            # Preload together before kernel direction changes. Input levels are
+            # not expected to reflect this latch until outputs are configured.
+            self.registers.write32(GPSET0, PAIR_MASK)
+            self.request.reconfigure_lines({PINS: gpiod.LineSettings(
+                direction=line.Direction.OUTPUT,
+                active_low=False,
+                output_value=line.Value.ACTIVE,
+            )})
+            self.gpio.write_and_verify("DRAIN")
+        except BaseException:
+            self.close(suppress_errors=True)
+            raise
+
+    def close(self, *, suppress_errors: bool = False) -> None:
+        errors: list[BaseException] = []
+        if self.registers is not None:
+            try:
+                if self.gpio is not None:
+                    self.gpio.write_and_verify("DRAIN")
+            except BaseException as error:  # noqa: BLE001 - preserve ownership and original failure.
+                errors.append(error)
+            try:
+                self.registers.close()
+            except BaseException as error:  # noqa: BLE001 - preserve ownership and original failure.
+                errors.append(error)
+                _UNCLOSED_HARDWARE.append(self)
+                # Never explicitly release ownership after an unsuccessful unmap.
+                if not suppress_errors:
+                    raise errors[0]
+                for failure in errors:
+                    print(f"paired cleanup failed: {failure}", file=sys.stderr)
+                return
+            self.registers = None
+            self.gpio = None
+        try:
+            if self.request is not None:
+                self.request.release()
+                self.request = None
+        except BaseException as error:  # noqa: BLE001 - preserve ownership and original failure.
+            errors.append(error)
+        try:
+            self.chip.close()
+        except BaseException as error:  # noqa: BLE001 - preserve ownership and original failure.
+            errors.append(error)
+        if errors and not suppress_errors:
+            raise errors[0]
+        for error in errors:
+            print(f"paired cleanup failed: {error}", file=sys.stderr)
 
 
 class PairedGpio:
     def __init__(self, registers: Registers) -> None:
         self._registers = registers
-
-    def configure_outputs(self) -> None:
-        value = self._registers.read32(FSEL2)
-        for pin in PINS:
-            shift = (pin % 10) * 3
-            value = (value & ~(0b111 << shift)) | (0b001 << shift)
-        self._registers.write32(FSEL2, value)
 
     def write_and_verify(self, command: str) -> dict[str, int]:
         if command not in {"DRAIN", "SUPPLY"}:
@@ -281,13 +476,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", default=DEFAULT_SOCKET)
     arguments = parser.parse_args()
-    registers = GpiomemRegisters()
-    gpio = PairedGpio(registers)
+    hardware = KernelOwnedPair(
+        os.environ.get("PAIRED_GPIO_CHIP", ""),
+        os.environ.get("PAIRED_GPIO_PROFILE", ""),
+    )
     try:
-        gpio.configure_outputs()
-        run_daemon(Path(arguments.socket), gpio)
-    finally:
-        registers.close()
+        assert hardware.gpio is not None
+        run_daemon(Path(arguments.socket), hardware.gpio)
+    except BaseException:
+        hardware.close(suppress_errors=True)
+        raise
+    else:
+        hardware.close()
     return 0
 
 
