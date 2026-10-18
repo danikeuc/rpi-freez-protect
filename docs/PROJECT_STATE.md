@@ -634,3 +634,87 @@ Operator confirmed the historical Hub base/readiness hashes and exact effective
 paths with NeedDaemonReload=no. Corrected v2 package matches those identities
 and its HTTP hash is verified; old download is retired. New prepare receipt is
 pending. This supersedes the identity-confirmation-pending note above only.
+
+## Controller diagnostic access prepared — 2026-10-18
+
+Owner requested autonomous investigation without repeated copy/paste. A status-only
+extension is prepared for the existing restricted helper; current installed hash
+2697465c was independently confirmed over SSH. Activation is pending. See
+[scope and activation](../deployment/maintenance-access/CONTROLLER_DIAGNOSTICS.md).
+No new Pi permission, controller recovery, relay activation or physical acceptance
+is claimed by package preparation.
+
+## Activation verified — 2026-10-18
+
+Owner reported installation complete. Two separate restricted SSH status requests
+succeeded and returned diagnostic_version1 and the exact candidate helper hash
+dd390a553688b1dc208d2f871e5b3fd17d7cf5ef8cff272f23ac055bc0691a92.
+The form `status extra` was independently rejected by the forced dispatcher.
+Controller diagnostics are now available through the existing status command.
+No shell, generic deployment/restart or actuator authority was added.
+This supersedes pending-activation wording in the preparation record.
+
+## Controller OFF recovery prepared — 2026-10-18
+
+The verified diagnostic access shows reachable controllers with latched faults.
+A tested light manual_off recovery patch and bounded root-console recovery package
+are prepared; installation remains pending. See [scope, verification and limits](evidence/2026-10-18-controller-off-recovery.md). This does not establish the original
+clock/relay failure cause or physical acceptance.
+
+## Controller OFF recovery installed — 2026-10-18
+
+Operator installation receipt and an independent restricted SSH check confirm
+light MANUAL_OFF/OK/OFF and shower MANUAL_DRAIN/user_off, with Hub, paired daemon
+and Node-RED active. The original relay error was HTTP503; its underlying cause
+and the light clock-fault source remain unresolved. See [acceptance evidence](evidence/2026-10-18-controller-off-recovery.md).
+
+## Fault diagnosis continued — 2026-10-18
+
+Source-level diagnostic gaps were reproduced and a local instrumentation candidate
+was prepared. Pi runtime remains the verified OFF recovery installation. See
+[findings and deployment boundary](evidence/2026-10-18-controller-fault-diagnostics.md).
+The original incident cause remains unconfirmed; no timeout policy was relaxed.
+
+### Controller fault diagnostic installer prepared — 2026-10-18
+
+Bounded two-file root-console installer and 16 installer checks prepared in
+[diagnostics runbook](../deployment/lighting/diagnostics/README.md). Full suite
+1,132 PASS and Ruff PASS. Runtime remains the independently verified recovery
+baseline; diagnostic installation NOT performed. No cause resolution claimed.
+Existing restricted SSH remains status-only for this task.
+
+### Controller fault diagnostics installed — 2026-10-18
+
+Operator installation receipt matches both prepared source hashes; backup
+/root/controller-fault-diagnostics.3xvxe5ia. Independent restricted SSH confirms
+shower USER_OFF/MANUAL_DRAIN and light MANUAL_OFF/OK/OFF after restart.
+[Acceptance evidence](evidence/2026-10-18-controller-fault-diagnostics.md).
+Supersedes the prepared-only entry. Original fault cause NOT_RESOLVED; physical
+acceptance NOT_TESTED. No changes to SSH permissions or automatic fault clearing.
+
+### DietPi system snapshot reviewed — 2026-10-18
+
+[System diagnostic](evidence/2026-10-18-dietpi-system-diagnostic.md): no present
+RAM/disk/load exhaustion, failed units or reported throttling flags. Three
+clock-change journal matches make periodic clock correction a relevant
+unconfirmed lead for prior light failure. WiFi cumulative drops need interval
+evidence before attributing connectivity loss. NTP properties absent due to
+collector argument bug; corrected locally, actual time-sync mode pending.
+No host configuration changed.
+
+### Startup and software follow-up — 2026-10-18
+
+[Follow-up evidence](evidence/2026-10-18-startup-software-followup.md): current restricted SSH reports shower USER_OFF/DRAIN and light AUTO/OK/OFF after manual expiry. Cached simulation finds55 upgrades and2 not upgraded; holds and Node runtime identity remain incomplete. CONFIG_NTP_MODE=2 is confirmed by operator output, superseding the earlier pending note. A bounded read-only clock/startup follow-up is prepared; no host configuration, restart policy, packages or GPIO changed. Original fault cause remains unconfirmed.
+
+### Clock-step correlation established — 2026-10-18
+
+Owner follow-up confirms +37.945s wall-clock step at2026-10-17 01:25:40UTC, successful synchronization36.309ms before the historical light clock_or_lease_fault. Strongly supported trigger for that incident; shower HTTP503 cause remains unresolved. Node-RED5.0.7/Node.js26.8.1 identified from current-boot logs; no package holds. Two cached upgrade exclusions are Raspberry Pi kernel metapackages. See [follow-up receipt](evidence/2026-10-18-startup-software-followup.md). No host changes.
+
+### Continuous time synchronization prepared — 2026-10-18
+
+[Maintenance package](../deployment/time-sync/README.md) preserves runtime clock protection and NTP servers, changes mode2to4, and adds a bounded time-ready startup dependency to both controllers. Trusted-console installation and both loads disconnected required. Repository tests only; NOT_INSTALLED, cold-boot and physical acceptance NOT_TESTED. No Node-RED restart policy, package upgrades or SSH permission changes.
+
+
+## 2026-10-18 — Continuous time synchronization installed
+
+Operator receipt confirms mode 4 and synchronized time, backup `/root/freeze-time-sync.9qom636c`. Independent restricted SSH verifies light MANUAL_OFF/OK/OFF and shower MANUAL_DRAIN/user_off; Hub, paired GPIO and Node-RED active. No actuation during verification. [Installation evidence](evidence/2026-10-18-continuous-time-sync-installed.md). Cold-boot and physical acceptance remain NOT_TESTED; historical shower HTTP 503 cause remains unresolved. No upgrades or reboot performed.

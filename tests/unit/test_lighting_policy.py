@@ -63,7 +63,7 @@ def test_manual_blocks_camera_and_returns_off_without_replay(rig):
     s = action(c, "manual_on")
     assert s.mode == "MANUAL_ON" and s.manual_remaining_seconds == 3600
     assert not event(c, clock).accepted
-    clock.advance(3601)
+    clock.advance(4501)
     c.tick()
     assert c.status().mode == "AUTO" and not output.on
     clock.advance(0.01)
@@ -463,3 +463,202 @@ def test_untrusted_revision_watermark_rejects_captured_settings_without_change(
     assert error.value.code in {409, 503}
     assert restarted.settings() == before
     assert not output.on
+
+
+def test_manual_on_expiry_has_fifteen_minute_camera_cooldown(rig):
+    c, clock, output = rig
+    action(c, "manual_on")
+    clock.advance(3600)
+    c.tick()
+    assert not output.on
+    assert c.status().mode == "MANUAL_OFF"
+    assert c.status().reason == "manual_cooldown"
+    assert c.status().manual_remaining_seconds == 900
+    assert not event(c, clock, "during-cooldown").accepted
+    clock.advance(899)
+    c.tick()
+    assert c.status().mode == "MANUAL_OFF"
+    clock.advance(1)
+    c.tick()
+    assert c.status().mode == "AUTO" and not output.on
+    clock.advance(0.01)
+    assert event(c, clock, "after-cooldown").accepted
+
+
+@pytest.mark.parametrize("elapsed", [3599, 3600, 4000, 4501])
+def test_restart_preserves_cooldown_without_reenergizing(rig, tmp_path, elapsed):
+    c, clock, output = rig
+    action(c, "manual_on")
+    c.close()
+    clock.advance(elapsed)
+    c = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    assert not output.on and c.status().health == "OK"
+    if elapsed < 4500:
+        assert c.status().mode == "MANUAL_OFF"
+        clock.advance(4500 - elapsed)
+        c.tick()
+    assert c.status().mode == "AUTO"
+    assert not output.on
+
+
+def test_explicit_auto_cancels_cooldown_and_manual_off_has_no_extra_delay(rig):
+    c, clock, output = rig
+    action(c, "manual_on")
+    clock.advance(3600)
+    c.tick()
+    action(c, "auto", "early-auto")
+    assert c.status().mode == "AUTO" and not output.on
+    action(c, "manual_off", "manual-off")
+    clock.advance(3600)
+    c.tick()
+    assert c.status().mode == "AUTO" and not output.on
+
+
+def test_cooldown_is_not_extended_by_settings_or_duplicate_action(rig):
+    c, clock, output = rig
+    request = Action(
+        request_id="on", expected_revision=c.status().revision, action="manual_on"
+    )
+    c.actions(request)
+    clock.advance(3600)
+    c.tick()
+    c.update_settings(
+        SettingsUpdate(
+            request_id="settings",
+            expected_revision=0,
+            hold_seconds=60,
+            manual_seconds=7200,
+        )
+    )
+    c.actions(request)
+    clock.advance(900)
+    c.tick()
+    assert c.status().mode == "AUTO" and not output.on
+
+
+@pytest.mark.parametrize("delta", [-100, 100])
+def test_fault_recovers_to_manual_off_without_enabling_camera(rig, tmp_path, delta):
+    c, clock, output = rig
+    clock.wall += delta
+    c.tick()
+    assert c.status().health == "FAULT"
+    output.calls.clear()
+    request = Action(
+        request_id="recover-off",
+        expected_revision=c.status().revision,
+        action="manual_off",
+    )
+    result = c.actions(request)
+    assert result.health == "OK" and result.mode == "MANUAL_OFF"
+    assert result.gpio_on is False and result.desired_on is False
+    assert result.manual_remaining_seconds == c.settings().manual_seconds
+    assert output.calls and set(output.calls) == {"off"}
+    assert not c.state.fault
+    assert not event(c, clock, "camera-during-recovery").accepted
+    count = len(output.calls)
+    clock.advance(10)
+    assert c.actions(request) == result
+    assert len(output.calls) == count
+    c.close()
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    assert restarted.status().health == "OK" and restarted.status().mode == "MANUAL_OFF"
+    assert restarted.status().gpio_on is False
+
+
+def test_fault_manual_off_requires_fresh_off_receipt(rig):
+    c, clock, output = rig
+    clock.wall += 100
+    c.tick()
+    output.fail = True
+    output.calls.clear()
+    with pytest.raises(LightError):
+        action(c, "manual_off", "failed-recovery")
+    assert output.calls and set(output.calls) == {"off"}
+    assert c.status().health == "FAULT" and c.state.fault
+    assert c.status().gpio_on is None
+
+
+def test_fault_manual_off_rejects_stale_revision_before_output(rig):
+    c, clock, output = rig
+    stale = c.status().revision
+    clock.wall += 100
+    c.tick()
+    output.calls.clear()
+    with pytest.raises(LightError) as error:
+        c.actions(
+            Action(
+                request_id="stale-recovery",
+                expected_revision=stale,
+                action="manual_off",
+            )
+        )
+    assert error.value.code == 409 and output.calls == []
+    assert c.status().health == "FAULT"
+
+
+def test_fault_manual_off_does_not_clear_unconfigured_controller(rig):
+    c, clock, _output = rig
+    clock.wall += 100
+    c.tick()
+    c.configured = False
+    with pytest.raises(LightError):
+        action(c, "manual_off", "unconfigured-recovery")
+    assert c.status().health != "OK" and c.state.fault
+
+
+@pytest.mark.parametrize("failure_call", [1, 2])
+def test_manual_off_recovery_storage_failure_relatches_fault(
+    rig, tmp_path, monkeypatch, failure_call
+):
+    import sqlite3
+
+    c, clock, output = rig
+    clock.wall += 100
+    c.tick()
+    original_save = c.store.save
+    calls = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == failure_call:
+            raise sqlite3.OperationalError("disk full")
+        return original_save(*args, **kwargs)
+
+    monkeypatch.setattr(c.store, "save", fail_once)
+    output.calls.clear()
+    with pytest.raises(LightError):
+        action(c, "manual_off", "storage-failed-recovery")
+    assert c.status().health == "FAULT" and c.state.fault
+    assert not output.on and set(output.calls) == {"off"}
+    c.close()
+    restarted = LightController(tmp_path / "light.db", output, {"camera-1"}, clock)
+    assert restarted.status().health == "FAULT" and not output.on
+
+
+def test_clock_fault_logs_numeric_deltas_without_changing_fault_policy(rig, caplog):
+    c, clock, output = rig
+    clock.wall += 100
+    c.tick()
+    assert c.status().reason == "clock_or_lease_fault"
+    assert c.status().health == "FAULT" and not output.on
+    assert "clock discontinuity" in caplog.text
+    assert "wall_delta_s=100" in caplog.text and "monotonic_delta_s=0" in caplog.text
+    count = len(caplog.records)
+    c.tick()
+    assert len(caplog.records) == count
+
+
+def test_renewal_failure_logs_stage_without_private_exception(rig, caplog):
+    c, _clock, output = rig
+    action(c, "manual_on")
+
+    def fail():
+        raise OSError("private-socket-path-or-token")
+
+    output.renew = fail
+    c.tick()
+    assert c.status().health == "FAULT" and not output.on
+    assert "stage=renewal" in caplog.text
+    assert "private-socket-path-or-token" not in caplog.text
+    assert "clock discontinuity" not in caplog.text

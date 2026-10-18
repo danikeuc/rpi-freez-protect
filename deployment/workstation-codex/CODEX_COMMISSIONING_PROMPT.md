@@ -97,3 +97,24 @@ for this update. The new field is available through the existing status command.
 root-console updater is already applied; do not rerun it.
 
 [Operator instructions](../maintenance-access/LIGHT_BENCH_DIAGNOSTICS.md).
+
+## Controller diagnostics extension prepared — 2026-10-18
+
+At the owner's request to remove repeated diagnostic copy/paste, a bounded
+status-only extension is prepared in
+[controller diagnostics](../maintenance-access/CONTROLLER_DIAGNOSTICS.md).
+After verified root-console installation and a second restricted SSH check,
+the existing maintenance `status` command may return the fixed controller
+status/history fields and categorized journal described there. No new command
+form, arbitrary shell/sudo, installation, restart or actuator authority is added.
+Activation remains pending; preparation alone does not change Pi permissions.
+
+## Activation verified — 2026-10-18
+
+Owner reported installation complete. Two separate restricted SSH status requests
+succeeded and returned diagnostic_version1 and the exact candidate helper hash
+dd390a553688b1dc208d2f871e5b3fd17d7cf5ef8cff272f23ac055bc0691a92.
+The form `status extra` was independently rejected by the forced dispatcher.
+Controller diagnostics are now available through the existing status command.
+No shell, generic deployment/restart or actuator authority was added.
+This supersedes pending-activation wording in the preparation record.

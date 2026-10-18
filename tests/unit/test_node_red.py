@@ -134,3 +134,66 @@ def test_node_red_supply_requires_explicit_action_and_matching_receipt() -> None
             "supply_action": "begin",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    "error,code",
+    [
+        ("bridge is not ready in verified DRAIN", "bridge_not_ready"),
+        ("SUPPLY request expired", "request_expired"),
+        ("SUPPLY lease state rejects action", "lease_rejected"),
+        ("paired GPIO executor stderr", "executor_stderr"),
+        ("paired GPIO executor failed", "executor_failed"),
+        ("paired GPIO readback not confirmed", "readback_unconfirmed"),
+        ("private-token-must-not-leak", "unclassified"),
+    ],
+)
+def test_http_503_retains_only_allowlisted_cause(error, code, caplog):
+    import io
+    from urllib.error import HTTPError
+
+    calls = []
+    response = HTTPError(
+        "http://127.0.0.1/private",
+        503,
+        "private-reason",
+        {},
+        io.BytesIO(json.dumps({"error": error}).encode()),
+    )
+
+    def fail(request, timeout):
+        calls.append(request)
+        raise response
+
+    driver = NodeRedActuatorDriver(
+        "http://127.0.0.1:1880/internal/freeze-protect/actuator",
+        "private-hub-token",
+        urlopen=fail,
+    )
+    with pytest.raises(AdapterError) as caught:
+        driver.command(ActuatorCommand.DRAIN)
+    assert "http_status=503" in str(caught.value)
+    assert "bridge_reason=" + code in str(caught.value)
+    assert len(calls) == 1
+    assert "private" not in str(caught.value) + caplog.text
+    assert response.closed
+
+
+@pytest.mark.parametrize("body", [b"not-json", b"[]", b'{"error":42}', b"x" * 5000])
+def test_http_failure_diagnostic_handles_invalid_or_oversized_body(body):
+    import io
+    from urllib.error import HTTPError
+
+    response = HTTPError("http://127.0.0.1/", 503, "unavailable", {}, io.BytesIO(body))
+
+    def fail(request, timeout):
+        raise response
+
+    driver = NodeRedActuatorDriver(
+        "http://127.0.0.1:1880/internal/freeze-protect/actuator",
+        "hub-token",
+        urlopen=fail,
+    )
+    with pytest.raises(AdapterError, match="bridge_reason=unclassified"):
+        driver.command(ActuatorCommand.DRAIN)
+    assert response.closed

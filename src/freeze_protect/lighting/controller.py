@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import sqlite3
 import threading
@@ -20,6 +21,8 @@ from .models import (
     Status,
 )
 from .store import LightStore
+
+_LOG = logging.getLogger(__name__)
 
 
 class Clock(Protocol):
@@ -99,15 +102,29 @@ class LightController:
             ):
                 self.health, self.reason = "FAULT", "restart_clock_or_state_fault"
                 self.state.fault = True
-            elif self.state.mode != "AUTO" and self.state.manual_until > now:
+            elif (
+                self.state.mode != "AUTO"
+                and max(self.state.manual_until, self.state.cooldown_until) > now
+            ):
+                if self.state.cooldown_until:
+                    gap = self.state.cooldown_until - self.state.manual_until
+                    if gap not in (0.0, 900.0):
+                        raise ValueError("invalid persisted cooldown")
+                if now >= self.state.manual_until:
+                    self.state.manual_until = self.state.cooldown_until
                 remaining = self.state.manual_until - now
-                if remaining > 7200:
+                if not 0 < remaining <= 7200:
                     raise ValueError("invalid persisted deadline")
                 self.state.mode = "MANUAL_OFF"
                 self.manual_until = self.clock.monotonic() + remaining
-                self.reason = "restart_manual_inhibited"
+                self.reason = (
+                    "manual_cooldown"
+                    if self.state.manual_until == self.state.cooldown_until
+                    else "restart_manual_inhibited"
+                )
             else:
                 self.state.mode, self.state.manual_until = "AUTO", 0.0
+                self.state.cooldown_until = 0.0
             self.state.boundary = max(now, self.state.boundary)
             self._revision()
             self._off()
@@ -169,10 +186,16 @@ class LightController:
     def _check_clock(self) -> None:
         wall, mono = self.clock.time(), self.clock.monotonic()
         if not math.isfinite(wall) or not math.isfinite(mono):
+            _LOG.warning("light clock discontinuity nonfinite_clock=true")
             raise OSError("invalid clock")
         old_wall, old_mono = self.last_wall, self.last_mono
         self.last_wall, self.last_mono = wall, mono
         if mono < old_mono or abs((wall - old_wall) - (mono - old_mono)) > 5:
+            _LOG.warning(
+                "light clock discontinuity wall_delta_s=%s monotonic_delta_s=%s",
+                wall - old_wall,
+                mono - old_mono,
+            )
             raise OSError("clock discontinuity")
 
     def status(self) -> Status:
@@ -266,14 +289,26 @@ class LightController:
         if self.health != "OK":
             return False
         if self.state.mode != "AUTO" and now >= self.manual_until:
-            self.state.mode, self.state.manual_until, self.manual_until = (
-                "AUTO",
-                0.0,
-                0.0,
-            )
+            # Deadline is anchored to the original manual expiry, not the tick.
+            cooldown_left = self.state.cooldown_until - self.clock.time()
+            if (
+                self.state.cooldown_until > self.state.manual_until
+                and cooldown_left > 0
+            ):
+                self.state.mode = "MANUAL_OFF"
+                self.state.manual_until = self.state.cooldown_until
+                self.manual_until = now + cooldown_left
+                self.reason = "manual_cooldown"
+            else:
+                self.state.mode, self.state.manual_until, self.manual_until = (
+                    "AUTO",
+                    0.0,
+                    0.0,
+                )
+                self.state.cooldown_until = 0.0
+                self.reason = "manual_expired"
             self.camera_until = self.dial_until = 0.0
             self.state.boundary = self.clock.time()
-            self.reason = "manual_expired"
         elif (
             self.state.mode == "AUTO"
             and self.desired_on
@@ -299,7 +334,10 @@ class LightController:
                 self._expire()
                 if request.expected_revision != self.state.revision:
                     raise LightError(409, "stale_revision")
-                if request.action not in {"off", "auto"} and self.health != "OK":
+                if (
+                    request.action not in {"off", "auto", "manual_off"}
+                    and self.health != "OK"
+                ):
                     raise LightError(503, "light_unavailable")
                 if request.action != "timed_on":
                     self.camera_until = self.dial_until = 0.0
@@ -318,6 +356,13 @@ class LightController:
                 elif request.action in {"manual_on", "manual_off"} or (
                     request.action == "off" and self.state.mode != "AUTO"
                 ):
+                    if request.action == "manual_off" and self.health != "OK":
+                        if not self.configured:
+                            raise LightError(503, "light_unconfigured")
+                        # Explicit recovery stays camera-inhibited. Never clear a
+                        # fault from a cached level or without a fresh OFF receipt.
+                        self._off()
+                        self.state.fault, self.health = False, "OK"
                     self.state.mode = (
                         "MANUAL_ON" if request.action == "manual_on" else "MANUAL_OFF"
                     )
@@ -341,6 +386,14 @@ class LightController:
                         )
                         self.state.fault, self.health = False, "OK"
                         self.last_wall, self.last_mono = self.clock.time(), now
+                if request.action == "auto":
+                    self.state.cooldown_until = 0.0
+                elif self.state.mode != "AUTO":
+                    self.state.cooldown_until = (
+                        self.state.manual_until + 900
+                        if self.state.mode == "MANUAL_ON"
+                        else 0.0
+                    )
                 self.reason = request.action
                 result = self._commit_intent("action", request.request_id, fingerprint)
                 assert isinstance(result, Status)
@@ -447,10 +500,13 @@ class LightController:
 
     def tick(self) -> None:
         with self.lock:
+            stage = "clock"
             try:
                 self._check_clock()
+                stage = "expiry"
                 if self._expire() or self.health != "OK" or not self.desired_on:
                     return
+                stage = "renewal"
                 receipt = self.executor.renew()
                 if (
                     not self.receipt
@@ -461,7 +517,19 @@ class LightController:
                 ):
                     raise OSError("uncertain renewal")
                 self.gpio_on = True
-            except (OSError, sqlite3.Error, ValueError, OverflowError, LightError):
+            except (
+                OSError,
+                sqlite3.Error,
+                ValueError,
+                OverflowError,
+                LightError,
+            ) as error:
+                kind = (
+                    "storage"
+                    if isinstance(error, sqlite3.Error)
+                    else "io_or_validation"
+                )
+                _LOG.warning("light actuator_failure stage=%s kind=%s", stage, kind)
                 self._fault("clock_or_lease_fault")
 
     def close(self) -> None:

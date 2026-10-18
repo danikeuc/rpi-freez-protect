@@ -1,6 +1,6 @@
 # RPi Freeze Protect
 
-Pi release: [v1.3.1 - persistent history and Node-RED startup readiness](docs/releases/v1.3.1.md).
+Pi release: [v1.4.0 — independent light and controller reliability](docs/releases/v1.4.0.md).
 
 RPi Freeze Protect is the Raspberry Pi safety controller for an outdoor shower.
 It owns one paired two-valve actuator, keeps the default state at `DRAIN`, and

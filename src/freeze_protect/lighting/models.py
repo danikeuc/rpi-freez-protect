@@ -81,6 +81,7 @@ class DurableState(StrictModel):
     revision: Revision = 0
     mode: Mode = "AUTO"
     manual_until: float = 0.0
+    cooldown_until: float = 0.0
     boundary: float = 0.0
     saved_at: float = 0.0
     fault: bool = False

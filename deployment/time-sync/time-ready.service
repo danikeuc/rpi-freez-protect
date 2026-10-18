@@ -1,0 +1,14 @@
+[Unit]
+Description=Verified network time before shower and light controllers
+Wants=network-online.target systemd-timesyncd.service
+After=network-online.target systemd-timesyncd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I -B /usr/local/lib/freeze-protect-time-ready.py
+TimeoutStartSec=65
+RemainAfterExit=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
