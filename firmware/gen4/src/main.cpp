@@ -46,10 +46,14 @@ gfx4desp32_gen4_ESP32_28 display;
 namespace {
 using namespace gen4;
 constexpr char kStatusPath[] = "/api/v1/display/status";
+#if GEN4_TEST_HUB
 constexpr char kStartPath[] = "/api/v1/display/actions/timed-shower";
 constexpr char kDrainPath[] = "/api/v1/display/actions/drain";
+#endif
 std::atomic<uint32_t> connection_generation{0};
+#if GEN4_TEST_HUB
 struct Request { Action action; uint32_t created_ms; uint32_t id; uint32_t generation; };
+#endif
 struct Snapshot {
   Status status{};
   bool valid = false;
@@ -58,7 +62,9 @@ struct Snapshot {
   uint32_t completed_id = 0;
   uint32_t generation = 0;
 };
+#if GEN4_TEST_HUB
 QueueHandle_t requests = nullptr;
+#endif
 QueueHandle_t snapshots = nullptr;
 Model model;
 Gesture gesture;
@@ -86,7 +92,7 @@ IPAddress hub_address;
 uint16_t hub_port = 80;
 String hub_authority;
 uint32_t poll_started = 0;
-#if GEN4_TOUCH
+#if GEN4_TOUCH && (GEN4_TEST_HUB || GEN4_OFFLINE_BENCH)
 TouchReader<TwoWire> touch_reader(Wire);
 uint8_t touch_address = 0;
 #endif
@@ -156,15 +162,25 @@ bool exchange(const char* path, bool post, String& body, uint32_t generation) {
 #if GEN4_NETWORK_BENCH
   if (post) { ++bench_posts_blocked; return false; }
 #endif
+#if !GEN4_TEST_HUB
+  // Ordinary images have no action transport, even if a future caller passes true.
+  if (post) return false;
+#endif
   if (WiFi.status() != WL_CONNECTED) return false;
+#if GEN4_TEST_HUB
   String request = post ? "POST " : "GET ";
+#else
+  String request = "GET ";
+#endif
   request += path;
   request += " HTTP/1.0\r\nHost: ";
   request += hub_authority;
   request += "\r\nX-Display-Token: ";
   request += DISPLAY_TOKEN;
   request += "\r\nAccept: application/json\r\nConnection: close\r\n";
+#if GEN4_TEST_HUB
   if (post) request += "Content-Length: 0\r\n";
+#endif
   request += "\r\n";
   HubSocket socket(generation);
   char buffer[4097];
@@ -183,6 +199,7 @@ bool poll(Status& status, uint32_t generation) {
   return exchange(kStatusPath, false, body, generation) &&
          parse_status(body.c_str(), body.length(), status);
 }
+#if GEN4_TEST_HUB
 class HubTransport : public Transport {
  public:
   explicit HubTransport(uint32_t generation) : generation_(generation) {}
@@ -200,16 +217,25 @@ class HubTransport : public Transport {
   uint32_t generation_;
 };
 uint32_t now_ms() { return millis(); }
+#endif
 void network_task(void*) {
+#if GEN4_TEST_HUB
   int last_result = 0;
   uint32_t completed_id = 0;
+#endif
   uint32_t last_poll = millis() - 2000;
   for (;;) {
+#if GEN4_TEST_HUB
     Request request{};
     const bool have_request = xQueueReceive(requests, &request, pdMS_TO_TICKS(20)) == pdTRUE;
     if (!have_request && uint32_t(millis() - last_poll) < 2000) continue;
+#else
+    vTaskDelay(pdMS_TO_TICKS(20));
+    if (uint32_t(millis() - last_poll) < 2000) continue;
+#endif
     Snapshot result;
     result.generation = connection_generation.load();
+#if GEN4_TEST_HUB
     if (have_request) {
       HubTransport transport(request.generation);
       // Never replay a queued action after reconnection. Recheck server
@@ -224,9 +250,14 @@ void network_task(void*) {
     } else {
       result.valid = poll(result.status, result.generation);
     }
+#else
+    result.valid = poll(result.status, result.generation);
+#endif
     result.received_ms = poll_started;  // Include request time in freshness/countdown.
+#if GEN4_TEST_HUB
     result.action_result = last_result;
     result.completed_id = completed_id;
+#endif
     xQueueOverwrite(snapshots, &result);
     last_poll = millis();
   }
@@ -270,7 +301,7 @@ void render(uint32_t now) {
     text(14, 136, model.status.manual ? "Casovnik vodi Hub." : "Nacin samo za prikaz.");
   }
   if (action_result < 0) text(14, 160, "Ukaz ni potrjen. Preveri stanje.", 1, 0xFAAA);
-#if GEN4_TOUCH
+#if GEN4_TOUCH && (GEN4_TEST_HUB || GEN4_OFFLINE_BENCH)
   const bool start = fresh && model.can_start(now);
   display.RectangleFilled(12, 190, 227, 239, start ? 0x032C : 0x2104);
   text(28, 205, start ? "DRZI 2s ZA TUS" : "TUS NI NA VOLJO", 2);
@@ -293,7 +324,7 @@ void setup() {
   display.Font(1);
   display.TextSize(1);
   display.BacklightOn(true);
-#if GEN4_TOUCH
+#if GEN4_TOUCH && (GEN4_TEST_HUB || GEN4_OFFLINE_BENCH)
   display.touch_Set(TOUCH_ENABLE);
   Wire.setTimeOut(20);
   if (display.t_controller == 0) touch_address = 0x38;
@@ -317,9 +348,15 @@ void setup() {
       if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) ++connection_generation;
     });
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+#if GEN4_TEST_HUB
     requests = xQueueCreate(1, sizeof(Request));
+#endif
     snapshots = xQueueCreate(1, sizeof(Snapshot));
+#if GEN4_TEST_HUB
     if (requests && snapshots)
+#else
+    if (snapshots)
+#endif
       worker_ready = xTaskCreate(network_task, "hub-client", 12288, nullptr, 1, nullptr) == pdPASS;
   }
   render(millis());
@@ -350,7 +387,7 @@ void loop() {
   // appear to be in the future and spuriously cancel an in-progress hold.
   const uint32_t now = millis();
   if (WiFi.status() != WL_CONNECTED) model.valid = false;
-#if GEN4_TOUCH
+#if GEN4_TOUCH && (GEN4_TEST_HUB || GEN4_OFFLINE_BENCH)
   const TouchSample sample = touch_reader.read(display.t_controller, touch_address);
 #if GEN4_TEST_HUB
   const uint32_t sample_ms = millis();
@@ -398,6 +435,7 @@ void loop() {
   if (action == Action::Start) ++test_starts;
   if (action == Action::Drain) ++test_drains;
 #endif
+#if GEN4_TEST_HUB
   if (action != Action::None && worker_ready) {
     const Request request{action, now, model.begin_request(), generation};
     if (xQueueSend(requests, &request, 0) != pdTRUE) {
@@ -406,6 +444,7 @@ void loop() {
     }
     changed = true;
   }
+#endif
 #endif
   static uint32_t last_render = 0;
   if (should_render(changed, millis(), last_render, gesture, model)) {

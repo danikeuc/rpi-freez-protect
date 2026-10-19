@@ -51,3 +51,6 @@ jobs:
           #define DISPLAY_TOKEN "build-check-only"
           EOF
           python -m platformio run -e gen4_28 -e gen4_28ct -e gen4_28ct_test_hub
+      - name: Verify action isolation in linked firmware
+        working-directory: firmware/gen4
+        run: python tools/verify_action_isolation.py

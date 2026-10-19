@@ -366,3 +366,11 @@ accepts the Hub's 1800-second weather-assisted countdown while retaining the
 600-second manual limit. These are source and workstation checks. The connected
 unit still runs the previously restored status-only image; this parser change
 has not been uploaded or observed on that device.
+
+Before PR review, the ordinary CT firmware was tightened to the same
+status-only scope: its touch controls, action queue and POST transport are
+compiled out. A provisioned-image regression check first detected the old
+timed-shower route; after the change, all five relevant builds passed and
+four ordinary images contained no action route or POST method. The separate
+test-Hub image retained those paths for fixture-only testing. This change
+exists in repository source and build artifacts, not on the connected device.

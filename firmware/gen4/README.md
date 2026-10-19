@@ -15,7 +15,7 @@ installation remains the active installation recorded in
 | `gen4_28_network_bench` | Shared LCD, read-only network client | One serial-triggered 30-second Wi-Fi outage, numeric telemetry, all POSTs blocked |
 | `gen4_28ct_offline` | Shared 2.8-inch CT application layout | Offline application/touch inspection; ignores secrets and disables networking/actions |
 | `gen4_28ct_test_hub` | 28CT test application | CT gestures against an isolated in-memory Hub fixture on workstation port 18081; fixed test token and visible simulation banner |
-| `gen4_28ct` | gen4-ESP32-28CT / 28CT-CLB | Capacitive touch; confirm hardware and complete isolated acceptance before provisioning |
+| `gen4_28ct` | gen4-ESP32-28CT / 28CT-CLB | Read-only status display; action controls and POST transport excluded at build time |
 
 The 2.8-inch family uses ESP32-S3, 16 MB QIO flash and 8 MB OPI PSRAM. USB enumeration alone
 does not identify the LCD or touch variant. The user identified the connected
@@ -148,6 +148,11 @@ After the offline inspection, `gen4_28` can be used on the tested shared LCD
 path, including this CT-capable unit, for a status-only connection to the
 selected Hub. Its `GEN4_TOUCH=0` excludes touch handling and the only action
 queue producer. The screen shows `SAMO PRIKAZ`; there are no action buttons.
+The normal `gen4_28ct` target uses the CT board driver but is also status-only:
+touch actions, their queue and the POST transport are excluded at build time.
+Only the isolated `gen4_28ct_test_hub` target can send actions. The offline
+inspection target retains a disabled button layout for touch/UI checks, with
+networking and action delivery disabled.
 This stage validates status reception only. It does not accept touch controls
 or replace the isolated fake-Hub and commissioning gates before control use.
 See [read-only network evidence](NETWORK_BENCH.md).
@@ -193,16 +198,18 @@ claim to measure valve position. The countdown is a local display estimate
 from `remaining_seconds`; reaching zero never issues a command or invents
 a confirmed DRAIN state.
 
-The CT version requires release after boot, then a continuous two-second
+The isolated CT test target requires release after boot, then a continuous two-second
 hold on the start button. Moving away, losing valid status, pending requests
 or a changed action cancels the gesture. A failed/short touch read, multiple
 contacts, out-of-range coordinates or a sample gap above 100 ms cancels and
 disarms the hold until a verified release. A separate IZPUST button requests
-DRAIN. Holding a button sends at most one action until release. The non-touch
-target offers status viewing only. This firmware does not implement Roon or
+DRAIN. Holding a button sends at most one action until release. Ordinary
+targets offer status viewing only. This firmware does not implement Roon or
 the forecast page.
 
-Only the existing display API is used, with `X-Display-Token`:
+Only the existing display API is used, with `X-Display-Token`. Ordinary
+targets use the GET route only; the POST routes are compiled solely into the
+isolated test-Hub target:
 
 | Request | Purpose |
 | --- | --- |
@@ -210,7 +217,7 @@ Only the existing display API is used, with `X-Display-Token`:
 | POST /api/v1/display/actions/timed-shower | Bodyless, deliberate start |
 | POST /api/v1/display/actions/drain | Bodyless, deliberate drain |
 
-Start is enabled only for fresh, explicitly permitted MANUAL_DRAIN in
+In the isolated test-Hub target, start is enabled only for fresh, explicitly permitted MANUAL_DRAIN in
 manual_timed mode. `weather_assisted` is explicitly accepted for status
 viewing and never grants START. Other modes remain display-only for starting; DRAIN
 remains available with fresh status. The Hub chooses the fixed 600 seconds.
@@ -242,14 +249,14 @@ mixed levels are illegal. This firmware has no Pi GPIO interface.
 | --- | --- | --- |
 | Display-Hub communication loss | UI becomes unknown and disables start within five seconds (immediate on observed Wi-Fi loss). A manual shower started by this display remains bounded by the Hub's 600-second timer; other Hub modes can report up to 1800 seconds. Reconnect never replays a start. | Host tests cover stale logic and request expiry; network/device tests pending. |
 | Display crash/hang; Hub crash/hang | Display cannot renew or extend a shower. Hub bounds it; if Hub renewal stops, existing daemon lease requests DRAIN within 60 seconds. | Existing controller design; new display crash/lease observation not performed. |
-| Display or Pi reset | Display boots without a queued action and requires release before touch control. Pi controller is designed to start at paired DRAIN. | Gesture/model tests only; startup electrical behavior not measured here. |
+| Display or Pi reset | Display boots without a queued action; the isolated test target requires release before touch control. Pi controller is designed to start at paired DRAIN. | Gesture/model tests only; startup electrical behavior not measured here. |
 | Loss/restoration of display, Pi, relay or valve power | Display restart sends no automatic command. Physical DRAIN after loss of other power domains is not established by display software. | Physical fail-safe behavior remains UNKNOWN; use the project evidence ledger and separately approved tests. |
 
-First inspect an unprovisioned image: readable portrait layout, colors,
-orientation and (CT only) touch alignment at all edges, including release
-and hold behavior. Then use an isolated fake Hub to check 401/409, malformed
-JSON, delayed replies, disconnect/reconnect and one POST per deliberate
-gesture before provisioning the real controller.
+First inspect an unprovisioned image for readable portrait layout, colors and
+orientation. The separate CT diagnostic and test-Hub images cover touch
+alignment and the isolated 401/409, malformed JSON, delayed reply,
+disconnect/reconnect and deliberate-gesture checks. Ordinary provisioned
+images remain status-only.
 
 Keep the 24 V valve supply disconnected. Any real timed-shower/GPIO
 acceptance requires explicit current-conversation approval and all documented

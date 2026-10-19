@@ -166,3 +166,22 @@ now accepts the Hub's 1800-second maximum outside manual mode while retaining
 the manual 600-second limit. These results cover source compatibility and
 workstation simulation, not a new upload or a physical valve test. The device
 still has the earlier restored status-only image.
+
+## Ordinary CT target action isolation — 2026-10-19
+
+The provisioned ordinary `gen4_28ct` source previously included action
+buttons and POST routes. This conflicted with the accepted status-only scope.
+The compiled normal CT target now has no touch controls, action queue or POST
+transport. The ordinary non-CT and network-bench targets are likewise
+read-only; network action delivery remains only in `gen4_28ct_test_hub` for the
+isolated in-memory fixture. The offline CT target retains disabled buttons
+for UI inspection and cannot send actions. A new binary check first failed on the old
+provisioned CT image because it contained the timed-shower route. After the
+change, all five provisioned/diagnostic PlatformIO builds passed, and the
+binary check found no action routes or POST method in four ordinary images,
+and no action button labels in the normal CT image, while confirming both in
+the isolated test image. CI now repeats the check
+after linking with dummy network settings, so unprovisioned optimization
+cannot mask an action path. This is source and binary evidence only; the
+connected device was not reflashed for this change and remains on the earlier
+ROM-verified `SAMO PRIKAZ` image.
