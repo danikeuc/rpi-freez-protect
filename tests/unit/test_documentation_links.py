@@ -17,7 +17,8 @@ def github_anchor(heading: str) -> str:
 def test_internal_markdown_links_resolve() -> None:
     failures: list[str] = []
     markdown_files = sorted(
-        path for path in ROOT.rglob("*.md") if ".git" not in path.parts
+        path for path in ROOT.rglob("*.md")
+        if ".git" not in path.parts and ".pio" not in path.parts
     )
 
     for source in markdown_files:
