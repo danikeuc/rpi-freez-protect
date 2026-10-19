@@ -339,3 +339,30 @@ Planning validation: `git diff --check` passed; a local Markdown-link check
 resolved all 34 relative links across the ledger, four matching design documents
 and both new plans. This is documentation evidence only; no software tests or
 runtime checks were run for these documentation-only changes.
+
+## Additional gen4-ESP32-28CT display — 2026-10-19
+
+Repository support for the operator-identified 2.8-inch gen4-ESP32-28CT is
+recorded in the [firmware guide](../firmware/gen4/README.md) and
+[verification record](../firmware/gen4/VERIFICATION.md). The PCB revision is
+unverified. LCD, touch alignment, offline UI, read-only Hub status and a
+bounded Wi-Fi reconnect were observed separately on the connected unit.
+
+An isolated workstation fixture then accepted exactly one CT touch-generated
+START and one DRAIN; the operator saw logical SUPPLY followed by DRAIN. The
+fixture had no Pi, GPIO, relay or valve connection. Afterward the provisioned
+status-only image was restored app-only, independently ROM-verified across
+boot, partitions, OTA and application (four digest matches), and reset. The
+operator confirmed `SAMO PRIKAZ` and `UKAZ: DRAIN` on the restored screen.
+See the [isolated test-Hub record](../firmware/gen4/TEST_HUB_BENCH.md) for
+artifact hashes and the precise observation boundary. This does not change
+the Waveshare active-installation or physical-valve evidence above.
+
+The gen4 source was integrated on the current `origin/main` snapshot in an
+isolated worktree. On that snapshot, 25 native firmware tests, two fixture
+tests, 654 Python tests, Ruff, four unprovisioned firmware builds and a
+current-Hub-API-to-gen4-parser DRAIN-status check passed. The parser now
+accepts the Hub's 1800-second weather-assisted countdown while retaining the
+600-second manual limit. These are source and workstation checks. The connected
+unit still runs the previously restored status-only image; this parser change
+has not been uploaded or observed on that device.

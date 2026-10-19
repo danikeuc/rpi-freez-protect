@@ -49,6 +49,11 @@ The source under `firmware/crowpanel` is historical/rollback material. The
 CrowPanel is retired from this installation and must not receive the active
 display token.
 
+Additional [gen4-ESP32-28CT firmware](firmware/gen4/README.md) has been bench
+tested on the connected 2.8-inch display with an isolated, in-memory Hub. Its
+installed image is currently status-only; it is not part of the active valve
+installation or evidence of physical valve behavior.
+
 ## Operating modes
 
 - `safe_drain` is the default for an absent or invalid setting. It refuses

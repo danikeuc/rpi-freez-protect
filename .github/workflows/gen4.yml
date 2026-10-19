@@ -1,0 +1,53 @@
+name: gen4 display firmware
+
+on:
+  pull_request:
+    paths: ["firmware/gen4/**", ".github/workflows/gen4.yml"]
+  push:
+    branches: [main]
+    paths: ["firmware/gen4/**", ".github/workflows/gen4.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install platformio==6.2.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Isolated Hub fixture tests
+        working-directory: firmware/gen4
+        run: node --test tools/test-hub.test.mjs
+      - name: Host protocol and input tests
+        working-directory: firmware/gen4
+        run: python -m platformio test -e native
+      - name: Build unprovisioned targets and isolated diagnostics
+        working-directory: firmware/gen4
+        run: python -m platformio run -e gen4_28 -e gen4_28ct -e gen4_28ct_offline -e gen4_28_network_bench -e gen4_28ct_test_hub -e gen4_28_bench -e gen4_28_touch_probe
+      - name: Verify offline target excludes secret header
+        working-directory: firmware/gen4
+        run: |
+          test ! -e include/secrets.h
+          trap 'rm -f include/secrets.h' EXIT
+          printf '%s\n' '#error Offline target must not include secrets.h' > include/secrets.h
+          python -m platformio run -e gen4_28ct_offline -t clean
+          python -m platformio run -e gen4_28ct_offline
+      - name: Link network-enabled firmware with dummy settings
+        working-directory: firmware/gen4
+        run: |
+          test ! -e include/secrets.h
+          cat > include/secrets.h <<'EOF'
+          #pragma once
+          #define WIFI_SSID "build-check-only"
+          #define WIFI_PASSWORD "build-check-only"
+          #define HUB_BASE_URL "http://192.0.2.1:8081"
+          #define DISPLAY_TOKEN "build-check-only"
+          EOF
+          python -m platformio run -e gen4_28 -e gen4_28ct -e gen4_28ct_test_hub
