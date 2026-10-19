@@ -50,7 +50,7 @@ jobs:
           #define HUB_BASE_URL "http://192.0.2.1:8081"
           #define DISPLAY_TOKEN "build-check-only"
           EOF
-          python -m platformio run -e gen4_28 -e gen4_28ct -e gen4_28ct_test_hub
+          python -m platformio run -e gen4_28 -e gen4_28ct -e gen4_28ct_test_hub -e gen4_28ct_offline -e gen4_28_network_bench
       - name: Verify action isolation in linked firmware
         working-directory: firmware/gen4
         run: python tools/verify_action_isolation.py
