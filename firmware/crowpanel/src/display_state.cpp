@@ -64,6 +64,9 @@ DisplayModel reduce_status(const HubStatus& status, bool wifi_connected,
 std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
                                   int http_status, int wifi_status) {
   if (!wifi_connected) {
+    if (wifi_status == 0) {
+      return "WI-FI: POVEZOVANJE";
+    }
     if (wifi_status == 1) {
       return "WI-FI: SSID NI NAJDEN";
     }
@@ -72,6 +75,9 @@ std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
     }
     if (wifi_status == 5) {
       return "WI-FI: POVEZAVA IZGUBLJENA";
+    }
+    if (wifi_status == 6) {
+      return "WI-FI: ODKLOPLJEN";
     }
     return "WI-FI: NI POVEZAVE";
   }
@@ -85,6 +91,31 @@ std::string connection_diagnostic(bool wifi_connected, bool hub_connected,
     return "HUB HTTP " + std::to_string(http_status);
   }
   return "HUB NEDOSEGLJIV";
+}
+
+std::string wifi_diagnostic_details(int wifi_status, const std::string& ip,
+                                    const std::string& mac,
+                                    int disconnect_reason, int http_status,
+                                    bool last_payload_valid,
+                                    unsigned long last_poll_age_s,
+                                    bool has_last_poll) {
+  std::string details = "Wi-Fi status: " + std::to_string(wifi_status) +
+                        "\nIP: " + ip + "\nMAC: " + mac +
+                        "\nDisconnect reason: " +
+                        (disconnect_reason < 0 ? "none"
+                                               : std::to_string(disconnect_reason));
+  if (!has_last_poll) {
+    details += "\nHub: no poll yet";
+  } else {
+    details += "\nHub HTTP: " + std::to_string(http_status);
+    if (http_status == 200) {
+      details += last_payload_valid ? ", JSON valid" : ", JSON invalid";
+    } else {
+      details += ", no valid JSON";
+    }
+    details += " (" + std::to_string(last_poll_age_s) + "s ago)";
+  }
+  return details;
 }
 
 DisplayAction next_action(const DisplayModel& model) {
@@ -115,4 +146,26 @@ DisplayPage move_page(DisplayPage current, bool forward) {
     return DisplayPage::Home;
   }
   return current;
+}
+
+std::string home_state_label(const DisplayModel& model) {
+  if (!model.connected) {
+    return "NI POVEZAVE";
+  }
+  if (model.state == "TIMED_SHOWER") {
+    return "TUŠ AKTIVEN";
+  }
+  if (model.state == "NORMAL") {
+    return "NORMALNO DELOVANJE";
+  }
+  if (model.state == "FROST_PROTECTION") {
+    return "ZAŠČITA PRED MRAZOM";
+  }
+  if (model.state == "FAULT") {
+    return "NAPAKA SISTEMA";
+  }
+  if (model.state == "STARTING") {
+    return "ZAGON SISTEMA";
+  }
+  return "STANJE NEZNANO";
 }

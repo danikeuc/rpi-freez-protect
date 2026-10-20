@@ -12,6 +12,8 @@
 #include <string>
 
 #include "board_pins.h"
+#include "display_layout.h"
+#include "display_state.h"
 
 namespace {
 
@@ -234,10 +236,22 @@ void HardwareUi::begin() {
 void HardwareUi::render(const DisplayModel& model) {
   if (model.page == DisplayPage::Forecast) {
     lv_label_set_text(state_label, "7-DNEVNA NAPOVED");
-    lv_label_set_text(temperature_label, "VRTI ZA PREKLOP");
+    lv_obj_align(state_label, LV_ALIGN_TOP_MID, 0,
+                 DisplayLayout::kForecastTitleY);
+    lv_label_set_text(temperature_label, "MINIMUMI · 7 DNI");
+    lv_obj_set_style_text_font(temperature_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(temperature_label, LV_ALIGN_TOP_MID, 0,
+                 DisplayLayout::kForecastSubtitleY);
     const std::string detail = forecast_lines(model);
     lv_label_set_text(detail_label, detail.c_str());
+    lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_line_space(detail_label, 2, 0);
+    lv_obj_align(detail_label, LV_ALIGN_TOP_MID, 0,
+                 DisplayLayout::kForecastRowsY);
     lv_label_set_text(action_label, "PRITISNI ZA NAZAJ");
+    lv_obj_set_style_text_font(action_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(action_label, LV_ALIGN_BOTTOM_MID, 0,
+                 -DisplayLayout::kForecastFooterBottomMargin);
     lv_label_set_text(action_detail_label, "");
     lv_obj_add_flag(action_icon, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_text_color(action_label, lv_palette_main(LV_PALETTE_GREY), 0);
@@ -246,17 +260,24 @@ void HardwareUi::render(const DisplayModel& model) {
 
   const bool shower_active = model.action == DisplayAction::CloseNow;
   const bool unavailable = !model.connected;
-  const std::string title = shower_active
-                                ? "TUŠ AKTIVEN"
-                                : (unavailable ? "NI POVEZAVE" : "VODA ZAPRTA");
+  const std::string title = home_state_label(model);
   const std::string summary = shower_active
                                   ? "SAMODEJNI IZKLOP VKLJUČEN"
                                   : (unavailable ? model.connection_text
                                                  : model.forecast_summary_text);
   lv_label_set_text(state_label, title.c_str());
+  lv_obj_align(state_label, LV_ALIGN_TOP_MID, 0, 16);
   lv_label_set_text(temperature_label, summary.c_str());
-  lv_label_set_text(detail_label, "");
+  lv_obj_set_style_text_font(temperature_label, &lv_font_montserrat_20, 0);
+  lv_obj_align(temperature_label, LV_ALIGN_TOP_MID, 0, 48);
+  lv_label_set_text(detail_label,
+                    unavailable ? model.connection_detail_text.c_str() : "");
+  lv_obj_set_style_text_font(detail_label, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_line_space(detail_label, 1, 0);
+  lv_obj_align(detail_label, LV_ALIGN_TOP_MID, 0, 76);
   lv_label_set_text(action_label, model.primary_action_text.c_str());
+  lv_obj_set_style_text_font(action_label, &lv_font_montserrat_16, 0);
+  lv_obj_align(action_label, LV_ALIGN_BOTTOM_MID, 0, -26);
   lv_label_set_text(action_detail_label, model.primary_action_detail.c_str());
   if (!model.action_enabled) {
     lv_obj_add_flag(action_icon, LV_OBJ_FLAG_HIDDEN);
